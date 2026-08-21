@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0d10" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>STAV. | inventura a faktury</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script defer src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">S</div>
+        <div>
+          <strong>STAV.</strong>
+          <span>Faktura → sklad → zisk</span>
+        </div>
+      </div>
+      <nav class="nav" aria-label="Hlavní navigace">
+        <button class="nav-btn active" data-view="dashboard">Přehled</button>
+        <button class="nav-btn" data-view="invoices">Faktury</button>
+        <button class="nav-btn" data-view="inventory">Inventura</button>
+        <button class="nav-btn" data-view="sales">Prodej</button>
+        <button class="nav-btn" data-view="products">Produkty</button>
+        <button class="nav-btn" data-view="settings">Nastavení</button>
+      </nav>
+      <div class="privacy-note">Data zůstávají v tomto zařízení.</div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">Přehled</h1>
+          <p id="pageSubtitle">Co dnes potřebuje zásah.</p>
+        </div>
+        <button id="quickScanBtn" class="btn btn-primary">Skenovat EAN</button>
+      </header>
+
+      <section id="view-dashboard" class="view active">
+        <div id="dashboardCards" class="metric-grid"></div>
+        <div class="grid-2">
+          <article class="panel">
+            <div class="panel-head"><h2>Potřebuje pozornost</h2><span class="badge">výjimky</span></div>
+            <div id="attentionList" class="stack"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h2>Poslední pohyby</h2><span class="badge muted">sklad</span></div>
+            <div id="movementList" class="stack"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-invoices" class="view">
+        <div class="grid-2 invoice-layout">
+          <article class="panel">
+            <div class="panel-head"><h2>OCR faktury</h2><span class="badge">lokálně</span></div>
+            <label class="upload-zone" for="invoiceFile">
+              <strong>Vyfoť nebo nahraj fakturu</strong>
+              <span>JPG, PNG nebo PDF. První OCR může chvíli trvat.</span>
+              <input id="invoiceFile" type="file" accept="image/*,application/pdf" capture="environment" />
+            </label>
+            <div id="ocrProgressWrap" class="progress-wrap hidden">
+              <div class="progress"><span id="ocrProgress"></span></div>
+              <small id="ocrStatus">Připravuji OCR…</small>
+            </div>
+            <canvas id="invoicePreview" class="invoice-preview hidden"></canvas>
+            <textarea id="ocrText" class="ocr-text" placeholder="Rozpoznaný text faktury se objeví zde…"></textarea>
+            <div class="button-row">
+              <button id="parseInvoiceBtn" class="btn">Najít položky</button>
+              <button id="clearOcrBtn" class="btn btn-ghost">Vyčistit</button>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head"><h2>Položky k naskladnění</h2><span id="invoiceLineCount" class="badge muted">0</span></div>
+            <div class="form-grid compact">
+              <label>Dodavatel<input id="supplierName" type="text" placeholder="např. Makro" /></label>
+              <label>Číslo faktury<input id="invoiceNumber" type="text" /></label>
+              <label>Datum<input id="invoiceDate" type="date" /></label>
+            </div>
+            <div id="invoiceLines" class="line-editor"></div>
+            <div class="button-row sticky-actions">
+              <button id="addInvoiceLineBtn" class="btn">+ Přidat řádek</button>
+              <button id="saveReceiptBtn" class="btn btn-primary">Naskladnit zkontrolované</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-inventory" class="view">
+        <div class="inventory-toolbar panel">
+          <div class="form-grid compact inventory-setup">
+            <label>Zóna<select id="inventoryZone"></select></label>
+            <label>Teplota zóny °C<input id="inventoryTemp" type="number" step="0.1" /></label>
+            <label>Datum<input id="inventoryDate" type="date" /></label>
+          </div>
+          <div class="button-row">
+            <button id="inventoryScanBtn" class="btn btn-primary">Skenovat další</button>
+            <button id="inventorySelectBtn" class="btn">Vybrat produkt</button>
+            <button id="closeInventoryBtn" class="btn btn-danger">Uzavřít inventuru</button>
+          </div>
+        </div>
+
+        <div class="grid-2 inventory-grid">
+          <article class="panel">
+            <div class="panel-head"><h2>Měření položky</h2><span id="currentProductBadge" class="badge muted">bez výběru</span></div>
+            <div id="inventoryMeasureEmpty" class="empty-state">Naskenuj EAN nebo vyber produkt.</div>
+            <form id="inventoryMeasureForm" class="hidden">
+              <div id="currentProductCard" class="product-focus"></div>
+              <div class="form-grid">
+                <label>Hmotnost otevřené lahve v g<input id="grossWeight" inputmode="decimal" type="number" step="0.1" required /></label>
+                <label>Celé neotevřené kusy<input id="sealedCount" inputmode="numeric" type="number" min="0" step="1" value="0" /></label>
+                <label>Teplota této položky °C<input id="itemTemp" type="number" step="0.1" /></label>
+                <label>Poznámka<input id="inventoryNote" type="text" placeholder="rozbití, přesun…" /></label>
+              </div>
+              <div id="measurementResult" class="calculation-card"></div>
+              <div class="button-row">
+                <button type="submit" class="btn btn-primary">Uložit stav položky</button>
+                <button id="markIssueBtn" type="button" class="btn btn-danger">Označit problém</button>
+              </div>
+            </form>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head"><h2>Aktuální inventura</h2><span id="inventoryProgressBadge" class="badge muted">0 položek</span></div>
+            <div id="inventoryLines" class="stack"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-sales" class="view">
+        <div class="grid-2">
+          <article class="panel">
+            <div class="panel-head"><h2>Zapsat prodej</h2><span class="badge">ručně</span></div>
+            <form id="saleForm">
+              <div class="form-grid">
+                <label>Produkt<select id="saleProduct" required></select></label>
+                <label>Datum<input id="saleDate" type="date" required /></label>
+                <label>Počet porcí<input id="salePortions" type="number" min="0" step="0.01" value="1" required /></label>
+                <label>Objem porce v ml<input id="saleShotMl" type="number" min="1" step="1" value="40" required /></label>
+                <label>Prodejní cena porce<input id="saleUnitPrice" type="number" min="0" step="0.01" required /></label>
+              </div>
+              <div id="salePreview" class="calculation-card"></div>
+              <button class="btn btn-primary" type="submit">Zapsat prodej</button>
+            </form>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h2>Zisk za období</h2><span class="badge muted">hrubý</span></div>
+            <div class="form-grid compact">
+              <label>Od<input id="periodFrom" type="date" /></label>
+              <label>Do<input id="periodTo" type="date" /></label>
+            </div>
+            <div id="profitSummary" class="profit-summary"></div>
+            <div id="salesList" class="stack"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-products" class="view">
+        <div class="panel">
+          <div class="panel-head products-head">
+            <div><h2>Produktový katalog</h2><p>Výchozí sortiment Ztraceného baru. EAN a kalibrace se doplní prvním skenem.</p></div>
+            <button id="newProductBtn" class="btn btn-primary">+ Nový produkt</button>
+          </div>
+          <div class="toolbar-row">
+            <input id="productSearch" type="search" placeholder="Hledat produkt, EAN nebo kategorii…" />
+            <label class="check"><input id="onlyIncomplete" type="checkbox" /> Jen nedokončené kalibrace</label>
+          </div>
+          <div id="productTable" class="product-table"></div>
+        </div>
+      </section>
+
+      <section id="view-settings" class="view">
+        <div class="grid-2">
+          <article class="panel">
+            <div class="panel-head"><h2>Skladovací zóny</h2><span class="badge">teplota</span></div>
+            <div id="zonesEditor" class="stack"></div>
+            <button id="addZoneBtn" class="btn">+ Přidat zónu</button>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h2>Data a přesnost</h2><span class="badge muted">záloha</span></div>
+            <div class="form-grid">
+              <label>Tolerance inventury v ml<input id="toleranceMl" type="number" min="0" step="1" /></label>
+              <label>Výchozí teplotní korekce % / 10 °C<input id="defaultTempCoeff" type="number" step="0.01" /></label>
+            </div>
+            <p class="hint">Teplotní koeficient je vždy uložen u konkrétního produktu. Výchozí hodnota je pouze provizorní a má být nahrazena vlastní kalibrací nebo údajem výrobce.</p>
+            <div class="button-row wrap">
+              <button id="exportBtn" class="btn">Exportovat zálohu</button>
+              <label class="btn file-btn">Importovat zálohu<input id="importFile" type="file" accept="application/json" /></label>
+              <button id="resetBtn" class="btn btn-danger">Smazat lokální data</button>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="productModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card large">
+      <div class="modal-head"><h2 id="productModalTitle">Produkt</h2><button class="icon-btn" data-close-modal="productModal">×</button></div>
+      <form id="productForm">
+        <input id="productId" type="hidden" />
+        <div class="form-grid">
+          <label>Název<input id="productName" required /></label>
+          <label>Kategorie<input id="productCategory" /></label>
+          <label>EAN / čárový kód<input id="productBarcode" inputmode="numeric" /></label>
+          <label>Objem balení v ml<input id="productVolume" type="number" min="1" step="1" /></label>
+          <label>Alkohol % obj.<input id="productAbv" type="number" min="0" step="0.1" /></label>
+          <label>Prodejní porce v ml<input id="productShot" type="number" min="1" step="1" /></label>
+          <label>Prodejní cena porce<input id="productSalePrice" type="number" min="0" step="0.01" /></label>
+          <label>Poslední nákupní cena balení<input id="productPurchasePrice" type="number" min="0" step="0.01" /></label>
+          <label>Tára prázdné lahve v g<input id="productTare" type="number" min="0" step="0.1" /></label>
+          <label>Hmotnost plné lahve v g<input id="productFullWeight" type="number" min="0" step="0.1" /></label>
+          <label>Koeficient ml / g<input id="productCoef" type="number" min="0" step="0.0001" /></label>
+          <label>Referenční teplota °C<input id="productRefTemp" type="number" step="0.1" /></label>
+          <label>Teplotní korekce % / 10 °C<input id="productTempCoeff" type="number" step="0.01" /></label>
+          <label>Skladovací zóna<select id="productZone"></select></label>
+          <label>Stav kalibrace<select id="productCalibration">
+            <option value="missing">Chybí</option>
+            <option value="provisional">Provizorní</option>
+            <option value="verified">Ověřená</option>
+          </select></label>
+        </div>
+        <div class="formula-box">
+          <strong>Automatický koeficient</strong>
+          <span id="coefHelper">Doplň objem, táru a plnou hmotnost.</span>
+          <button id="useAutoCoefBtn" type="button" class="btn btn-small">Použít výpočet</button>
+        </div>
+        <div class="button-row end">
+          <button type="button" class="btn btn-ghost" data-close-modal="productModal">Zrušit</button>
+          <button type="submit" class="btn btn-primary">Uložit produkt</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="selectProductModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-head"><h2>Vyber produkt</h2><button class="icon-btn" data-close-modal="selectProductModal">×</button></div>
+      <input id="selectProductSearch" type="search" placeholder="Název nebo EAN…" />
+      <div id="selectProductList" class="select-list"></div>
+    </div>
+  </div>
+
+  <div id="scannerModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card scanner-card">
+      <div class="modal-head"><h2>Sken čárového kódu</h2><button class="icon-btn" id="closeScannerBtn">×</button></div>
+      <div id="scannerReader" class="scanner-reader"></div>
+      <div class="divider"><span>nebo</span></div>
+      <div class="inline-input">
+        <input id="manualBarcode" inputmode="numeric" placeholder="Zadej EAN ručně" />
+        <button id="manualBarcodeBtn" class="btn btn-primary">Použít</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+</body>
+</html>

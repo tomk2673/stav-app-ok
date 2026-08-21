@@ -1,0 +1,908 @@
+'use strict';
+
+const STORAGE_KEY = 'stav_app_v1';
+const today = () => new Date().toISOString().slice(0, 10);
+const monthStart = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+};
+const uid = (prefix = 'id') => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+const slugId = value => `p_${value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}`;
+const num = value => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const parsed = Number(String(value ?? '').replace(/\s/g, '').replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+const money = value => new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 }).format(num(value));
+const decimal = (value, digits = 1) => new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: digits, minimumFractionDigits: 0 }).format(num(value));
+const mlText = value => `${decimal(value, 0)} ml`;
+const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+
+function seedProduct(name, category, salePrice, abv = null, zoneId = 'shelf', extras = {}) {
+  return {
+    id: slugId(name),
+    name,
+    category,
+    barcode: '',
+    volumeMl: extras.volumeMl ?? null,
+    abv,
+    shotMl: extras.shotMl ?? 40,
+    salePrice: salePrice ?? 0,
+    purchasePrice: 0,
+    tareG: null,
+    fullWeightG: null,
+    coefMlPerG: null,
+    refTempC: 20,
+    tempCoeffPctPer10C: 1.25,
+    zoneId,
+    calibrationStatus: 'missing',
+    unitMode: extras.unitMode ?? 'liquid',
+    aliases: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function seedProducts() {
+  const p = [];
+  const add = (...args) => p.push(seedProduct(...args));
+  add('Becherovka 38%', 'Likéry', 70, 38);
+  add('Becherovka Lemond', 'Likéry', 70, 20);
+  add('Fernet Stock', 'Likéry', 60, 38);
+  add('Fernet Stock Citrus', 'Likéry', 60, 27);
+  add('Jägermeister', 'Likéry', 65, 35, 'fridge');
+  add('Jägermeister Scharf', 'Likéry', 65, 33, 'fridge');
+  add('Zelená', 'Likéry', 50, null);
+  add('Gruzignac 5*', 'Cognac / Brandy', 90, 40);
+  add('Metaxa 5*', 'Cognac / Brandy', 70, 38);
+  add('Tuzemský Božkov', 'Rumy', 55, 37.5);
+  add('Malibu', 'Rumy', 70, 21);
+  add('Captain Morgan Spiced', 'Rumy', 70, 35);
+  add('Bacardi Spiced', 'Rumy', 70, 35);
+  add('Bacardi Superior', 'Rumy', 70, 37.5);
+  add('Havana Club 3y', 'Rumy', 70, 37.5);
+  add('Legendario Elixir', 'Rumy', 90, 38);
+  add('Heffron 5y', 'Rumy', 65, 38);
+  add('Republica Božkov 8y', 'Rumy', 65, 38);
+  add('Brugal 5y', 'Rumy', 90, 38);
+  add('Kraken Black Spiced', 'Rumy', 95, 40);
+  add('Bumbu Original 15y', 'Rumy', 130, 40);
+  add('Dictador 12y', 'Rumy', 130, 40);
+  add('El Dorado 12y', 'Rumy', 130, 40);
+  add('El Dorado 15y', 'Rumy', 155, 43);
+  add('Diplomatico Reserva 15y', 'Rumy', 160, 40);
+  add('Pyrat XO', 'Rumy', 140, 40);
+  add('Zacapa 23y', 'Rumy', 185, 40);
+  add('Plantation XO', 'Rumy', 185, 40);
+  add('Blue Mauritius', 'Rumy', 165, 40);
+  add('Don Papa Baroko', 'Rumy', 150, 40);
+  add('Don Papa', 'Rumy', 140, 40);
+  add('Stará myslivecká Reserve', 'Whisky', 70, 40);
+  add("Jack Daniel's", 'Whisky', 90, 40);
+  add("Jack Daniel's Honey", 'Whisky', 95, 35);
+  add("Jack Daniel's Apple", 'Whisky', 95, 35);
+  add("Jack Daniel's Fire", 'Whisky', 95, 35);
+  add('Jameson', 'Whisky', 70, 40);
+  add('Tullamore Dew', 'Whisky', 70, 40);
+  add('Jim Beam', 'Whisky', 90, 40);
+  add('Famous Grouse', 'Whisky', 80, 40);
+  add('Talisker 10y', 'Whisky', 145, 45.8);
+  add('Highland Park 12y', 'Whisky', 160, 40);
+  add('Vodka Finlandia', 'Destiláty', 70, 40, 'fridge');
+  add('Vodka Nemiroff', 'Destiláty', 70, 40, 'fridge');
+  add('Gin Beefeater', 'Destiláty', 70, 40);
+  add('Gin Beefeater Pink', 'Destiláty', 85, 37.5);
+  add('Gin Bombay', 'Destiláty', 95, 40);
+  add('Gin Malfy Original', 'Destiláty', 110, 41);
+  add('Gin Malfy Limone', 'Destiláty', 120, 41);
+  add('Gin Malfy Arancia', 'Destiláty', 120, 41);
+  add("Gin Hendrick's", 'Destiláty', 130, 41.4);
+  add('Tequila El Jimador Gold', 'Destiláty', 90, 38);
+  add('Tequila El Jimador Silver', 'Destiláty', 90, 38);
+  add('RJ Hruškovice', 'Destiláty', 90, 42);
+  add('RJ Slivovice', 'Destiláty', 90, 45);
+  add('RJ Hruška zlatá', 'Destiláty', 95, 40);
+  add('Fleret Slivovice', 'Destiláty', 90, null);
+  add('RJ Absinth', 'Destiláty', 90, 70);
+  add('Bohemia sekt 0,75 l', 'Víno a sekt', 350, null, 'shelf', { volumeMl: 750, shotMl: 750 });
+  add('Corona Mexico 0,33 l', 'Pivo balené', 69, null, 'fridge', { volumeMl: 330, shotMl: 330, unitMode: 'unit' });
+  add('Heineken 0,33 l', 'Pivo balené', 59, null, 'fridge', { volumeMl: 330, shotMl: 330, unitMode: 'unit' });
+  add('Birell světlé 0,33 l', 'Pivo balené', 45, 0.5, 'fridge', { volumeMl: 330, shotMl: 330, unitMode: 'unit' });
+  add('Red Bull 0,25 l', 'Nealko', 80, 0, 'fridge', { volumeMl: 250, shotMl: 250, unitMode: 'unit' });
+  return p;
+}
+
+function defaultState() {
+  return {
+    version: 1,
+    products: seedProducts(),
+    zones: [
+      { id: 'fridge', name: 'Lednice', tempC: 4 },
+      { id: 'shelf', name: 'Barová police', tempC: 20 }
+    ],
+    settings: { toleranceMl: 10, defaultTempCoeffPctPer10C: 1.25 },
+    movements: [],
+    invoices: [],
+    inventorySessions: [],
+    currentInventory: { id: uid('inv'), date: today(), zoneId: 'shelf', tempC: 20, lines: [] }
+  };
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultState();
+    const parsed = JSON.parse(raw);
+    const fallback = defaultState();
+    return {
+      ...fallback,
+      ...parsed,
+      settings: { ...fallback.settings, ...(parsed.settings || {}) },
+      zones: Array.isArray(parsed.zones) && parsed.zones.length ? parsed.zones : fallback.zones,
+      products: Array.isArray(parsed.products) && parsed.products.length ? parsed.products : fallback.products,
+      movements: parsed.movements || [],
+      invoices: parsed.invoices || [],
+      inventorySessions: parsed.inventorySessions || [],
+      currentInventory: parsed.currentInventory || fallback.currentInventory
+    };
+  } catch (error) {
+    console.error(error);
+    return defaultState();
+  }
+}
+
+let state = loadState();
+let currentInventoryProductId = null;
+let invoiceDraftLines = [];
+let scanner = null;
+let scannerCallback = null;
+let selectProductCallback = null;
+
+function saveState(render = true) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (render) renderAll();
+}
+
+function productById(id) { return state.products.find(p => p.id === id); }
+function zoneById(id) { return state.zones.find(z => z.id === id) || state.zones[0]; }
+function productComplete(p) { return !!(p.volumeMl && p.tareG !== null && p.coefMlPerG); }
+function stockMl(productId) { return state.movements.filter(m => m.productId === productId).reduce((sum, m) => sum + num(m.quantityMl), 0); }
+function movementCount(productId) { return state.movements.filter(m => m.productId === productId).length; }
+function unitCostPerMl(p) { return p?.volumeMl ? num(p.purchasePrice) / num(p.volumeMl) : 0; }
+function saleValuePerMl(p) { return p?.shotMl ? num(p.salePrice) / num(p.shotMl) : 0; }
+function statusBadge(status) {
+  const map = {
+    approved: ['ok', 'schváleno'], ok: ['ok', 'souhlasí'], resolved: ['ok', 'vyřešeno'],
+    provisional: ['warn', 'provizorní'], review: ['warn', 'zkontrolovat'], warning: ['warn', 'zkontrolovat'], baseline: ['muted', 'počáteční stav'],
+    issue: ['danger', 'problém'], missing: ['danger', 'chybí'], new: ['muted', 'nová'], skipped: ['muted', 'přeskočeno']
+  };
+  const [cls, label] = map[status] || ['muted', status || '—'];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function toast(message, ms = 3000) {
+  const el = document.getElementById('toast');
+  el.textContent = message;
+  el.classList.remove('hidden');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => el.classList.add('hidden'), ms);
+}
+
+function switchView(view) {
+  const titles = {
+    dashboard: ['Přehled', 'Co dnes potřebuje zásah.'],
+    invoices: ['Faktury', 'OCR, kontrola a naskladnění.'],
+    inventory: ['Inventura', 'EAN → váha → skutečný stav.'],
+    sales: ['Prodej a zisk', 'Náklady, tržby a marže za období.'],
+    products: ['Produkty', 'EAN, tára, hustotní koeficient a teplota.'],
+    settings: ['Nastavení', 'Zóny, tolerance a záloha dat.']
+  };
+  document.querySelectorAll('.view').forEach(el => el.classList.toggle('active', el.id === `view-${view}`));
+  document.querySelectorAll('.nav-btn').forEach(el => el.classList.toggle('active', el.dataset.view === view));
+  document.getElementById('pageTitle').textContent = titles[view][0];
+  document.getElementById('pageSubtitle').textContent = titles[view][1];
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderDashboard() {
+  const currentMonthSales = state.movements.filter(m => m.type === 'sale' && m.date >= monthStart() && m.date <= today());
+  const revenue = currentMonthSales.reduce((s, m) => s + num(m.revenue), 0);
+  const cost = currentMonthSales.reduce((s, m) => s + num(m.cost), 0);
+  const grossProfit = revenue - cost;
+  const stockValue = state.products.reduce((sum, p) => sum + Math.max(0, stockMl(p.id)) * unitCostPerMl(p), 0);
+  const incomplete = state.products.filter(p => !productComplete(p) || p.calibrationStatus !== 'verified').length;
+  const issues = [
+    ...state.currentInventory.lines.filter(l => l.status === 'issue'),
+    ...state.inventorySessions.flatMap(s => s.lines || []).filter(l => l.status === 'issue'),
+    ...state.invoices.flatMap(i => i.lines || []).filter(l => l.state === 'review')
+  ];
+  const cards = [
+    ['Hodnota zásob', money(stockValue), 'podle posledních nákupních cen'],
+    ['Hrubý zisk měsíc', money(grossProfit), revenue ? `marže ${decimal((grossProfit / revenue) * 100, 1)} %` : 'zatím bez prodejů'],
+    ['Nevyřešené položky', decimal(issues.length, 0), 'kontrola před finančním závěrem'],
+    ['Kalibrace k doplnění', decimal(incomplete, 0), `${state.products.length} produktů v katalogu`]
+  ];
+  document.getElementById('dashboardCards').innerHTML = cards.map(([label, value, trend]) => `
+    <div class="metric"><span class="label">${label}</span><strong>${value}</strong><span class="trend">${trend}</span></div>
+  `).join('');
+
+  const attention = [];
+  state.currentInventory.lines.filter(l => l.status === 'issue').slice(0, 4).forEach(l => {
+    const p = productById(l.productId);
+    attention.push(`<div class="item-row"><div><strong>${esc(p?.name || 'Produkt')}</strong><div class="meta">Inventura ${l.diffMl < 0 ? 'manko' : 'přebytek'} ${mlText(Math.abs(l.diffMl))}</div></div><span class="money ${l.diffMl < 0 ? 'negative' : 'positive'}">${l.diffMl < 0 ? '−' : '+'}${money(Math.abs(l.saleDifference || 0))}</span></div>`);
+  });
+  state.products.filter(p => !productComplete(p)).slice(0, Math.max(0, 5 - attention.length)).forEach(p => {
+    attention.push(`<div class="item-row"><div><strong>${esc(p.name)}</strong><div class="meta">Chybí objem, tára nebo koeficient ml/g</div></div>${statusBadge('missing')}</div>`);
+  });
+  document.getElementById('attentionList').innerHTML = attention.length ? attention.join('') : '<div class="empty-state">Žádné otevřené výjimky. Sklad dnes nevrčí.</div>';
+
+  const movementLabels = { receipt: 'Naskladnění', sale: 'Prodej', adjustment: 'Inventurní korekce' };
+  const movements = [...state.movements].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 7);
+  document.getElementById('movementList').innerHTML = movements.length ? movements.map(m => {
+    const p = productById(m.productId);
+    return `<div class="item-row"><div><strong>${esc(p?.name || 'Produkt')}</strong><div class="meta">${movementLabels[m.type] || m.type} · ${esc(m.date || '')}</div></div><span class="money ${m.quantityMl < 0 ? 'negative' : 'positive'}">${m.quantityMl < 0 ? '−' : '+'}${mlText(Math.abs(m.quantityMl))}</span></div>`;
+  }).join('') : '<div class="empty-state">Zatím žádné skladové pohyby.</div>';
+}
+
+function productOptions(selected = '', includeBlank = true) {
+  const sorted = [...state.products].sort((a, b) => a.name.localeCompare(b.name, 'cs'));
+  return `${includeBlank ? '<option value="">Vyber produkt</option>' : ''}${sorted.map(p => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}`;
+}
+function zoneOptions(selected = '') {
+  return state.zones.map(z => `<option value="${z.id}" ${z.id === selected ? 'selected' : ''}>${esc(z.name)} · ${decimal(z.tempC, 1)} °C</option>`).join('');
+}
+
+function renderProducts() {
+  const query = document.getElementById('productSearch')?.value?.trim().toLowerCase() || '';
+  const onlyIncomplete = document.getElementById('onlyIncomplete')?.checked || false;
+  const rows = [...state.products]
+    .filter(p => !query || `${p.name} ${p.category} ${p.barcode}`.toLowerCase().includes(query))
+    .filter(p => !onlyIncomplete || !productComplete(p) || p.calibrationStatus !== 'verified')
+    .sort((a, b) => a.category.localeCompare(b.category, 'cs') || a.name.localeCompare(b.name, 'cs'));
+  document.getElementById('productTable').innerHTML = rows.length ? rows.map(p => {
+    const stock = stockMl(p.id);
+    const status = p.calibrationStatus === 'verified' && productComplete(p) ? 'verified' : p.calibrationStatus === 'provisional' ? 'provisional' : 'missing';
+    return `<div class="product-row" data-product-id="${p.id}">
+      <div><strong>${esc(p.name)}</strong><div class="muted">${esc(p.barcode || 'EAN nedoplněn')} · ${p.volumeMl ? `${decimal(p.volumeMl, 0)} ml` : 'objem nedoplněn'}</div></div>
+      <div class="product-category-cell"><span class="muted">Kategorie</span><br>${esc(p.category || '—')}</div>
+      <div><span class="muted">Zóna</span><br>${esc(zoneById(p.zoneId)?.name || '—')}</div>
+      <div class="stock"><span class="muted">Evidenční stav</span><br>${mlText(stock)}</div>
+      <div class="actions">${statusBadge(status)}<br><button class="btn btn-small edit-product" data-id="${p.id}">Upravit</button></div>
+    </div>`;
+  }).join('') : '<div class="empty-state">Žádný produkt neodpovídá filtru.</div>';
+  document.querySelectorAll('.edit-product').forEach(btn => btn.addEventListener('click', () => openProductModal(btn.dataset.id)));
+}
+
+function openProductModal(productId = null, prefill = {}) {
+  const p = productId ? productById(productId) : {
+    id: '', name: '', category: '', barcode: prefill.barcode || '', volumeMl: null, abv: null, shotMl: 40, salePrice: 0,
+    purchasePrice: 0, tareG: null, fullWeightG: null, coefMlPerG: null, refTempC: 20,
+    tempCoeffPctPer10C: state.settings.defaultTempCoeffPctPer10C, zoneId: 'shelf', calibrationStatus: 'missing'
+  };
+  document.getElementById('productModalTitle').textContent = productId ? 'Upravit produkt' : 'Nový produkt';
+  document.getElementById('productId').value = p.id || '';
+  document.getElementById('productName').value = p.name || '';
+  document.getElementById('productCategory').value = p.category || '';
+  document.getElementById('productBarcode').value = p.barcode || '';
+  document.getElementById('productVolume').value = p.volumeMl ?? '';
+  document.getElementById('productAbv').value = p.abv ?? '';
+  document.getElementById('productShot').value = p.shotMl ?? 40;
+  document.getElementById('productSalePrice').value = p.salePrice ?? '';
+  document.getElementById('productPurchasePrice').value = p.purchasePrice ?? '';
+  document.getElementById('productTare').value = p.tareG ?? '';
+  document.getElementById('productFullWeight').value = p.fullWeightG ?? '';
+  document.getElementById('productCoef').value = p.coefMlPerG ?? '';
+  document.getElementById('productRefTemp').value = p.refTempC ?? 20;
+  document.getElementById('productTempCoeff').value = p.tempCoeffPctPer10C ?? state.settings.defaultTempCoeffPctPer10C;
+  document.getElementById('productZone').innerHTML = zoneOptions(p.zoneId);
+  document.getElementById('productCalibration').value = p.calibrationStatus || 'missing';
+  updateCoefHelper();
+  document.getElementById('productModal').classList.remove('hidden');
+}
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+function updateCoefHelper() {
+  const volume = num(document.getElementById('productVolume').value);
+  const tare = num(document.getElementById('productTare').value);
+  const full = num(document.getElementById('productFullWeight').value);
+  const liquidWeight = full - tare;
+  const coef = volume && liquidWeight > 0 ? volume / liquidWeight : 0;
+  document.getElementById('coefHelper').textContent = coef ? `${decimal(volume, 0)} ml ÷ ${decimal(liquidWeight, 1)} g = ${decimal(coef, 4)} ml/g` : 'Doplň objem, táru a plnou hmotnost.';
+  return coef;
+}
+
+function renderInvoiceLines() {
+  document.getElementById('invoiceLineCount').textContent = String(invoiceDraftLines.length);
+  const wrap = document.getElementById('invoiceLines');
+  wrap.innerHTML = invoiceDraftLines.length ? invoiceDraftLines.map((line, i) => `
+    <div class="invoice-line" data-index="${i}">
+      <label class="raw-field">Text z faktury<input class="line-raw" value="${esc(line.rawName)}" /></label>
+      <label class="product-field">Produkt<select class="line-product">${productOptions(line.productId)}</select></label>
+      <label>Množství<input class="line-qty" type="number" min="0" step="0.01" value="${line.qty}" /></label>
+      <label>Cena / ks<input class="line-price" type="number" min="0" step="0.01" value="${line.unitPrice || ''}" /></label>
+      <label class="state-field">Stav<select class="line-state">
+        <option value="new" ${line.state === 'new' ? 'selected' : ''}>Nová</option>
+        <option value="review" ${line.state === 'review' ? 'selected' : ''}>Zkontrolovat</option>
+        <option value="approved" ${line.state === 'approved' ? 'selected' : ''}>Schválená</option>
+        <option value="skipped" ${line.state === 'skipped' ? 'selected' : ''}>Přeskočit</option>
+      </select></label>
+      <button class="icon-btn remove-line" title="Odstranit">×</button>
+    </div>
+  `).join('') : '<div class="empty-state">OCR text rozlož na položky nebo přidej řádek ručně.</div>';
+
+  wrap.querySelectorAll('.invoice-line').forEach(row => {
+    const i = Number(row.dataset.index);
+    row.querySelector('.line-raw').addEventListener('input', e => invoiceDraftLines[i].rawName = e.target.value);
+    row.querySelector('.line-product').addEventListener('change', e => { invoiceDraftLines[i].productId = e.target.value; if (e.target.value && invoiceDraftLines[i].state === 'new') invoiceDraftLines[i].state = 'review'; renderInvoiceLines(); });
+    row.querySelector('.line-qty').addEventListener('input', e => invoiceDraftLines[i].qty = num(e.target.value));
+    row.querySelector('.line-price').addEventListener('input', e => invoiceDraftLines[i].unitPrice = num(e.target.value));
+    row.querySelector('.line-state').addEventListener('change', e => invoiceDraftLines[i].state = e.target.value);
+    row.querySelector('.remove-line').addEventListener('click', () => { invoiceDraftLines.splice(i, 1); renderInvoiceLines(); });
+  });
+}
+
+function normalizeWords(text) {
+  return String(text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length > 1);
+}
+function similarity(a, b) {
+  const aw = new Set(normalizeWords(a));
+  const bw = new Set(normalizeWords(b));
+  if (!aw.size || !bw.size) return 0;
+  const intersection = [...aw].filter(w => bw.has(w)).length;
+  return intersection / Math.max(aw.size, bw.size);
+}
+function bestProductMatch(text) {
+  let best = null;
+  let score = 0;
+  state.products.forEach(p => {
+    const s = Math.max(similarity(text, p.name), ...(p.aliases || []).map(a => similarity(text, a)));
+    if (s > score) { score = s; best = p; }
+  });
+  return score >= 0.38 ? { product: best, score } : null;
+}
+function extractVolumeMl(text) {
+  const ml = String(text).match(/(\d{2,4})\s*ml\b/i);
+  if (ml) return num(ml[1]);
+  const liters = String(text).match(/(\d+(?:[.,]\d+)?)\s*l\b/i);
+  if (liters) return num(liters[1]) * 1000;
+  return null;
+}
+function parseInvoiceText() {
+  const text = document.getElementById('ocrText').value;
+  if (!text.trim()) return toast('Nejdřív nahraj fakturu nebo vlož OCR text.');
+  const lines = text.split(/\r?\n/).map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const invoiceNo = text.match(/(?:faktura|daňový doklad|doklad)\s*(?:č\.?|číslo|no\.?|#)?\s*[:\-]?\s*([A-Z0-9\-/]{4,})/i);
+  const dateMatch = text.match(/(?:datum vystavení|vystaveno|datum)\s*[:\-]?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})/i);
+  if (invoiceNo) document.getElementById('invoiceNumber').value = invoiceNo[1];
+  if (dateMatch) {
+    const parts = dateMatch[1].split(/[.\-/]/).map(Number);
+    if (parts.length === 3) {
+      const y = parts[2] < 100 ? 2000 + parts[2] : parts[2];
+      document.getElementById('invoiceDate').value = `${y}-${String(parts[1]).padStart(2, '0')}-${String(parts[0]).padStart(2, '0')}`;
+    }
+  }
+  const ignored = /(celkem|dph|základ|zaklad|splatnost|odběratel|dodavatel|ičo|dic|bankovní|variabilní|faktura)/i;
+  const candidates = [];
+  lines.forEach(line => {
+    if (line.length < 5 || ignored.test(line) || !/[A-Za-zÁ-ž]/.test(line)) return;
+    const numberMatches = [...line.matchAll(/-?\d+(?:[ .]\d{3})*(?:[,.]\d{1,2})?/g)];
+    if (!numberMatches.length) return;
+    const qtyUnit = line.match(/(\d+(?:[,.]\d+)?)\s*(ks|kus|bal|kart|láh|lah|btl)\b/i);
+    const qty = qtyUnit ? num(qtyUnit[1]) : 1;
+    const unitPrice = num(numberMatches[numberMatches.length - 1][0]);
+    const firstNumberIndex = numberMatches[0].index ?? line.length;
+    let rawName = line.slice(0, firstNumberIndex).replace(/[|;:]+$/g, '').trim();
+    if (rawName.length < 3) rawName = line.replace(/\s+-?\d+(?:[,.]\d+)?\s*$/, '').trim();
+    const match = bestProductMatch(rawName);
+    const detectedVolumeMl = extractVolumeMl(line);
+    if (rawName.length >= 3 && unitPrice >= 0) candidates.push({
+      id: uid('line'), rawName, productId: match?.product?.id || '', qty, unitPrice,
+      detectedVolumeMl, state: match ? 'review' : 'new'
+    });
+  });
+  invoiceDraftLines = candidates.slice(0, 80);
+  renderInvoiceLines();
+  toast(invoiceDraftLines.length ? `Nalezeno ${invoiceDraftLines.length} kandidátních řádků. Zkontroluj je.` : 'Položky se nepodařilo bezpečně rozdělit. Přidej je ručně.');
+}
+
+async function recognizeCanvas(canvas, pageLabel = '') {
+  if (!window.Tesseract) throw new Error('OCR knihovna se nenačetla. Zkontroluj internetové připojení.');
+  const progress = document.getElementById('ocrProgress');
+  const status = document.getElementById('ocrStatus');
+  const result = await window.Tesseract.recognize(canvas, 'ces+eng', {
+    logger: message => {
+      if (message.status) status.textContent = `${pageLabel}${message.status}`;
+      if (typeof message.progress === 'number') progress.style.width = `${Math.round(message.progress * 100)}%`;
+    }
+  });
+  return result.data.text;
+}
+
+async function handleInvoiceFile(file) {
+  if (!file) return;
+  const progressWrap = document.getElementById('ocrProgressWrap');
+  const progress = document.getElementById('ocrProgress');
+  const status = document.getElementById('ocrStatus');
+  const preview = document.getElementById('invoicePreview');
+  progressWrap.classList.remove('hidden');
+  progress.style.width = '0%';
+  status.textContent = 'Načítám doklad…';
+  let text = '';
+  try {
+    if (file.type === 'application/pdf') {
+      if (!window.pdfjsLib) throw new Error('PDF knihovna se nenačetla.');
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+      const maxPages = Math.min(pdf.numPages, 4);
+      for (let pageNumber = 1; pageNumber <= maxPages; pageNumber++) {
+        status.textContent = `Připravuji stranu ${pageNumber}/${maxPages}…`;
+        const page = await pdf.getPage(pageNumber);
+        const viewport = page.getViewport({ scale: 2 });
+        preview.width = viewport.width;
+        preview.height = viewport.height;
+        preview.classList.remove('hidden');
+        await page.render({ canvasContext: preview.getContext('2d'), viewport }).promise;
+        text += `\n--- STRANA ${pageNumber} ---\n${await recognizeCanvas(preview, `Strana ${pageNumber}: `)}`;
+      }
+    } else {
+      const image = new Image();
+      image.src = URL.createObjectURL(file);
+      await image.decode();
+      const maxWidth = 1800;
+      const scale = Math.min(1, maxWidth / image.naturalWidth);
+      preview.width = Math.round(image.naturalWidth * scale);
+      preview.height = Math.round(image.naturalHeight * scale);
+      const ctx = preview.getContext('2d');
+      ctx.drawImage(image, 0, 0, preview.width, preview.height);
+      preview.classList.remove('hidden');
+      URL.revokeObjectURL(image.src);
+      text = await recognizeCanvas(preview);
+    }
+    document.getElementById('ocrText').value = text.trim();
+    status.textContent = 'OCR dokončeno. Teď zkontroluj text a najdi položky.';
+    progress.style.width = '100%';
+    toast('OCR dokončeno.');
+  } catch (error) {
+    console.error(error);
+    status.textContent = error.message;
+    toast(`OCR se nepodařilo: ${error.message}`, 5000);
+  }
+}
+
+function saveReceipt() {
+  syncInvoiceDraftFromDom();
+  const approved = invoiceDraftLines.filter(l => l.state === 'approved' && l.productId && l.qty > 0);
+  if (!approved.length) return toast('Nejdřív označ alespoň jednu položku jako schválenou.');
+  const blockers = [];
+  approved.forEach(line => {
+    const p = productById(line.productId);
+    if (!p) return blockers.push(line.rawName);
+    if (!p.volumeMl && line.detectedVolumeMl) p.volumeMl = line.detectedVolumeMl;
+    if (!p.volumeMl) blockers.push(p.name);
+  });
+  if (blockers.length) return toast(`Doplň objem balení: ${blockers.slice(0, 3).join(', ')}${blockers.length > 3 ? '…' : ''}`, 5000);
+  const invoiceId = uid('invoice');
+  const date = document.getElementById('invoiceDate').value || today();
+  approved.forEach(line => {
+    const p = productById(line.productId);
+    p.purchasePrice = num(line.unitPrice);
+    p.updatedAt = new Date().toISOString();
+    state.movements.push({
+      id: uid('mov'), type: 'receipt', productId: p.id, quantityMl: num(line.qty) * num(p.volumeMl),
+      date, unitPrice: num(line.unitPrice), invoiceId, note: line.rawName, createdAt: new Date().toISOString()
+    });
+  });
+  state.invoices.push({
+    id: invoiceId,
+    supplier: document.getElementById('supplierName').value.trim(),
+    number: document.getElementById('invoiceNumber').value.trim(),
+    date,
+    rawText: document.getElementById('ocrText').value,
+    lines: invoiceDraftLines.map(l => ({ ...l })),
+    createdAt: new Date().toISOString()
+  });
+  invoiceDraftLines = [];
+  document.getElementById('ocrText').value = '';
+  document.getElementById('invoiceFile').value = '';
+  renderInvoiceLines();
+  saveState();
+  toast(`Naskladněno ${approved.length} položek.`);
+}
+function syncInvoiceDraftFromDom() {
+  document.querySelectorAll('#invoiceLines .invoice-line').forEach(row => {
+    const i = Number(row.dataset.index);
+    invoiceDraftLines[i].rawName = row.querySelector('.line-raw').value;
+    invoiceDraftLines[i].productId = row.querySelector('.line-product').value;
+    invoiceDraftLines[i].qty = num(row.querySelector('.line-qty').value);
+    invoiceDraftLines[i].unitPrice = num(row.querySelector('.line-price').value);
+    invoiceDraftLines[i].state = row.querySelector('.line-state').value;
+  });
+}
+
+function ensureCurrentInventory() {
+  if (!state.currentInventory) state.currentInventory = { id: uid('inv'), date: today(), zoneId: 'shelf', tempC: 20, lines: [] };
+}
+function renderInventorySetup() {
+  ensureCurrentInventory();
+  const zoneSelect = document.getElementById('inventoryZone');
+  zoneSelect.innerHTML = zoneOptions(state.currentInventory.zoneId);
+  document.getElementById('inventoryTemp').value = state.currentInventory.tempC;
+  document.getElementById('inventoryDate').value = state.currentInventory.date || today();
+}
+function selectInventoryProduct(productId) {
+  currentInventoryProductId = productId;
+  const p = productById(productId);
+  if (!p) return;
+  const zone = zoneById(p.zoneId);
+  document.getElementById('currentProductBadge').textContent = p.barcode || 'EAN nedoplněn';
+  document.getElementById('inventoryMeasureEmpty').classList.add('hidden');
+  document.getElementById('inventoryMeasureForm').classList.remove('hidden');
+  document.getElementById('currentProductCard').innerHTML = `<div><div class="name">${esc(p.name)}</div><div class="sub">${esc(p.category)} · ${p.volumeMl ? `${decimal(p.volumeMl, 0)} ml` : 'objem chybí'} · ${esc(zone?.name || '')}</div></div>${statusBadge(productComplete(p) ? p.calibrationStatus : 'missing')}`;
+  document.getElementById('grossWeight').value = '';
+  document.getElementById('sealedCount').value = '0';
+  document.getElementById('itemTemp').value = zone?.tempC ?? state.currentInventory.tempC;
+  document.getElementById('inventoryNote').value = '';
+  updateMeasurementPreview();
+  closeModal('selectProductModal');
+  setTimeout(() => document.getElementById('grossWeight').focus(), 50);
+}
+function calculateMeasurement(p, grossWeight, sealedCount, itemTemp) {
+  const expectedMl = stockMl(p.id);
+  const hasBaseline = movementCount(p.id) > 0;
+  if (!p.volumeMl || p.tareG === null || !p.coefMlPerG) return { valid: false, expectedMl, hasBaseline, reason: 'Doplň objem balení, táru a koeficient ml/g.' };
+  const netG = Math.max(0, num(grossWeight) - num(p.tareG));
+  const refOpenMl = netG * num(p.coefMlPerG);
+  const deltaT = num(itemTemp) - num(p.refTempC);
+  const tempFactor = 1 + (num(p.tempCoeffPctPer10C) / 100) * (deltaT / 10);
+  const openMlAtTemp = Math.max(0, Math.min(num(p.volumeMl), refOpenMl * tempFactor));
+  const actualMl = num(sealedCount) * num(p.volumeMl) + openMlAtTemp;
+  const diffMl = actualMl - expectedMl;
+  const costDifference = diffMl * unitCostPerMl(p);
+  const saleDifference = diffMl * saleValuePerMl(p);
+  const tolerance = num(state.settings.toleranceMl);
+  const status = !hasBaseline ? 'baseline' : Math.abs(diffMl) <= tolerance ? 'ok' : 'issue';
+  return { valid: true, netG, refOpenMl, openMlAtTemp, actualMl, expectedMl, diffMl, costDifference, saleDifference, tempFactor, status, hasBaseline };
+}
+function updateMeasurementPreview() {
+  const p = productById(currentInventoryProductId);
+  const wrap = document.getElementById('measurementResult');
+  if (!p) { wrap.innerHTML = ''; return; }
+  const result = calculateMeasurement(p, document.getElementById('grossWeight').value, document.getElementById('sealedCount').value, document.getElementById('itemTemp').value);
+  if (!result.valid) {
+    wrap.innerHTML = `<div class="calc-block"><span>Nelze vypočítat</span><strong class="warning">Chybí kalibrace</strong></div><div class="calc-block"><span>Co doplnit</span><strong style="font-size:14px">${esc(result.reason)}</strong></div>`;
+    return;
+  }
+  wrap.innerHTML = `
+    <div class="calc-block"><span>Skutečný stav</span><strong>${mlText(result.actualMl)}</strong></div>
+    <div class="calc-block"><span>Očekávaný stav</span><strong>${mlText(result.expectedMl)}</strong></div>
+    <div class="calc-block"><span>Rozdíl</span><strong class="${result.diffMl < 0 ? 'negative' : result.diffMl > 0 ? 'positive' : ''}">${result.diffMl >= 0 ? '+' : ''}${mlText(result.diffMl)}</strong></div>
+    <div class="calc-block"><span>Otevřená lahev při ${decimal(document.getElementById('itemTemp').value, 1)} °C</span><strong>${mlText(result.openMlAtTemp)}</strong></div>
+    <div class="calc-block"><span>Prodejní dopad</span><strong class="${result.saleDifference < 0 ? 'negative' : 'positive'}">${result.saleDifference >= 0 ? '+' : ''}${money(result.saleDifference)}</strong></div>
+    <div class="calc-block"><span>Stav měření</span><strong>${result.status === 'baseline' ? 'Počáteční stav' : result.status === 'ok' ? 'Souhlasí' : 'Prověřit'}</strong></div>
+  `;
+}
+function saveInventoryLine(forceIssue = false) {
+  const p = productById(currentInventoryProductId);
+  if (!p) return toast('Vyber produkt.');
+  const gross = num(document.getElementById('grossWeight').value);
+  if (!gross) return toast('Zadej hmotnost lahve.');
+  const result = calculateMeasurement(p, gross, document.getElementById('sealedCount').value, document.getElementById('itemTemp').value);
+  if (!result.valid) return toast(result.reason, 5000);
+  const line = {
+    id: uid('invline'), productId: p.id, grossWeightG: gross, sealedCount: num(document.getElementById('sealedCount').value),
+    tempC: num(document.getElementById('itemTemp').value), note: document.getElementById('inventoryNote').value.trim(),
+    ...result, status: forceIssue ? 'issue' : result.status, measuredAt: new Date().toISOString()
+  };
+  const existingIndex = state.currentInventory.lines.findIndex(l => l.productId === p.id);
+  if (existingIndex >= 0) state.currentInventory.lines[existingIndex] = line; else state.currentInventory.lines.push(line);
+  saveState();
+  renderInventory();
+  toast(`${p.name}: stav uložen.`);
+}
+function renderInventoryLines() {
+  const lines = state.currentInventory.lines || [];
+  document.getElementById('inventoryProgressBadge').textContent = `${lines.length} položek`;
+  document.getElementById('inventoryLines').innerHTML = lines.length ? lines.map(l => {
+    const p = productById(l.productId);
+    return `<div class="item-row"><div><strong>${esc(p?.name || 'Produkt')}</strong><div class="meta">${mlText(l.actualMl)} · rozdíl ${l.diffMl >= 0 ? '+' : ''}${mlText(l.diffMl)} · ${decimal(l.tempC, 1)} °C</div></div><div>${statusBadge(l.status)}<button class="btn btn-small edit-inv-line" data-id="${l.productId}">Opravit</button></div></div>`;
+  }).join('') : '<div class="empty-state">Žádná změřená položka.</div>';
+  document.querySelectorAll('.edit-inv-line').forEach(btn => btn.addEventListener('click', () => {
+    const line = state.currentInventory.lines.find(l => l.productId === btn.dataset.id);
+    selectInventoryProduct(btn.dataset.id);
+    if (line) {
+      document.getElementById('grossWeight').value = line.grossWeightG;
+      document.getElementById('sealedCount').value = line.sealedCount;
+      document.getElementById('itemTemp').value = line.tempC;
+      document.getElementById('inventoryNote').value = line.note || '';
+      updateMeasurementPreview();
+    }
+  }));
+}
+function renderInventory() {
+  renderInventorySetup();
+  renderInventoryLines();
+}
+function closeInventory() {
+  const lines = state.currentInventory.lines || [];
+  if (!lines.length) return toast('Inventura zatím nemá žádnou položku.');
+  if (!confirm(`Uzavřít inventuru s ${lines.length} položkami a dorovnat evidenční sklad na skutečnost?`)) return;
+  lines.forEach(line => {
+    const currentExpected = stockMl(line.productId);
+    const adjustment = num(line.actualMl) - currentExpected;
+    if (Math.abs(adjustment) > 0.001) state.movements.push({
+      id: uid('mov'), type: 'adjustment', productId: line.productId, quantityMl: adjustment,
+      date: state.currentInventory.date, inventoryId: state.currentInventory.id, note: line.note || line.status, createdAt: new Date().toISOString()
+    });
+  });
+  state.inventorySessions.push({ ...state.currentInventory, closedAt: new Date().toISOString() });
+  const zoneId = state.currentInventory.zoneId;
+  const tempC = state.currentInventory.tempC;
+  state.currentInventory = { id: uid('inv'), date: today(), zoneId, tempC, lines: [] };
+  currentInventoryProductId = null;
+  document.getElementById('inventoryMeasureForm').classList.add('hidden');
+  document.getElementById('inventoryMeasureEmpty').classList.remove('hidden');
+  saveState();
+  toast('Inventura uzavřena a sklad dorovnán.');
+}
+
+function openSelectProduct(callback) {
+  selectProductCallback = callback;
+  document.getElementById('selectProductSearch').value = '';
+  renderSelectProductList();
+  document.getElementById('selectProductModal').classList.remove('hidden');
+}
+function renderSelectProductList() {
+  const q = document.getElementById('selectProductSearch').value.toLowerCase().trim();
+  const list = [...state.products].filter(p => !q || `${p.name} ${p.barcode}`.toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name, 'cs')).slice(0, 100);
+  document.getElementById('selectProductList').innerHTML = list.map(p => `<button class="select-item" data-id="${p.id}"><strong>${esc(p.name)}</strong><small>${esc(p.barcode || 'EAN nedoplněn')} · ${esc(zoneById(p.zoneId)?.name || '')}</small></button>`).join('');
+  document.querySelectorAll('.select-item').forEach(btn => btn.addEventListener('click', () => {
+    const cb = selectProductCallback;
+    closeModal('selectProductModal');
+    if (cb) cb(btn.dataset.id);
+  }));
+}
+
+async function openScanner(callback) {
+  scannerCallback = callback;
+  document.getElementById('scannerModal').classList.remove('hidden');
+  document.getElementById('manualBarcode').value = '';
+  if (!window.Html5Qrcode) {
+    document.getElementById('scannerReader').innerHTML = '<div class="empty-state">Kamera skeneru se nenačetla. Použij ruční EAN.</div>';
+    return;
+  }
+  try {
+    scanner = new window.Html5Qrcode('scannerReader');
+    const formats = window.Html5QrcodeSupportedFormats ? [
+      Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.CODE_128
+    ] : undefined;
+    await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 280, height: 150 }, formatsToSupport: formats }, decoded => handleBarcode(decoded), () => {});
+  } catch (error) {
+    console.warn(error);
+    document.getElementById('scannerReader').innerHTML = '<div class="empty-state">Kamera není dostupná. Na iPhonu otevři aplikaci přes HTTPS a povol kameru, nebo zadej EAN ručně.</div>';
+  }
+}
+async function closeScanner() {
+  try { if (scanner) await scanner.stop(); } catch (_) {}
+  try { if (scanner) await scanner.clear(); } catch (_) {}
+  scanner = null;
+  document.getElementById('scannerModal').classList.add('hidden');
+  document.getElementById('scannerReader').innerHTML = '';
+}
+async function handleBarcode(code) {
+  const barcode = String(code || '').trim();
+  if (!barcode) return;
+  const p = state.products.find(x => x.barcode === barcode);
+  const cb = scannerCallback;
+  await closeScanner();
+  if (p) {
+    if (cb) cb(p.id);
+  } else {
+    toast(`EAN ${barcode} zatím není spárovaný. Založ nebo uprav produkt.`, 5000);
+    openProductModal(null, { barcode });
+  }
+}
+
+function renderSaleProductSelect() {
+  const select = document.getElementById('saleProduct');
+  const current = select.value;
+  select.innerHTML = productOptions(current);
+}
+function updateSaleFormFromProduct() {
+  const p = productById(document.getElementById('saleProduct').value);
+  if (!p) return updateSalePreview();
+  document.getElementById('saleShotMl').value = p.shotMl || 40;
+  document.getElementById('saleUnitPrice').value = p.salePrice || 0;
+  updateSalePreview();
+}
+function updateSalePreview() {
+  const p = productById(document.getElementById('saleProduct').value);
+  const portions = num(document.getElementById('salePortions').value);
+  const shot = num(document.getElementById('saleShotMl').value);
+  const price = num(document.getElementById('saleUnitPrice').value);
+  const volume = portions * shot;
+  const revenue = portions * price;
+  const cost = p ? volume * unitCostPerMl(p) : 0;
+  const profit = revenue - cost;
+  document.getElementById('salePreview').innerHTML = `
+    <div class="calc-block"><span>Výdej ze skladu</span><strong>${mlText(volume)}</strong></div>
+    <div class="calc-block"><span>Tržba</span><strong>${money(revenue)}</strong></div>
+    <div class="calc-block"><span>Hrubý zisk</span><strong class="${profit >= 0 ? 'positive' : 'negative'}">${money(profit)}</strong></div>`;
+}
+function saveSale(event) {
+  event.preventDefault();
+  const p = productById(document.getElementById('saleProduct').value);
+  if (!p) return toast('Vyber produkt.');
+  const portions = num(document.getElementById('salePortions').value);
+  const shotMl = num(document.getElementById('saleShotMl').value);
+  const unitPrice = num(document.getElementById('saleUnitPrice').value);
+  const quantityMl = portions * shotMl;
+  if (!quantityMl) return toast('Zadej prodané množství.');
+  const revenue = portions * unitPrice;
+  const cost = quantityMl * unitCostPerMl(p);
+  state.movements.push({
+    id: uid('mov'), type: 'sale', productId: p.id, quantityMl: -quantityMl, portions, shotMl, unitPrice,
+    revenue, cost, date: document.getElementById('saleDate').value || today(), createdAt: new Date().toISOString()
+  });
+  saveState();
+  document.getElementById('salePortions').value = '1';
+  updateSalePreview();
+  toast(`Prodej ${p.name} zapsán.`);
+}
+function renderProfit() {
+  const from = document.getElementById('periodFrom').value || monthStart();
+  const to = document.getElementById('periodTo').value || today();
+  const sales = state.movements.filter(m => m.type === 'sale' && m.date >= from && m.date <= to).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const revenue = sales.reduce((s, m) => s + num(m.revenue), 0);
+  const cost = sales.reduce((s, m) => s + num(m.cost), 0);
+  const profit = revenue - cost;
+  const margin = revenue ? (profit / revenue) * 100 : 0;
+  document.getElementById('profitSummary').innerHTML = `
+    <div class="profit-box"><span>Tržba</span><strong>${money(revenue)}</strong></div>
+    <div class="profit-box"><span>Náklady</span><strong>${money(cost)}</strong></div>
+    <div class="profit-box"><span>Hrubý zisk</span><strong class="${profit >= 0 ? 'positive' : 'negative'}">${money(profit)} · ${decimal(margin, 1)} %</strong></div>`;
+  document.getElementById('salesList').innerHTML = sales.length ? sales.slice(0, 100).map(m => {
+    const p = productById(m.productId);
+    return `<div class="item-row"><div><strong>${esc(p?.name || 'Produkt')}</strong><div class="meta">${esc(m.date)} · ${decimal(m.portions, 2)} × ${decimal(m.shotMl, 0)} ml</div></div><div class="money">${money(m.revenue - m.cost)}</div></div>`;
+  }).join('') : '<div class="empty-state">V tomto období nejsou zapsané prodeje.</div>';
+}
+
+function renderSettings() {
+  document.getElementById('toleranceMl').value = state.settings.toleranceMl;
+  document.getElementById('defaultTempCoeff').value = state.settings.defaultTempCoeffPctPer10C;
+  const wrap = document.getElementById('zonesEditor');
+  wrap.innerHTML = state.zones.map((z, i) => `<div class="item-row zone-row" data-index="${i}"><div style="display:grid;grid-template-columns:1fr 120px;gap:8px;flex:1"><input class="zone-name" value="${esc(z.name)}"><input class="zone-temp" type="number" step="0.1" value="${z.tempC}"></div><button class="icon-btn remove-zone">×</button></div>`).join('');
+  wrap.querySelectorAll('.zone-row').forEach(row => {
+    const i = Number(row.dataset.index);
+    row.querySelector('.zone-name').addEventListener('change', e => { state.zones[i].name = e.target.value.trim() || state.zones[i].name; saveState(); });
+    row.querySelector('.zone-temp').addEventListener('change', e => { state.zones[i].tempC = num(e.target.value); saveState(); });
+    row.querySelector('.remove-zone').addEventListener('click', () => {
+      const zone = state.zones[i];
+      if (state.zones.length <= 1) return toast('Musí zůstat alespoň jedna zóna.');
+      if (state.products.some(p => p.zoneId === zone.id)) return toast('Zóna je přiřazená produktům. Nejdřív je přesuň.');
+      state.zones.splice(i, 1); saveState();
+    });
+  });
+}
+
+function renderAll() {
+  renderDashboard();
+  renderProducts();
+  renderInventory();
+  renderSaleProductSelect();
+  renderProfit();
+  renderSettings();
+  renderInvoiceLines();
+}
+
+function setupEvents() {
+  document.querySelectorAll('.nav-btn').forEach(btn => btn.addEventListener('click', () => switchView(btn.dataset.view)));
+  document.querySelectorAll('[data-close-modal]').forEach(btn => btn.addEventListener('click', () => closeModal(btn.dataset.closeModal)));
+  document.querySelectorAll('.modal').forEach(modal => modal.addEventListener('click', e => { if (e.target === modal && modal.id !== 'scannerModal') closeModal(modal.id); }));
+
+  document.getElementById('newProductBtn').addEventListener('click', () => openProductModal());
+  document.getElementById('productSearch').addEventListener('input', renderProducts);
+  document.getElementById('onlyIncomplete').addEventListener('change', renderProducts);
+  ['productVolume', 'productTare', 'productFullWeight'].forEach(id => document.getElementById(id).addEventListener('input', updateCoefHelper));
+  document.getElementById('useAutoCoefBtn').addEventListener('click', () => {
+    const coef = updateCoefHelper();
+    if (!coef) return toast('Nejdřív doplň objem, táru a plnou hmotnost.');
+    document.getElementById('productCoef').value = coef.toFixed(6);
+    document.getElementById('productCalibration').value = 'provisional';
+  });
+  document.getElementById('productForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const id = document.getElementById('productId').value || uid('p');
+    const old = productById(id);
+    const p = {
+      ...(old || {}), id,
+      name: document.getElementById('productName').value.trim(),
+      category: document.getElementById('productCategory').value.trim(),
+      barcode: document.getElementById('productBarcode').value.trim(),
+      volumeMl: num(document.getElementById('productVolume').value) || null,
+      abv: document.getElementById('productAbv').value === '' ? null : num(document.getElementById('productAbv').value),
+      shotMl: num(document.getElementById('productShot').value) || 40,
+      salePrice: num(document.getElementById('productSalePrice').value),
+      purchasePrice: num(document.getElementById('productPurchasePrice').value),
+      tareG: document.getElementById('productTare').value === '' ? null : num(document.getElementById('productTare').value),
+      fullWeightG: document.getElementById('productFullWeight').value === '' ? null : num(document.getElementById('productFullWeight').value),
+      coefMlPerG: document.getElementById('productCoef').value === '' ? null : num(document.getElementById('productCoef').value),
+      refTempC: num(document.getElementById('productRefTemp').value),
+      tempCoeffPctPer10C: num(document.getElementById('productTempCoeff').value),
+      zoneId: document.getElementById('productZone').value,
+      calibrationStatus: document.getElementById('productCalibration').value,
+      unitMode: old?.unitMode || 'liquid', aliases: old?.aliases || [], createdAt: old?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString()
+    };
+    const duplicate = state.products.find(x => x.barcode && p.barcode && x.barcode === p.barcode && x.id !== p.id);
+    if (duplicate) return toast(`EAN už používá ${duplicate.name}.`, 5000);
+    if (old) state.products[state.products.findIndex(x => x.id === id)] = p; else state.products.push(p);
+    closeModal('productModal'); saveState(); toast('Produkt uložen.');
+  });
+
+  document.getElementById('invoiceFile').addEventListener('change', e => handleInvoiceFile(e.target.files[0]));
+  document.getElementById('parseInvoiceBtn').addEventListener('click', parseInvoiceText);
+  document.getElementById('clearOcrBtn').addEventListener('click', () => { document.getElementById('ocrText').value = ''; invoiceDraftLines = []; renderInvoiceLines(); });
+  document.getElementById('addInvoiceLineBtn').addEventListener('click', () => { invoiceDraftLines.push({ id: uid('line'), rawName: '', productId: '', qty: 1, unitPrice: 0, state: 'new' }); renderInvoiceLines(); });
+  document.getElementById('saveReceiptBtn').addEventListener('click', saveReceipt);
+
+  document.getElementById('inventoryZone').addEventListener('change', e => {
+    state.currentInventory.zoneId = e.target.value;
+    state.currentInventory.tempC = zoneById(e.target.value).tempC;
+    document.getElementById('inventoryTemp').value = state.currentInventory.tempC;
+    saveState(false);
+  });
+  document.getElementById('inventoryTemp').addEventListener('change', e => { state.currentInventory.tempC = num(e.target.value); saveState(false); });
+  document.getElementById('inventoryDate').addEventListener('change', e => { state.currentInventory.date = e.target.value; saveState(false); });
+  document.getElementById('inventorySelectBtn').addEventListener('click', () => openSelectProduct(selectInventoryProduct));
+  document.getElementById('inventoryScanBtn').addEventListener('click', () => openScanner(selectInventoryProduct));
+  document.getElementById('quickScanBtn').addEventListener('click', () => openScanner(id => { switchView('inventory'); selectInventoryProduct(id); }));
+  ['grossWeight', 'sealedCount', 'itemTemp'].forEach(id => document.getElementById(id).addEventListener('input', updateMeasurementPreview));
+  document.getElementById('inventoryMeasureForm').addEventListener('submit', e => { e.preventDefault(); saveInventoryLine(false); });
+  document.getElementById('markIssueBtn').addEventListener('click', () => saveInventoryLine(true));
+  document.getElementById('closeInventoryBtn').addEventListener('click', closeInventory);
+
+  document.getElementById('selectProductSearch').addEventListener('input', renderSelectProductList);
+  document.getElementById('closeScannerBtn').addEventListener('click', closeScanner);
+  document.getElementById('manualBarcodeBtn').addEventListener('click', () => handleBarcode(document.getElementById('manualBarcode').value));
+  document.getElementById('manualBarcode').addEventListener('keydown', e => { if (e.key === 'Enter') handleBarcode(e.target.value); });
+
+  document.getElementById('saleProduct').addEventListener('change', updateSaleFormFromProduct);
+  ['salePortions', 'saleShotMl', 'saleUnitPrice'].forEach(id => document.getElementById(id).addEventListener('input', updateSalePreview));
+  document.getElementById('saleForm').addEventListener('submit', saveSale);
+  ['periodFrom', 'periodTo'].forEach(id => document.getElementById(id).addEventListener('change', renderProfit));
+
+  document.getElementById('toleranceMl').addEventListener('change', e => { state.settings.toleranceMl = num(e.target.value); saveState(); });
+  document.getElementById('defaultTempCoeff').addEventListener('change', e => { state.settings.defaultTempCoeffPctPer10C = num(e.target.value); saveState(); });
+  document.getElementById('addZoneBtn').addEventListener('click', () => { state.zones.push({ id: uid('zone'), name: 'Nová zóna', tempC: 20 }); saveState(); });
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = `stav-zaloha-${today()}.json`; a.click(); URL.revokeObjectURL(a.href);
+  });
+  document.getElementById('importFile').addEventListener('change', async e => {
+    try {
+      const imported = JSON.parse(await e.target.files[0].text());
+      if (!imported.products || !imported.movements) throw new Error('Soubor nemá očekávanou strukturu.');
+      state = imported; saveState(); toast('Záloha importována.');
+    } catch (error) { toast(`Import selhal: ${error.message}`, 5000); }
+    e.target.value = '';
+  });
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    if (!confirm('Opravdu smazat všechna lokální data aplikace?')) return;
+    state = defaultState(); localStorage.removeItem(STORAGE_KEY); saveState(); toast('Lokální data byla smazána.');
+  });
+}
+
+function init() {
+  ensureCurrentInventory();
+  document.getElementById('invoiceDate').value = today();
+  document.getElementById('saleDate').value = today();
+  document.getElementById('periodFrom').value = monthStart();
+  document.getElementById('periodTo').value = today();
+  setupEvents();
+  renderAll();
+  updateSalePreview();
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js').catch(console.warn);
+}
+
+document.addEventListener('DOMContentLoaded', init);

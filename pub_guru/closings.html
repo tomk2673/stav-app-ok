@@ -7,16 +7,19 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>PUB GURU | Uzávěrky</title>
   <link rel="stylesheet" href="styles.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="app-config.js"></script>
+  <script defer src="backend.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script defer src="closings.js"></script>
   <style>
-    .closing-shell{max-width:1100px;margin:0 auto;padding:20px 16px 90px}.closing-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}.closing-head a{color:var(--text);text-decoration:none}.closing-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}.closing-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.closing-kpi{padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--panel-2)}.closing-kpi span{display:block;color:var(--muted);font-size:11px}.closing-kpi strong{font-size:22px}.closing-preview{width:100%;max-height:360px;object-fit:contain;background:#fff;border-radius:12px;margin-top:12px}.closing-list{display:grid;gap:10px}.closing-row{padding:13px;border:1px solid var(--line);border-radius:14px;background:var(--panel-2);display:flex;justify-content:space-between;gap:12px;align-items:center}.closing-row small{display:block;color:var(--muted);margin-top:3px}.audit-row{padding:10px 0;border-bottom:1px solid var(--line);font-size:12px}.audit-row:last-child{border-bottom:0}.audit-row time{color:var(--muted)}.status-finalized{color:var(--ok)}.status-review{color:var(--warn)}@media(max-width:800px){.closing-grid{grid-template-columns:1fr}.closing-kpis{grid-template-columns:1fr}.closing-head{align-items:flex-start}.closing-head .button-row{margin-top:0}}
+    .closing-shell{max-width:1100px;margin:0 auto;padding:20px 16px 90px}.closing-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}.closing-head a{color:var(--text);text-decoration:none}.closing-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}.closing-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.closing-kpi{padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--panel-2)}.closing-kpi span{display:block;color:var(--muted);font-size:11px}.closing-kpi strong{font-size:22px}.closing-preview{width:100%;max-height:360px;object-fit:contain;background:#fff;border-radius:12px;margin-top:12px}.closing-list{display:grid;gap:10px}.closing-row{padding:13px;border:1px solid var(--line);border-radius:14px;background:var(--panel-2);display:flex;justify-content:space-between;gap:12px;align-items:center}.closing-row small{display:block;color:var(--muted);margin-top:3px}.audit-row{padding:10px 0;border-bottom:1px solid var(--line);font-size:12px}.audit-row:last-child{border-bottom:0}.audit-row time{color:var(--muted)}.status-finalized{color:var(--ok)}.status-review{color:var(--warn)}.backend-pill{font-size:11px;color:var(--muted);margin-top:4px}@media(max-width:800px){.closing-grid{grid-template-columns:1fr}.closing-kpis{grid-template-columns:1fr}.closing-head{align-items:flex-start}.closing-head .button-row{margin-top:0}}
   </style>
 </head>
 <body>
   <main class="closing-shell">
     <header class="closing-head">
-      <div><a href="index.html">← PUB GURU</a><h1 style="margin-top:10px">Denní uzávěrka</h1><p>Fotka → OCR → kontrola → neměnný záznam.</p></div>
+      <div><a href="index.html">← PUB GURU</a><h1 style="margin-top:10px">Denní uzávěrka</h1><p>Fotka → OCR → kontrola → neměnný záznam.</p><div id="backendContext" class="backend-pill">Připojuji provozovnu…</div></div>
       <span class="badge">audit zapnutý</span>
     </header>
 
@@ -26,7 +29,7 @@
         <label class="upload-zone" for="closingFile">
           <strong>Vyfoť nebo vyber uzávěrku z Fotek</strong>
           <span>JPG/PNG. Originál se nepřepisuje, ukládáme otisk souboru a OCR text.</span>
-          <input id="closingFile" type="file" accept="image/*" />
+          <input id="closingFile" type="file" accept="image/*" capture="environment" />
         </label>
         <div id="ocrProgressWrap" class="progress-wrap hidden"><div class="progress"><span id="ocrProgress"></span></div><small id="ocrStatus">Připravuji OCR…</small></div>
         <canvas id="closingPreview" class="closing-preview hidden"></canvas>

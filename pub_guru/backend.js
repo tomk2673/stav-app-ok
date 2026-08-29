@@ -101,4 +101,12 @@
   }
 
   window.PubGuruBackend = Object.freeze({ client, context, currentUser, signUp, signIn, signOut, loadContext, createWorkspace, clearContext });
+
+  if (!document.querySelector('script[data-pub-guru-roles]')) {
+    const roles = document.createElement('script');
+    roles.src = 'roles.js';
+    roles.defer = true;
+    roles.dataset.pubGuruRoles = '1';
+    document.head.appendChild(roles);
+  }
 })();

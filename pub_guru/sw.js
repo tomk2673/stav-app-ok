@@ -1,7 +1,8 @@
-const CACHE = 'pub-guru-shell-v3';
+const CACHE = 'pub-guru-shell-v4';
 const APP_SHELL = [
   './', './start.html', './index.html', './closings.html', './styles.css', './app.js', './closings.js',
-  './backend.js', './invoice-backend.js', './app-config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'
+  './backend.js', './roles.js', './data-sync.js', './operations-backend.js', './invoice-backend.js',
+  './app-config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'
 ];
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(c => c.addAll(APP_SHELL))));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))));

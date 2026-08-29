@@ -114,5 +114,6 @@
   loadLayer('roles.js', 'pub-guru-roles');
   if (!location.pathname.endsWith('/start.html') && !location.pathname.endsWith('start.html')) {
     loadLayer('data-sync.js', 'pub-guru-data-sync');
+    loadLayer('operations-backend.js', 'pub-guru-operations');
   }
 })();

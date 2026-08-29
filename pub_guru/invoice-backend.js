@@ -8,6 +8,7 @@
 
   const backend = () => window.PubGuruBackend;
   const client = () => backend().client;
+  const isLead = () => ['owner', 'manager'].includes(ctx?.role);
   const n = v => {
     const x = Number(String(v ?? '').replace(/\s/g, '').replace(',', '.'));
     return Number.isFinite(x) ? x : 0;
@@ -60,16 +61,27 @@
     };
   }
 
-  async function ensureProduct(localId, fallbackName) {
-    const payload = productPayload(localId, fallbackName);
-    let { data, error } = await client().from('products')
+  async function findProduct(localId) {
+    if (!localId) return null;
+    const { data, error } = await client().from('products')
       .select('id,name,current_purchase_price,volume_ml')
       .eq('organization_id', ctx.organization.id).eq('client_key', localId).maybeSingle();
     if (error) throw error;
-    if (data) {
-      const update = await client().from('products').update(payload).eq('id', data.id);
+    return data || null;
+  }
+
+  async function ensureProduct(localId, fallbackName) {
+    const existing = await findProduct(localId);
+    if (!isLead()) {
+      if (!existing) throw new Error('Produkt ještě není synchronizovaný. Musí ho nejdřív potvrdit vedoucí nebo majitel.');
+      return existing;
+    }
+
+    const payload = productPayload(localId, fallbackName);
+    if (existing) {
+      const update = await client().from('products').update(payload).eq('id', existing.id);
       if (update.error) throw update.error;
-      return { ...data, name: payload.name, current_purchase_price: payload.current_purchase_price, volume_ml: payload.volume_ml };
+      return { ...existing, name: payload.name, current_purchase_price: payload.current_purchase_price, volume_ml: payload.volume_ml };
     }
     const inserted = await client().from('products').insert(payload)
       .select('id,name,current_purchase_price,volume_ml').single();
@@ -107,7 +119,62 @@
     return data || null;
   }
 
+  async function persistInvoiceCapture(snapshot) {
+    const rows = snapshot.rows.filter(r => r.rawName && r.state !== 'skipped');
+    if (!rows.length && !snapshot.rawText.trim()) throw new Error('Doklad nemá žádná data ke kontrole.');
+    if (snapshot.fingerprint && await duplicateInvoice(snapshot.fingerprint)) throw new Error('Tato faktura už je v PUB GURU.');
+
+    const total = rows.reduce((s, r) => s + r.qty * r.unitPrice, 0);
+    const { data: invoice, error: invoiceError } = await client().from('invoices').insert({
+      organization_id: ctx.organization.id,
+      venue_id: ctx.venue.id,
+      supplier_name: snapshot.supplier,
+      invoice_number: snapshot.number,
+      issue_date: snapshot.date,
+      total_amount: total || null,
+      source_fingerprint: snapshot.fingerprint,
+      source_file_name: snapshot.fileName,
+      raw_extraction: { raw_text: snapshot.rawText, source: 'browser_ocr_v1', captured_role: ctx.role },
+      extraction_provider: 'tesseract-browser',
+      status: 'review',
+      created_by: ctx.user.id
+    }).select('id').single();
+    if (invoiceError) throw invoiceError;
+
+    for (const row of rows) {
+      const product = row.localProductId ? await findProduct(row.localProductId) : null;
+      const lineInsert = await client().from('invoice_lines').insert({
+        invoice_id: invoice.id,
+        organization_id: ctx.organization.id,
+        raw_name: row.rawName,
+        product_id: product?.id || null,
+        quantity: row.qty || null,
+        unit: 'ks',
+        unit_price: row.unitPrice || null,
+        line_total: row.qty && row.unitPrice ? row.qty * row.unitPrice : null,
+        match_method: product ? 'staff_suggested_mapping' : null,
+        match_confidence: product ? 0.8 : null,
+        status: 'review',
+        original_values: { raw_name: row.rawName, local_product_id: row.localProductId || null, staff_state: row.state }
+      });
+      if (lineInsert.error) throw lineInsert.error;
+    }
+
+    const audit = await client().from('audit_events').insert({
+      organization_id: ctx.organization.id,
+      venue_id: ctx.venue.id,
+      actor_user_id: ctx.user.id,
+      event_type: 'invoice.captured_for_review',
+      entity_type: 'invoice',
+      entity_id: invoice.id,
+      after_data: { supplier: snapshot.supplier, number: snapshot.number, date: snapshot.date, captured_lines: rows.length }
+    });
+    if (audit.error) throw audit.error;
+    window.toast?.('Faktura odeslána vedoucímu ke kontrole. Sklad ani ceny se nezměnily.', 6000);
+  }
+
   async function persistInvoice(snapshot) {
+    if (!isLead()) return persistInvoiceCapture(snapshot);
     const approved = snapshot.rows.filter(r => r.state === 'approved' && r.localProductId && r.qty > 0);
     if (!approved.length) return;
     if (snapshot.fingerprint && await duplicateInvoice(snapshot.fingerprint)) {
@@ -236,8 +303,17 @@
         } catch (error) { console.error('Invoice fingerprint failed', error); }
       });
 
-      document.getElementById('saveReceiptBtn')?.addEventListener('click', () => {
+      document.getElementById('saveReceiptBtn')?.addEventListener('click', event => {
         const snapshot = snapshotInvoice();
+        if (!isLead()) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          persistInvoiceCapture(snapshot).catch(error => {
+            console.error(error);
+            window.toast?.(`Odeslání faktury selhalo: ${error.message}`, 6500);
+          });
+          return;
+        }
         setTimeout(async () => {
           try { await persistInvoice(snapshot); }
           catch (error) { console.error(error); window.toast?.(`Databázové uložení faktury selhalo: ${error.message}`, 6500); }

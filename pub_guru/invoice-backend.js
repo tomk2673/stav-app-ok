@@ -163,9 +163,8 @@
     const { data: session, error: sessionError } = await client().from('inventory_sessions').insert({
       organization_id: ctx.organization.id,
       venue_id: ctx.venue.id,
-      status: 'closed',
+      status: 'open',
       started_at: inv.startedAt || new Date(`${inv.date || new Date().toISOString().slice(0,10)}T00:00:00`).toISOString(),
-      closed_at: new Date().toISOString(),
       created_by: ctx.user.id
     }).select('id').single();
     if (sessionError) throw sessionError;
@@ -199,6 +198,12 @@
       if (insert.error) throw insert.error;
     }
 
+    const finalizedAt = new Date().toISOString();
+    const closeSession = await client().from('inventory_sessions')
+      .update({ status: 'closed', closed_at: finalizedAt })
+      .eq('id', session.id).eq('status', 'open');
+    if (closeSession.error) throw closeSession.error;
+
     const audit = await client().from('audit_events').insert({
       organization_id: ctx.organization.id,
       venue_id: ctx.venue.id,
@@ -211,7 +216,7 @@
     if (audit.error) throw audit.error;
 
     state.inventorySessions = Array.isArray(state.inventorySessions) ? state.inventorySessions : [];
-    state.inventorySessions.push({ ...inv, backendId: session.id, closedAt: new Date().toISOString(), adjustmentApplied: false });
+    state.inventorySessions.push({ ...inv, backendId: session.id, closedAt: finalizedAt, adjustmentApplied: false });
     state.currentInventory = { id: `inv_${Date.now().toString(36)}`, date: new Date().toISOString().slice(0,10), zoneId: inv.zoneId || 'shelf', tempC: inv.tempC ?? 20, lines: [] };
     saveLocalState(state);
     window.toast?.(`Inventura uzavřena: ${lines.length} položek. Sklad nebyl automaticky přepsán.`, 5500);

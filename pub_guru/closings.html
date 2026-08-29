@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0d10" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>PUB GURU | Uzávěrky</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script defer src="closings.js"></script>
+  <style>
+    .closing-shell{max-width:1100px;margin:0 auto;padding:20px 16px 90px}.closing-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}.closing-head a{color:var(--text);text-decoration:none}.closing-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}.closing-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.closing-kpi{padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--panel-2)}.closing-kpi span{display:block;color:var(--muted);font-size:11px}.closing-kpi strong{font-size:22px}.closing-preview{width:100%;max-height:360px;object-fit:contain;background:#fff;border-radius:12px;margin-top:12px}.closing-list{display:grid;gap:10px}.closing-row{padding:13px;border:1px solid var(--line);border-radius:14px;background:var(--panel-2);display:flex;justify-content:space-between;gap:12px;align-items:center}.closing-row small{display:block;color:var(--muted);margin-top:3px}.audit-row{padding:10px 0;border-bottom:1px solid var(--line);font-size:12px}.audit-row:last-child{border-bottom:0}.audit-row time{color:var(--muted)}.status-finalized{color:var(--ok)}.status-review{color:var(--warn)}@media(max-width:800px){.closing-grid{grid-template-columns:1fr}.closing-kpis{grid-template-columns:1fr}.closing-head{align-items:flex-start}.closing-head .button-row{margin-top:0}}
+  </style>
+</head>
+<body>
+  <main class="closing-shell">
+    <header class="closing-head">
+      <div><a href="index.html">← PUB GURU</a><h1 style="margin-top:10px">Denní uzávěrka</h1><p>Fotka → OCR → kontrola → neměnný záznam.</p></div>
+      <span class="badge">audit zapnutý</span>
+    </header>
+
+    <div class="closing-grid">
+      <section class="panel">
+        <div class="panel-head"><h2>1. Načíst doklad</h2><span class="badge muted">foto</span></div>
+        <label class="upload-zone" for="closingFile">
+          <strong>Vyfoť nebo vyber uzávěrku z Fotek</strong>
+          <span>JPG/PNG. Originál se nepřepisuje, ukládáme otisk souboru a OCR text.</span>
+          <input id="closingFile" type="file" accept="image/*" />
+        </label>
+        <div id="ocrProgressWrap" class="progress-wrap hidden"><div class="progress"><span id="ocrProgress"></span></div><small id="ocrStatus">Připravuji OCR…</small></div>
+        <canvas id="closingPreview" class="closing-preview hidden"></canvas>
+        <label style="margin-top:12px">Rozpoznaný text<textarea id="closingOcrText" placeholder="OCR text…"></textarea></label>
+        <div class="button-row wrap"><button id="parseClosingBtn" class="btn btn-primary">Rozpoznat hodnoty</button><button id="clearClosingBtn" class="btn btn-ghost">Vyčistit</button></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>2. Zkontrolovat</h2><span id="duplicateBadge" class="badge muted">nový doklad</span></div>
+        <div class="form-grid">
+          <label>Datum provozu<input id="businessDate" type="date" /></label>
+          <label>Typ<select id="sourceType"><option value="terminal">Platební terminál</option><option value="pos">Pokladna</option><option value="other">Jiné</option></select></label>
+          <label>Hotovost Kč<input id="cashAmount" inputmode="decimal" type="number" step="0.01" /></label>
+          <label>Karty Kč<input id="cardAmount" inputmode="decimal" type="number" step="0.01" /></label>
+          <label>Celkem Kč<input id="totalAmount" inputmode="decimal" type="number" step="0.01" /></label>
+          <label>Počet transakcí<input id="transactionCount" inputmode="numeric" type="number" step="1" min="0" /></label>
+          <label>Storna / refundace Kč<input id="refundsAmount" inputmode="decimal" type="number" step="0.01" /></label>
+          <label>Důvod ruční opravy<input id="correctionReason" placeholder="Povinné, pokud něco změníš po OCR" /></label>
+        </div>
+        <div class="closing-kpis" style="margin-top:14px">
+          <div class="closing-kpi"><span>Hotovost + karty</span><strong id="sumChannels">0 Kč</strong></div>
+          <div class="closing-kpi"><span>Rozdíl proti celkem</span><strong id="closingDifference">0 Kč</strong></div>
+          <div class="closing-kpi"><span>Kontrola</span><strong id="closingCheck">čekám</strong></div>
+        </div>
+        <div class="button-row wrap"><button id="saveClosingDraftBtn" class="btn">Uložit koncept</button><button id="finalizeClosingBtn" class="btn btn-primary">Uzavřít a zamknout</button></div>
+        <p class="hint">Po uzavření se původní hodnoty nemění. Oprava vznikne jako samostatný auditní záznam.</p>
+      </section>
+    </div>
+
+    <div class="closing-grid" style="margin-top:16px">
+      <section class="panel"><div class="panel-head"><h2>Poslední uzávěrky</h2><span id="closingCount" class="badge muted">0</span></div><div id="closingsList" class="closing-list"></div></section>
+      <section class="panel"><div class="panel-head"><h2>Audit</h2><span class="badge muted">bez mazání</span></div><div id="auditList"></div></section>
+    </div>
+  </main>
+  <div id="toast" class="toast hidden"></div>
+</body>
+</html>

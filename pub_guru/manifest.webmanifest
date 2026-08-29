@@ -1,7 +1,7 @@
 {
   "name": "PUB GURU",
   "short_name": "PUB GURU",
-  "start_url": "./index.html",
+  "start_url": "./start.html",
   "display": "standalone",
   "background_color": "#0b0d10",
   "theme_color": "#0b0d10",

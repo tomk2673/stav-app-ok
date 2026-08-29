@@ -102,11 +102,17 @@
 
   window.PubGuruBackend = Object.freeze({ client, context, currentUser, signUp, signIn, signOut, loadContext, createWorkspace, clearContext });
 
-  if (!document.querySelector('script[data-pub-guru-roles]')) {
-    const roles = document.createElement('script');
-    roles.src = 'roles.js';
-    roles.defer = true;
-    roles.dataset.pubGuruRoles = '1';
-    document.head.appendChild(roles);
+  const loadLayer = (src, dataKey) => {
+    if (document.querySelector(`script[data-${dataKey}]`)) return;
+    const script = document.createElement('script');
+    script.src = src;
+    script.defer = true;
+    script.setAttribute(`data-${dataKey}`, '1');
+    document.head.appendChild(script);
+  };
+
+  loadLayer('roles.js', 'pub-guru-roles');
+  if (!location.pathname.endsWith('/start.html') && !location.pathname.endsWith('start.html')) {
+    loadLayer('data-sync.js', 'pub-guru-data-sync');
   }
 })();

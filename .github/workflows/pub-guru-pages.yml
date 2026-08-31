@@ -1,0 +1,55 @@
+name: PUB GURU V1
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: JavaScript syntax check
+        run: |
+          set -e
+          for f in pub_guru/*.js; do
+            echo "checking $f"
+            node --check "$f"
+          done
+      - name: Required V1 files
+        run: |
+          test -f pub_guru/start.html
+          test -f pub_guru/index.html
+          test -f pub_guru/invoice-review.html
+          test -f pub_guru/closings.html
+          test -f pub_guru/app-config.js
+          test -f pub_guru/backend.js
+
+  deploy:
+    needs: test
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./pub_guru
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

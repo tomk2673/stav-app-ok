@@ -78,15 +78,13 @@
   }
 
   async function seedProductsIfNeeded(client, ctx, local) {
-    const { data: existing, error } = await client.from('products')
-      .select('id').eq('organization_id', ctx.organization.id).limit(1);
+    const { data: existing, error } = await client.from('products').select('id').eq('organization_id', ctx.organization.id).limit(1);
     if (error) throw error;
     if (existing?.length) return false;
     if (!['owner','manager'].includes(ctx.role)) return false;
     const products = Array.isArray(local?.products) ? local.products : [];
     if (!products.length) return false;
-    const payload = products.map(p => toDbProduct(p, ctx.organization.id));
-    const insert = await client.from('products').insert(payload);
+    const insert = await client.from('products').insert(products.map(p => toDbProduct(p, ctx.organization.id)));
     if (insert.error) throw insert.error;
     return true;
   }
@@ -114,14 +112,10 @@
       .select('id,product_id,movement_type,quantity_ml,source_type,source_id,reason,occurred_at,created_at')
       .eq('organization_id', ctx.organization.id).eq('venue_id', ctx.venue.id).order('occurred_at', { ascending: true });
     if (movementsResult.error) throw movementsResult.error;
-    const remoteMovements = (movementsResult.data || [])
-      .map(m => [m, uuidToClient.get(m.product_id)])
-      .filter(([, key]) => key)
-      .map(([m, key]) => fromDbMovement(m, key));
+    const remoteMovements = (movementsResult.data || []).map(m => [m, uuidToClient.get(m.product_id)])
+      .filter(([, key]) => key).map(([m, key]) => fromDbMovement(m, key));
 
-    if (!local.legacyMovements && Array.isArray(local.movements) && local.movements.some(m => !String(m.id || '').startsWith('db_'))) {
-      local.legacyMovements = local.movements;
-    }
+    if (!local.legacyMovements && Array.isArray(local.movements) && local.movements.some(m => !String(m.id || '').startsWith('db_'))) local.legacyMovements = local.movements;
     local.products = remoteProducts.length ? remoteProducts : local.products;
     local.movements = remoteMovements;
     local.backend = { organizationId: ctx.organization.id, venueId: ctx.venue.id, syncedAt: new Date().toISOString() };
@@ -135,10 +129,10 @@
     }
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    sync().catch(error => {
-      console.error('PUB GURU data sync failed', error);
-      window.toast?.(`Synchronizace skladu selhala: ${error.message}`, 6000);
-    });
+  const run = () => sync().catch(error => {
+    console.error('PUB GURU data sync failed', error);
+    window.toast?.(`Synchronizace skladu selhala: ${error.message}`, 6000);
   });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+  else run();
 })();

@@ -3,12 +3,11 @@
 (function () {
   function onReady() {
     const button = document.getElementById('saveReceiptBtn');
-    if (button) {
+    if (button && !button.dataset.pubGuruGuarded) {
+      button.dataset.pubGuruGuarded = '1';
       button.addEventListener('click', event => {
         const role = window.PubGuruPermissions?.role || window.PubGuruBackend?.context()?.role;
         if (role === 'owner' || role === 'manager') {
-          // invoice-backend.js has already captured the click and started the server workflow.
-          // Stop the legacy STAV localStorage receipt handler from also creating a second local receipt.
           event.preventDefault();
           event.stopImmediatePropagation();
         }
@@ -16,7 +15,8 @@
     }
 
     const toast = document.getElementById('toast');
-    if (toast) {
+    if (toast && !toast.dataset.pubGuruObserved) {
+      toast.dataset.pubGuruObserved = '1';
       const observer = new MutationObserver(() => {
         const text = toast.textContent || '';
         if (text.includes('Faktura uložena do PUB GURU') || text.includes('Faktura odeslána vedoucímu')) {
@@ -27,5 +27,6 @@
       observer.observe(toast, { childList: true, characterData: true, subtree: true });
     }
   }
-  document.addEventListener('DOMContentLoaded', onReady);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady);
+  else onReady();
 })();

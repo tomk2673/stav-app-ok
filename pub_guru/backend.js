@@ -112,8 +112,10 @@
   };
 
   loadLayer('roles.js', 'pub-guru-roles');
-  if (!location.pathname.endsWith('/start.html') && !location.pathname.endsWith('start.html')) {
+  const page = location.pathname.split('/').pop();
+  if (!page || page === 'index.html') {
     loadLayer('data-sync.js', 'pub-guru-data-sync');
     loadLayer('operations-backend.js', 'pub-guru-operations');
+    loadLayer('invoice-ui-guard.js', 'pub-guru-invoice-ui-guard');
   }
 })();

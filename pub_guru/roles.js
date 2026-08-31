@@ -12,8 +12,6 @@
   };
 
   function hide(selector) { document.querySelectorAll(selector).forEach(el => el.classList.add('hidden')); }
-  function show(selector) { document.querySelectorAll(selector).forEach(el => el.classList.remove('hidden')); }
-
   function switchTo(view) {
     const btn = document.querySelector(`.nav-btn[data-view="${view}"]`);
     if (btn) btn.click();
@@ -70,10 +68,11 @@
     if (role === 'staff') {
       const active = document.querySelector('.nav-btn.active');
       if (!active || active.dataset.view === 'dashboard' || active.dataset.view === 'sales' || active.dataset.view === 'products' || active.dataset.view === 'settings') {
-        switchTo('inventory');
+        switchTo('invoices');
       }
     }
   }
 
-  document.addEventListener('DOMContentLoaded', apply);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply);
+  else apply();
 })();

@@ -1,0 +1,24 @@
+name: Validate PUB GURU
+
+on:
+  push:
+    branches: [pub-guru-v1, main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check JavaScript syntax
+        run: |
+          find pub_guru -maxdepth 1 -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Check required V1 files
+        run: |
+          test -f pub_guru/start.html
+          test -f pub_guru/invoice-capture.html
+          test -f pub_guru/invoice-review-v1.html
+          test -f pub_guru/closings-v1.html
+          test -f pub_guru/backend.js
+          test -f vercel.json

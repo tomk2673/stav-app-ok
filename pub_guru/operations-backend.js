@@ -42,8 +42,7 @@
     if (!product) return;
     const payload = payloadFromLocal(product);
     const client = window.PubGuruBackend.client;
-    const lookup = await client.from('products')
-      .select('id').eq('organization_id', ctx.organization.id).eq('client_key', product.id).maybeSingle();
+    const lookup = await client.from('products').select('id').eq('organization_id', ctx.organization.id).eq('client_key', product.id).maybeSingle();
     if (lookup.error) throw lookup.error;
 
     if (lookup.data) {
@@ -69,9 +68,10 @@
     if (!window.PubGuruBackend) return;
     ctx = await window.PubGuruBackend.loadContext();
     if (!ctx?.organization) return;
-
     const form = document.getElementById('productForm');
-    form?.addEventListener('submit', () => {
+    if (!form || form.dataset.pubGuruSynced) return;
+    form.dataset.pubGuruSynced = '1';
+    form.addEventListener('submit', () => {
       const name = document.getElementById('productName')?.value?.trim() || '';
       const barcode = document.getElementById('productBarcode')?.value?.trim() || '';
       setTimeout(() => {
@@ -83,7 +83,7 @@
     }, true);
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    init().catch(error => console.error('Operations backend init failed', error));
-  });
+  const run = () => init().catch(error => console.error('Operations backend init failed', error));
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+  else run();
 })();

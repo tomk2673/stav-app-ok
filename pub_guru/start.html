@@ -7,9 +7,7 @@
   <title>PUB GURU</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
-  <style>
-    .gate{max-width:760px;margin:0 auto;padding:32px 16px 80px}.gate-brand{display:flex;align-items:center;gap:14px;margin-bottom:24px}.gate-brand .brand-mark{position:static}.module-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.module{display:block;text-decoration:none;color:inherit;padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--panel-2)}.module strong{font-size:19px}.module small{display:block;color:var(--muted);margin-top:6px}.hidden{display:none!important}@media(max-width:700px){.module-grid{grid-template-columns:1fr}.gate{padding-top:20px}}
-  </style>
+  <style>.gate{max-width:760px;margin:0 auto;padding:32px 16px 80px}.gate-brand{display:flex;align-items:center;gap:14px;margin-bottom:24px}.gate-brand .brand-mark{position:static}.module-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.module{display:block;text-decoration:none;color:inherit;padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--panel-2)}.module strong{font-size:19px}.module small{display:block;color:var(--muted);margin-top:6px}.hidden{display:none!important}@media(max-width:700px){.module-grid{grid-template-columns:1fr}.gate{padding-top:20px}}</style>
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="app-config.js"></script>
   <script defer src="backend.js"></script>
@@ -17,63 +15,11 @@
 <body>
   <main class="gate">
     <div class="gate-brand"><div class="brand-mark">G</div><div><h1 style="margin:0">PUB GURU</h1><p style="margin:4px 0 0;color:var(--muted)">Faktury a uzávěrky bez ručního přepisování a bez změn beze stopy.</p></div></div>
-
-    <section id="authPanel" class="panel">
-      <div class="panel-head"><h2>Přihlášení</h2><span class="badge">bezpečný backend</span></div>
-      <div class="form-grid">
-        <label>E-mail<input id="email" type="email" autocomplete="email" /></label>
-        <label>Heslo<input id="password" type="password" autocomplete="current-password" minlength="8" /></label>
-      </div>
-      <div class="button-row wrap">
-        <button id="signInBtn" class="btn btn-primary">Přihlásit</button>
-        <button id="signUpBtn" class="btn">Vytvořit účet</button>
-      </div>
-      <p id="authInfo" class="hint" style="margin-top:12px"></p>
-    </section>
-
-    <section id="workspacePanel" class="panel hidden" style="margin-top:16px">
-      <div class="panel-head"><h2>První provozovna</h2><span class="badge">1 minuta</span></div>
-      <p class="hint">PUB GURU odděluje data organizací a provozoven od prvního dne.</p>
-      <div class="form-grid">
-        <label>Organizace<input id="organizationName" placeholder="např. Moje gastro s.r.o." /></label>
-        <label>Provozovna<input id="venueName" placeholder="např. Ztracený bar" /></label>
-      </div>
-      <button id="createWorkspaceBtn" class="btn btn-primary" style="margin-top:14px">Založit provozovnu</button>
-    </section>
-
-    <section id="appPanel" class="hidden">
-      <article class="panel" style="margin-top:16px">
-        <div class="panel-head"><div><h2 id="venueTitle">PUB GURU</h2><p id="accountInfo" class="hint" style="margin:4px 0 0"></p></div><button id="signOutBtn" class="btn btn-ghost">Odhlásit</button></div>
-        <div class="module-grid">
-          <a class="module" href="index.html#invoices"><strong>Faktury</strong><small>Foto/PDF → OCR → kontrola → sklad</small></a>
-          <a class="module" href="closings.html"><strong>Uzávěrky</strong><small>Foto → OCR → kontrola → zamknutí</small></a>
-          <a id="invoiceReviewModule" class="module hidden" href="invoice-review.html"><strong>Ke schválení</strong><small>Faktury od personálu → potvrdit → naskladnit</small></a>
-        </div>
-      </article>
-    </section>
+    <section id="authPanel" class="panel"><div class="panel-head"><h2>Přihlášení</h2><span class="badge">bezpečný backend</span></div><div class="form-grid"><label>E-mail<input id="email" type="email" autocomplete="email" /></label><label>Heslo<input id="password" type="password" autocomplete="current-password" minlength="8" /></label></div><div class="button-row wrap"><button id="signInBtn" class="btn btn-primary">Přihlásit</button><button id="signUpBtn" class="btn">Vytvořit účet</button></div><p id="authInfo" class="hint" style="margin-top:12px"></p></section>
+    <section id="workspacePanel" class="panel hidden" style="margin-top:16px"><div class="panel-head"><h2>První provozovna</h2><span class="badge">1 minuta</span></div><p class="hint">PUB GURU odděluje data organizací a provozoven od prvního dne.</p><div class="form-grid"><label>Organizace<input id="organizationName" placeholder="např. Moje gastro s.r.o." /></label><label>Provozovna<input id="venueName" placeholder="např. Ztracený bar" /></label></div><button id="createWorkspaceBtn" class="btn btn-primary" style="margin-top:14px">Založit provozovnu</button></section>
+    <section id="appPanel" class="hidden"><article class="panel" style="margin-top:16px"><div class="panel-head"><div><h2 id="venueTitle">PUB GURU</h2><p id="accountInfo" class="hint" style="margin:4px 0 0"></p></div><button id="signOutBtn" class="btn btn-ghost">Odhlásit</button></div><div class="module-grid"><a class="module" href="invoice-capture.html"><strong>Faktury</strong><small>Foto/PDF → OCR → kontrola → schválení</small></a><a class="module" href="closings.html"><strong>Uzávěrky</strong><small>Foto → OCR → kontrola → zamknutí</small></a><a id="invoiceReviewModule" class="module hidden" href="invoice-review.html"><strong>Ke schválení</strong><small>Faktury od personálu → potvrdit → naskladnit</small></a></div></article></section>
   </main>
   <div id="toast" class="toast hidden"></div>
-  <script>
-    document.addEventListener('DOMContentLoaded', async () => {
-      const $ = id => document.getElementById(id);
-      const toast = msg => { const el=$('toast'); el.textContent=msg; el.classList.remove('hidden'); clearTimeout(window.__t); window.__t=setTimeout(()=>el.classList.add('hidden'),3500); };
-      const roleLabel = role => ({owner:'Majitel',manager:'Vedoucí',staff:'Zaměstnanec',accountant:'Účetní',service:'Servis'}[role] || role || '');
-      const setMode = async () => {
-        try {
-          const ctx = await PubGuruBackend.loadContext();
-          $('authPanel').classList.toggle('hidden', !!ctx?.user);
-          $('workspacePanel').classList.toggle('hidden', !ctx?.user || !!ctx?.organization);
-          $('appPanel').classList.toggle('hidden', !ctx?.organization || !ctx?.venue);
-          $('invoiceReviewModule').classList.toggle('hidden', !['owner','manager'].includes(ctx?.role));
-          if (ctx?.venue) { $('venueTitle').textContent = ctx.venue.name; $('accountInfo').textContent = `${ctx.organization.name} · ${roleLabel(ctx.role)} · ${ctx.user.email}`; }
-        } catch (e) { console.error(e); toast(e.message); }
-      };
-      $('signInBtn').onclick = async () => { try { await PubGuruBackend.signIn($('email').value.trim(), $('password').value); toast('Přihlášeno.'); await setMode(); } catch(e){ toast(e.message); } };
-      $('signUpBtn').onclick = async () => { try { const r=await PubGuruBackend.signUp($('email').value.trim(), $('password').value); $('authInfo').textContent = r.session ? 'Účet je aktivní.' : 'Zkontroluj e-mail a potvrď registraci.'; await setMode(); } catch(e){ toast(e.message); } };
-      $('createWorkspaceBtn').onclick = async () => { try { const org=$('organizationName').value.trim(), venue=$('venueName').value.trim(); if(!org||!venue) return toast('Doplň organizaci i provozovnu.'); await PubGuruBackend.createWorkspace(org, venue); toast('Provozovna založena.'); await setMode(); } catch(e){ console.error(e); toast(e.message); } };
-      $('signOutBtn').onclick = async () => { await PubGuruBackend.signOut(); await setMode(); };
-      await setMode();
-    });
-  </script>
+  <script>document.addEventListener('DOMContentLoaded',async()=>{const $=id=>document.getElementById(id);const toast=msg=>{const el=$('toast');el.textContent=msg;el.classList.remove('hidden');clearTimeout(window.__t);window.__t=setTimeout(()=>el.classList.add('hidden'),3500)};const roleLabel=role=>({owner:'Majitel',manager:'Vedoucí',staff:'Zaměstnanec',accountant:'Účetní',service:'Servis'}[role]||role||'');const setMode=async()=>{try{const ctx=await PubGuruBackend.loadContext();$('authPanel').classList.toggle('hidden',!!ctx?.user);$('workspacePanel').classList.toggle('hidden',!ctx?.user||!!ctx?.organization);$('appPanel').classList.toggle('hidden',!ctx?.organization||!ctx?.venue);$('invoiceReviewModule').classList.toggle('hidden',!['owner','manager'].includes(ctx?.role));if(ctx?.venue){$('venueTitle').textContent=ctx.venue.name;$('accountInfo').textContent=`${ctx.organization.name} · ${roleLabel(ctx.role)} · ${ctx.user.email}`}}catch(e){console.error(e);toast(e.message)}};$('signInBtn').onclick=async()=>{try{await PubGuruBackend.signIn($('email').value.trim(),$('password').value);toast('Přihlášeno.');await setMode()}catch(e){toast(e.message)}};$('signUpBtn').onclick=async()=>{try{const r=await PubGuruBackend.signUp($('email').value.trim(),$('password').value);$('authInfo').textContent=r.session?'Účet je aktivní.':'Zkontroluj e-mail a potvrď registraci.';await setMode()}catch(e){toast(e.message)}};$('createWorkspaceBtn').onclick=async()=>{try{const org=$('organizationName').value.trim(),venue=$('venueName').value.trim();if(!org||!venue)return toast('Doplň organizaci i provozovnu.');await PubGuruBackend.createWorkspace(org,venue);toast('Provozovna založena.');await setMode()}catch(e){console.error(e);toast(e.message)}};$('signOutBtn').onclick=async()=>{await PubGuruBackend.signOut();await setMode()};await setMode()});</script>
 </body>
 </html>

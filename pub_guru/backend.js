@@ -106,7 +106,7 @@
     if (document.querySelector(`script[data-${dataKey}]`)) return;
     const script = document.createElement('script');
     script.src = src;
-    script.defer = true;
+    script.async = false;
     script.setAttribute(`data-${dataKey}`, '1');
     document.head.appendChild(script);
   };
@@ -117,5 +117,8 @@
     loadLayer('data-sync.js', 'pub-guru-data-sync');
     loadLayer('operations-backend.js', 'pub-guru-operations');
     loadLayer('invoice-ui-guard.js', 'pub-guru-invoice-ui-guard');
+    loadLayer('navigation.js', 'pub-guru-navigation');
+  } else if (page === 'closings.html') {
+    loadLayer('closing-role-guard.js', 'pub-guru-closing-role-guard');
   }
 })();

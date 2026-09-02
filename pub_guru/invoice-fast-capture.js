@@ -107,10 +107,10 @@
     return { status: 'queued', jobId };
   }
 
-  async function queueFiles(files, source) {
-    if (busy || !files.length) return;
+  async function queueFiles(files, source = 'batch') {
+    if (busy || !files.length) return { queued: 0, duplicates: 0, failed: files.length };
     busy = true;
-    const input = $(source === 'camera' ? 'cameraFile' : 'batchFiles');
+    const input = $(source === 'camera' ? 'cameraFile' : source === 'batch' ? 'batchFiles' : '');
 
     try {
       const ctx = await window.PubGuruBackend.loadContext();
@@ -132,8 +132,10 @@
       }
 
       setProgress(`Hotovo · uloženo ${queued}${duplicates ? ` · duplicitní ${duplicates}` : ''}${failed ? ` · chyba ${failed}` : ''}`, 100);
-      $('duplicateBadge').textContent = queued ? `${queued} ve frontě` : (duplicates ? 'duplicitní' : 'chyba');
-      $('duplicateBadge').className = failed ? 'badge danger' : 'badge muted';
+      if ($('duplicateBadge')) {
+        $('duplicateBadge').textContent = queued ? `${queued} ve frontě` : (duplicates ? 'duplicitní' : 'chyba');
+        $('duplicateBadge').className = failed ? 'badge danger' : 'badge muted';
+      }
 
       if (source === 'camera' && queued) toast('📷 Doklad uložen. Můžeš hned fotit další.', 4300);
       else if (queued) toast(`✅ ${queued} faktur přidáno do fronty. Můžeš pokračovat.`, 5200);
@@ -141,11 +143,49 @@
       else toast('Nepodařilo se uložit žádný doklad.', 6000);
 
       setTimeout(() => $('ocrProgressWrap')?.classList.add('hidden'), 1800);
+      return { queued, duplicates, failed };
     } finally {
       busy = false;
       if (input) input.value = '';
     }
   }
+
+  async function dataUrlToFile(item, index) {
+    const response = await fetch(item.dataUrl);
+    const blob = await response.blob();
+    const name = item.name || `icloud-faktura-${Date.now()}-${index + 1}.jpg`;
+    return new File([blob], name, { type: blob.type || 'image/jpeg', lastModified: Date.now() });
+  }
+
+  async function queueNativeImages(items) {
+    const completedAssetIds = [];
+    let queued = 0, duplicates = 0, failed = 0;
+    if (!Array.isArray(items) || !items.length) return { queued, duplicates, failed, completedAssetIds };
+    const ctx = await window.PubGuruBackend.loadContext();
+    if (!ctx?.user || !ctx?.organization || !ctx?.venue) throw new Error('Chybí přihlášená provozovna.');
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      setProgress(`iCloud album ${i + 1}/${items.length}`, Math.round((i / items.length) * 90) + 5);
+      try {
+        const file = await dataUrlToFile(item, i);
+        const result = await queueOne(file, ctx, `${i + 1}/${items.length}`);
+        if (result.status === 'duplicate') duplicates++;
+        else queued++;
+        if (item.assetId) completedAssetIds.push(item.assetId);
+      } catch (error) {
+        failed++;
+        console.error('Native album invoice failed', item?.assetId, error);
+      }
+    }
+
+    setProgress(`Album hotovo · nové ${queued}${duplicates ? ` · už uložené ${duplicates}` : ''}${failed ? ` · chyba ${failed}` : ''}`, 100);
+    if (queued) toast(`☁️ ${queued} nových faktur z alba je ve frontě.`, 5200);
+    setTimeout(() => $('ocrProgressWrap')?.classList.add('hidden'), 1800);
+    return { queued, duplicates, failed, completedAssetIds };
+  }
+
+  window.PubGuruFastCapture = { queueFiles, queueNativeImages };
 
   document.addEventListener('change', event => {
     const target = event.target;

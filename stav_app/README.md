@@ -4,6 +4,9 @@ Mobilní PWA pro:
 
 - OCR fotografií a PDF faktur,
 - kontrolu položek a naskladnění,
+- automatické párování vratných obalů (přepravky, sklo/lahve a sudy/KEG) v kusech,
+- párování spotřebního materiálu (pytle na odpad, úklidová a sanitační chemie),
+- nezáporný kusový stav s auditní stopou vrácení mimo dosavadní evidenci,
 - skenování EAN přes kameru,
 - váhovou inventuru běžnou kuchyňskou váhou,
 - produktový koeficient ml/g, táru a teplotní korekci,
@@ -39,5 +42,6 @@ Aplikace schválně neodvozuje hustotu pouze z procent alkoholu. Stejné ABV nez
 ## Omezení MVP
 
 - OCR položky rozpozná a připraví k ruční kontrole, není to účetní autopilot.
+- Potvrzené názvy z faktur se ukládají jako aliasy a příští párování se tím zpřesňuje.
 - Pro teoretický sklad se prodeje zatím zapisují ručně. Další krok je import z pokladny a receptury míchaných nápojů.
 - Foto měření hladiny je připravené jako další modul, váhová inventura je nyní plně funkční.

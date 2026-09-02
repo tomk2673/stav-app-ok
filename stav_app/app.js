@@ -18,6 +18,54 @@ const decimal = (value, digits = 1) => new Intl.NumberFormat('cs-CZ', { maximumF
 const mlText = value => `${decimal(value, 0)} ml`;
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
 
+const COUNTED_ITEM_DEFINITIONS = {
+  packaging_crate: {
+    kind: 'packaging', subtype: 'crate', name: 'Přepravka – vratný obal', category: 'Vratné obaly', countUnit: 'ks',
+    aliases: ['přepravka', 'přepravky', 'vratná přepravka', 'obal přepravka', 'pivní bedna', 'bedna vratná']
+  },
+  packaging_bottle: {
+    kind: 'packaging', subtype: 'bottle', name: 'Sklo / vratná láhev', category: 'Vratné obaly', countUnit: 'ks',
+    aliases: ['sklo', 'vratné sklo', 'vratná láhev', 'vratné lahve', 'obal láhev', 'záloha láhev']
+  },
+  packaging_keg: {
+    kind: 'packaging', subtype: 'keg', name: 'Sud / KEG – vratný obal', category: 'Vratné obaly', countUnit: 'ks',
+    aliases: ['sud', 'sudy', 'keg', 'vratný sud', 'vratný keg', 'obal sud', 'záloha keg']
+  },
+  consumable_waste_bags: {
+    kind: 'consumable', subtype: 'waste_bags', name: 'Pytle na odpad', category: 'Spotřební materiál', countUnit: 'bal.',
+    aliases: ['pytle na odpadky', 'odpadkové pytle', 'sáčky do koše', 'pytle do koše', 'pytle 120 l', 'pytle 60 l']
+  },
+  consumable_cleaning: {
+    kind: 'consumable', subtype: 'cleaning', name: 'Úklidová chemie', category: 'Spotřební materiál', countUnit: 'bal.',
+    aliases: ['chemie na úklid', 'čisticí prostředek', 'čistič', 'odmašťovač', 'prostředek na podlahy', 'wc čistič']
+  },
+  consumable_sanitation: {
+    kind: 'consumable', subtype: 'sanitation', name: 'Sanitační chemie', category: 'Spotřební materiál', countUnit: 'bal.',
+    aliases: ['chemie na sanitaci', 'sanitační prostředek', 'sanitace', 'dezinfekce', 'dezinfekční prostředek', 'čištění pivního vedení']
+  }
+};
+
+function normalizedText(value) {
+  return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function detectCountedItemKey(text) {
+  const value = normalizedText(text);
+  if (!value) return null;
+  const hasPackagingContext = /\b(vratn\w*|obal\w*|zaloha|depozit\w*|prazdn\w*|return\w*)\b/.test(value);
+  const hasCleaningContext = /\b(uklid\w*|cistic\w*|cistid\w*|odmast\w*|detergent\w*|saponat\w*|jar|savo|wc gel)\b/.test(value);
+  if (/\b(preprav\w*|bedn\w*|crate\w*)\b/.test(value)) return 'packaging_crate';
+  if (/\b(sklo|skla|sklem)\b/.test(value) && hasCleaningContext && !hasPackagingContext) return 'consumable_cleaning';
+  if (/\b(sklo|skla|sklem)\b/.test(value)) return 'packaging_bottle';
+  if (hasPackagingContext && /\b(lahv\w*|bottle\w*)\b/.test(value)) return 'packaging_bottle';
+  const wordCount = value.split(/\s+/).length;
+  if (/\b(keg\w*|sud\w*)\b/.test(value) && (hasPackagingContext || wordCount <= 3)) return 'packaging_keg';
+  if (/\b(pytl\w*|sack\w*)\b/.test(value) && (/\b(odpad\w*|kos\w*|igelit\w*|ldpe|hdpe)\b/.test(value) || /\b\d{2,3}\s*l\b/.test(value))) return 'consumable_waste_bags';
+  if (/\b(sanit\w*|dezinf\w*|desinf\w*|pivn\w* vedeni|star san|chemipro|chlor\w*)\b/.test(value)) return 'consumable_sanitation';
+  if (hasCleaningContext) return 'consumable_cleaning';
+  return null;
+}
+
 function seedProduct(name, category, salePrice, abv = null, zoneId = 'shelf', extras = {}) {
   return {
     id: slugId(name),
@@ -28,16 +76,19 @@ function seedProduct(name, category, salePrice, abv = null, zoneId = 'shelf', ex
     abv,
     shotMl: extras.shotMl ?? 40,
     salePrice: salePrice ?? 0,
-    purchasePrice: 0,
+    purchasePrice: extras.purchasePrice ?? 0,
     tareG: null,
     fullWeightG: null,
     coefMlPerG: null,
     refTempC: 20,
     tempCoeffPctPer10C: 1.25,
     zoneId,
-    calibrationStatus: 'missing',
+    calibrationStatus: extras.calibrationStatus ?? 'missing',
     unitMode: extras.unitMode ?? 'liquid',
-    aliases: [],
+    itemKind: extras.itemKind ?? 'product',
+    itemSubtype: extras.itemSubtype ?? null,
+    countUnit: extras.countUnit ?? 'ks',
+    aliases: Array.isArray(extras.aliases) ? [...extras.aliases] : [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -109,12 +160,31 @@ function seedProducts() {
   add('Heineken 0,33 l', 'Pivo balené', 59, null, 'fridge', { volumeMl: 330, shotMl: 330, unitMode: 'unit' });
   add('Birell světlé 0,33 l', 'Pivo balené', 45, 0.5, 'fridge', { volumeMl: 330, shotMl: 330, unitMode: 'unit' });
   add('Red Bull 0,25 l', 'Nealko', 80, 0, 'fridge', { volumeMl: 250, shotMl: 250, unitMode: 'unit' });
+  Object.values(COUNTED_ITEM_DEFINITIONS).forEach(def => add(def.name, def.category, 0, null, 'shelf', {
+    unitMode: 'counted', itemKind: def.kind, itemSubtype: def.subtype, countUnit: def.countUnit,
+    aliases: def.aliases, calibrationStatus: 'verified', shotMl: 1
+  }));
   return p;
+}
+
+function ensureCountedCatalog(products) {
+  const result = Array.isArray(products) ? products.map(p => ({
+    ...p,
+    aliases: Array.isArray(p.aliases) ? p.aliases : [],
+    itemKind: p.itemKind || 'product',
+    countUnit: p.countUnit || 'ks'
+  })) : [];
+  const seeds = seedProducts().filter(p => p.unitMode === 'counted');
+  seeds.forEach(seed => {
+    const exists = result.some(p => p.unitMode === 'counted' && p.itemKind === seed.itemKind && p.itemSubtype === seed.itemSubtype);
+    if (!exists) result.push(seed);
+  });
+  return result;
 }
 
 function defaultState() {
   return {
-    version: 1,
+    version: 2,
     products: seedProducts(),
     zones: [
       { id: 'fridge', name: 'Lednice', tempC: 4 },
@@ -130,6 +200,7 @@ function defaultState() {
 
 function loadState() {
   try {
+    if (typeof localStorage === 'undefined') return defaultState();
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw);
@@ -139,7 +210,8 @@ function loadState() {
       ...parsed,
       settings: { ...fallback.settings, ...(parsed.settings || {}) },
       zones: Array.isArray(parsed.zones) && parsed.zones.length ? parsed.zones : fallback.zones,
-      products: Array.isArray(parsed.products) && parsed.products.length ? parsed.products : fallback.products,
+      version: 2,
+      products: ensureCountedCatalog(Array.isArray(parsed.products) && parsed.products.length ? parsed.products : fallback.products),
       movements: parsed.movements || [],
       invoices: parsed.invoices || [],
       inventorySessions: parsed.inventorySessions || [],
@@ -165,16 +237,29 @@ function saveState(render = true) {
 
 function productById(id) { return state.products.find(p => p.id === id); }
 function zoneById(id) { return state.zones.find(z => z.id === id) || state.zones[0]; }
-function productComplete(p) { return !!(p.volumeMl && p.tareG !== null && p.coefMlPerG); }
+function isCountedItem(p) { return p?.unitMode === 'counted'; }
+function isPackaging(p) { return isCountedItem(p) && p.itemKind === 'packaging'; }
+function isConsumable(p) { return isCountedItem(p) && p.itemKind === 'consumable'; }
+function countedItemLabel(p) {
+  if (isPackaging(p)) return `Vratný obal · ${p.itemSubtype === 'crate' ? 'přepravka' : p.itemSubtype === 'bottle' ? 'sklo' : 'sud / KEG'}`;
+  if (isConsumable(p)) return 'Spotřební materiál';
+  return 'Kusová položka';
+}
+function productComplete(p) { return isCountedItem(p) || !!(p.volumeMl && p.tareG !== null && p.coefMlPerG); }
 function stockMl(productId) { return state.movements.filter(m => m.productId === productId).reduce((sum, m) => sum + num(m.quantityMl), 0); }
+function stockUnits(productId) { return Math.max(0, state.movements.filter(m => m.productId === productId).reduce((sum, m) => sum + num(m.quantityUnits), 0)); }
 function movementCount(productId) { return state.movements.filter(m => m.productId === productId).length; }
 function unitCostPerMl(p) { return p?.volumeMl ? num(p.purchasePrice) / num(p.volumeMl) : 0; }
 function saleValuePerMl(p) { return p?.shotMl ? num(p.salePrice) / num(p.shotMl) : 0; }
+function productStockText(p) { return isCountedItem(p) ? `${decimal(stockUnits(p.id), 2)} ${esc(p.countUnit || 'ks')}` : mlText(stockMl(p.id)); }
+function movementQuantity(m, p) { return isCountedItem(p) ? num(m.quantityUnits) : num(m.quantityMl); }
+function movementQuantityText(m, p) { return isCountedItem(p) ? `${decimal(Math.abs(num(m.quantityUnits)), 2)} ${esc(p.countUnit || 'ks')}` : mlText(Math.abs(num(m.quantityMl))); }
 function statusBadge(status) {
   const map = {
     approved: ['ok', 'schváleno'], ok: ['ok', 'souhlasí'], resolved: ['ok', 'vyřešeno'],
     provisional: ['warn', 'provizorní'], review: ['warn', 'zkontrolovat'], warning: ['warn', 'zkontrolovat'], baseline: ['muted', 'počáteční stav'],
-    issue: ['danger', 'problém'], missing: ['danger', 'chybí'], new: ['muted', 'nová'], skipped: ['muted', 'přeskočeno']
+    issue: ['danger', 'problém'], missing: ['danger', 'chybí'], new: ['muted', 'nová'], skipped: ['muted', 'přeskočeno'],
+    packaging: ['ok', 'vratný obal'], consumable: ['warn', 'spotřební']
   };
   const [cls, label] = map[status] || ['muted', status || '—'];
   return `<span class="badge ${cls}">${label}</span>`;
@@ -191,7 +276,7 @@ function toast(message, ms = 3000) {
 function switchView(view) {
   const titles = {
     dashboard: ['Přehled', 'Co dnes potřebuje zásah.'],
-    invoices: ['Faktury', 'OCR, kontrola a naskladnění.'],
+    invoices: ['Faktury', 'OCR, párování příjmů, vratných obalů a spotřeby.'],
     inventory: ['Inventura', 'EAN → váha → skutečný stav.'],
     sales: ['Prodej a zisk', 'Náklady, tržby a marže za období.'],
     products: ['Produkty', 'EAN, tára, hustotní koeficient a teplota.'],
@@ -209,15 +294,22 @@ function renderDashboard() {
   const revenue = currentMonthSales.reduce((s, m) => s + num(m.revenue), 0);
   const cost = currentMonthSales.reduce((s, m) => s + num(m.cost), 0);
   const grossProfit = revenue - cost;
-  const stockValue = state.products.reduce((sum, p) => sum + Math.max(0, stockMl(p.id)) * unitCostPerMl(p), 0);
-  const incomplete = state.products.filter(p => !productComplete(p) || p.calibrationStatus !== 'verified').length;
+  const stockValue = state.products.reduce((sum, p) => sum + (isCountedItem(p)
+    ? (isConsumable(p) ? stockUnits(p.id) * num(p.purchasePrice) : 0)
+    : Math.max(0, stockMl(p.id)) * unitCostPerMl(p)), 0);
+  const packagingProducts = state.products.filter(isPackaging);
+  const packagingUnits = packagingProducts.reduce((sum, p) => sum + stockUnits(p.id), 0);
+  const packagingValue = packagingProducts.reduce((sum, p) => sum + stockUnits(p.id) * num(p.purchasePrice), 0);
+  const incomplete = state.products.filter(p => !isCountedItem(p) && (!productComplete(p) || p.calibrationStatus !== 'verified')).length;
   const issues = [
     ...state.currentInventory.lines.filter(l => l.status === 'issue'),
     ...state.inventorySessions.flatMap(s => s.lines || []).filter(l => l.status === 'issue'),
-    ...state.invoices.flatMap(i => i.lines || []).filter(l => l.state === 'review')
+    ...state.invoices.flatMap(i => i.lines || []).filter(l => l.state === 'review'),
+    ...state.movements.filter(m => num(m.untrackedUnits) > 0 && !m.resolvedAt)
   ];
   const cards = [
     ['Hodnota zásob', money(stockValue), 'podle posledních nákupních cen'],
+    ['Vratné obaly', money(packagingValue), `${decimal(packagingUnits, 0)} ks v evidenci`],
     ['Hrubý zisk měsíc', money(grossProfit), revenue ? `marže ${decimal((grossProfit / revenue) * 100, 1)} %` : 'zatím bez prodejů'],
     ['Nevyřešené položky', decimal(issues.length, 0), 'kontrola před finančním závěrem'],
     ['Kalibrace k doplnění', decimal(incomplete, 0), `${state.products.length} produktů v katalogu`]
@@ -229,24 +321,37 @@ function renderDashboard() {
   const attention = [];
   state.currentInventory.lines.filter(l => l.status === 'issue').slice(0, 4).forEach(l => {
     const p = productById(l.productId);
-    attention.push(`<div class="item-row"><div><strong>${esc(p?.name || 'Produkt')}</strong><div class="meta">Inventura ${l.diffMl < 0 ? 'manko' : 'přebytek'} ${mlText(Math.abs(l.diffMl))}</div></div><span class="money ${l.diffMl < 0 ? 'negative' : 'positive'}">${l.diffMl < 0 ? '−' : '+'}${money(Math.abs(l.saleDifference || 0))}</span></div>`);
+    const difference = isCountedItem(p) ? num(l.diffUnits) : num(l.diffMl);
+    const differenceText = isCountedItem(p) ? `${decimal(Math.abs(difference), 2)} ${esc(p.countUnit || 'ks')}` : mlText(Math.abs(difference));
+    const financialImpact = isCountedItem(p) ? num(l.costDifference) : num(l.saleDifference);
+    attention.push(`<div class="item-row"><div><strong>${esc(p?.name || 'Produkt')}</strong><div class="meta">Inventura ${difference < 0 ? 'manko' : 'přebytek'} ${differenceText}</div></div><span class="money ${difference < 0 ? 'negative' : 'positive'}">${difference < 0 ? '−' : '+'}${money(Math.abs(financialImpact || 0))}</span></div>`);
   });
-  state.products.filter(p => !productComplete(p)).slice(0, Math.max(0, 5 - attention.length)).forEach(p => {
+  const remainingAttention = Math.max(0, 5 - attention.length);
+  if (remainingAttention) {
+    state.movements.filter(m => num(m.untrackedUnits) > 0 && !m.resolvedAt).slice(-remainingAttention).reverse().forEach(m => {
+      const p = productById(m.productId);
+      attention.push(`<div class="item-row"><div><strong>${esc(p?.name || 'Kusová položka')}</strong><div class="meta">Vráceno ${decimal(m.untrackedUnits, 2)} ${esc(p?.countUnit || 'jedn.')} mimo počáteční evidenci; sklad zůstal na 0</div></div>${statusBadge('warning')}</div>`);
+    });
+  }
+  state.products.filter(p => !isCountedItem(p) && !productComplete(p)).slice(0, Math.max(0, 5 - attention.length)).forEach(p => {
     attention.push(`<div class="item-row"><div><strong>${esc(p.name)}</strong><div class="meta">Chybí objem, tára nebo koeficient ml/g</div></div>${statusBadge('missing')}</div>`);
   });
   document.getElementById('attentionList').innerHTML = attention.length ? attention.join('') : '<div class="empty-state">Žádné otevřené výjimky. Sklad dnes nevrčí.</div>';
 
-  const movementLabels = { receipt: 'Naskladnění', sale: 'Prodej', adjustment: 'Inventurní korekce' };
+  const movementLabels = { receipt: 'Naskladnění', return: 'Vrácení dodavateli', sale: 'Prodej', adjustment: 'Inventurní korekce' };
   const movements = [...state.movements].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 7);
   document.getElementById('movementList').innerHTML = movements.length ? movements.map(m => {
     const p = productById(m.productId);
-    return `<div class="item-row"><div><strong>${esc(p?.name || 'Produkt')}</strong><div class="meta">${movementLabels[m.type] || m.type} · ${esc(m.date || '')}</div></div><span class="money ${m.quantityMl < 0 ? 'negative' : 'positive'}">${m.quantityMl < 0 ? '−' : '+'}${mlText(Math.abs(m.quantityMl))}</span></div>`;
+    const quantity = movementQuantity(m, p);
+    const untracked = num(m.untrackedUnits);
+    const sign = quantity < 0 ? '−' : quantity > 0 ? '+' : '';
+    return `<div class="item-row"><div><strong>${esc(p?.name || 'Produkt')}</strong><div class="meta">${movementLabels[m.type] || m.type} · ${esc(m.date || '')}${untracked ? ` · ${decimal(untracked, 2)} ${esc(p?.countUnit || 'ks')} mimo počáteční evidenci` : ''}</div></div><span class="money ${quantity < 0 ? 'negative' : quantity > 0 ? 'positive' : ''}">${sign}${movementQuantityText(m, p)}</span></div>`;
   }).join('') : '<div class="empty-state">Zatím žádné skladové pohyby.</div>';
 }
 
-function productOptions(selected = '', includeBlank = true) {
-  const sorted = [...state.products].sort((a, b) => a.name.localeCompare(b.name, 'cs'));
-  return `${includeBlank ? '<option value="">Vyber produkt</option>' : ''}${sorted.map(p => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}`;
+function productOptions(selected = '', includeBlank = true, filter = () => true) {
+  const sorted = [...state.products].filter(filter).sort((a, b) => a.name.localeCompare(b.name, 'cs'));
+  return `${includeBlank ? '<option value="">Vyber produkt</option>' : ''}${sorted.map(p => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${isCountedItem(p) ? `${isPackaging(p) ? 'OBAL' : 'SPOTŘEBA'} · ` : ''}${esc(p.name)}</option>`).join('')}`;
 }
 function zoneOptions(selected = '') {
   return state.zones.map(z => `<option value="${z.id}" ${z.id === selected ? 'selected' : ''}>${esc(z.name)} · ${decimal(z.tempC, 1)} °C</option>`).join('');
@@ -256,17 +361,16 @@ function renderProducts() {
   const query = document.getElementById('productSearch')?.value?.trim().toLowerCase() || '';
   const onlyIncomplete = document.getElementById('onlyIncomplete')?.checked || false;
   const rows = [...state.products]
-    .filter(p => !query || `${p.name} ${p.category} ${p.barcode}`.toLowerCase().includes(query))
-    .filter(p => !onlyIncomplete || !productComplete(p) || p.calibrationStatus !== 'verified')
+    .filter(p => !query || `${p.name} ${p.category} ${p.barcode} ${(p.aliases || []).join(' ')}`.toLowerCase().includes(query))
+    .filter(p => !onlyIncomplete || (!isCountedItem(p) && (!productComplete(p) || p.calibrationStatus !== 'verified')))
     .sort((a, b) => a.category.localeCompare(b.category, 'cs') || a.name.localeCompare(b.name, 'cs'));
   document.getElementById('productTable').innerHTML = rows.length ? rows.map(p => {
-    const stock = stockMl(p.id);
-    const status = p.calibrationStatus === 'verified' && productComplete(p) ? 'verified' : p.calibrationStatus === 'provisional' ? 'provisional' : 'missing';
+    const status = isPackaging(p) ? 'packaging' : isConsumable(p) ? 'consumable' : p.calibrationStatus === 'verified' && productComplete(p) ? 'verified' : p.calibrationStatus === 'provisional' ? 'provisional' : 'missing';
     return `<div class="product-row" data-product-id="${p.id}">
-      <div><strong>${esc(p.name)}</strong><div class="muted">${esc(p.barcode || 'EAN nedoplněn')} · ${p.volumeMl ? `${decimal(p.volumeMl, 0)} ml` : 'objem nedoplněn'}</div></div>
+      <div><strong>${esc(p.name)}</strong><div class="muted">${esc(p.barcode || 'EAN nedoplněn')} · ${isCountedItem(p) ? `${countedItemLabel(p)} · ${esc(p.countUnit || 'ks')}` : p.volumeMl ? `${decimal(p.volumeMl, 0)} ml` : 'objem nedoplněn'}</div></div>
       <div class="product-category-cell"><span class="muted">Kategorie</span><br>${esc(p.category || '—')}</div>
       <div><span class="muted">Zóna</span><br>${esc(zoneById(p.zoneId)?.name || '—')}</div>
-      <div class="stock"><span class="muted">Evidenční stav</span><br>${mlText(stock)}</div>
+      <div class="stock"><span class="muted">Evidenční stav</span><br>${productStockText(p)}</div>
       <div class="actions">${statusBadge(status)}<br><button class="btn btn-small edit-product" data-id="${p.id}">Upravit</button></div>
     </div>`;
   }).join('') : '<div class="empty-state">Žádný produkt neodpovídá filtru.</div>';
@@ -277,13 +381,16 @@ function openProductModal(productId = null, prefill = {}) {
   const p = productId ? productById(productId) : {
     id: '', name: '', category: '', barcode: prefill.barcode || '', volumeMl: null, abv: null, shotMl: 40, salePrice: 0,
     purchasePrice: 0, tareG: null, fullWeightG: null, coefMlPerG: null, refTempC: 20,
-    tempCoeffPctPer10C: state.settings.defaultTempCoeffPctPer10C, zoneId: 'shelf', calibrationStatus: 'missing'
+    tempCoeffPctPer10C: state.settings.defaultTempCoeffPctPer10C, zoneId: 'shelf', calibrationStatus: 'missing',
+    unitMode: 'liquid', itemKind: 'product', itemSubtype: null, countUnit: 'ks'
   };
   document.getElementById('productModalTitle').textContent = productId ? 'Upravit produkt' : 'Nový produkt';
   document.getElementById('productId').value = p.id || '';
   document.getElementById('productName').value = p.name || '';
   document.getElementById('productCategory').value = p.category || '';
   document.getElementById('productBarcode').value = p.barcode || '';
+  document.getElementById('productItemMode').value = productItemMode(p);
+  document.getElementById('productCountUnit').value = p.countUnit || (isConsumable(p) ? 'bal.' : 'ks');
   document.getElementById('productVolume').value = p.volumeMl ?? '';
   document.getElementById('productAbv').value = p.abv ?? '';
   document.getElementById('productShot').value = p.shotMl ?? 40;
@@ -296,11 +403,29 @@ function openProductModal(productId = null, prefill = {}) {
   document.getElementById('productTempCoeff').value = p.tempCoeffPctPer10C ?? state.settings.defaultTempCoeffPctPer10C;
   document.getElementById('productZone').innerHTML = zoneOptions(p.zoneId);
   document.getElementById('productCalibration').value = p.calibrationStatus || 'missing';
+  updateProductModeUI();
   updateCoefHelper();
   document.getElementById('productModal').classList.remove('hidden');
 }
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+function productItemMode(p) {
+  if (isPackaging(p)) return `packaging_${p.itemSubtype || 'crate'}`;
+  if (isConsumable(p)) return `consumable_${p.itemSubtype || 'cleaning'}`;
+  return p?.unitMode === 'unit' ? 'unit' : 'liquid';
+}
+function updateProductModeUI() {
+  const mode = document.getElementById('productItemMode').value;
+  const definition = COUNTED_ITEM_DEFINITIONS[mode] || null;
+  const counted = !!definition;
+  document.querySelectorAll('#productForm .liquid-only-field').forEach(el => el.classList.toggle('hidden', counted));
+  document.querySelectorAll('#productForm .counted-only-field').forEach(el => el.classList.toggle('hidden', !counted));
+  document.getElementById('productPurchasePriceText').textContent = counted ? 'Poslední cena / záloha za jednotku' : 'Poslední nákupní cena balení';
+  if (definition && !document.getElementById('productCategory').value.trim()) document.getElementById('productCategory').value = definition.category;
+  if (definition && !document.getElementById('productCountUnit').value.trim()) document.getElementById('productCountUnit').value = definition.countUnit;
+}
 function updateCoefHelper() {
+  const mode = document.getElementById('productItemMode').value;
+  if (mode.startsWith('packaging_') || mode.startsWith('consumable_')) return 0;
   const volume = num(document.getElementById('productVolume').value);
   const tare = num(document.getElementById('productTare').value);
   const full = num(document.getElementById('productFullWeight').value);
@@ -313,12 +438,17 @@ function updateCoefHelper() {
 function renderInvoiceLines() {
   document.getElementById('invoiceLineCount').textContent = String(invoiceDraftLines.length);
   const wrap = document.getElementById('invoiceLines');
-  wrap.innerHTML = invoiceDraftLines.length ? invoiceDraftLines.map((line, i) => `
+  wrap.innerHTML = invoiceDraftLines.length ? invoiceDraftLines.map((line, i) => {
+    const matchedProduct = productById(line.productId);
+    const countedHint = isCountedItem(matchedProduct)
+      ? `<small class="line-kind">${esc(countedItemLabel(matchedProduct))} · stav nikdy neklesne pod 0</small>`
+      : '';
+    return `
     <div class="invoice-line" data-index="${i}">
       <label class="raw-field">Text z faktury<input class="line-raw" value="${esc(line.rawName)}" /></label>
-      <label class="product-field">Produkt<select class="line-product">${productOptions(line.productId)}</select></label>
-      <label>Množství<input class="line-qty" type="number" min="0" step="0.01" value="${line.qty}" /></label>
-      <label>Cena / ks<input class="line-price" type="number" min="0" step="0.01" value="${line.unitPrice || ''}" /></label>
+      <label class="product-field">Produkt<select class="line-product">${productOptions(line.productId)}</select>${countedHint}</label>
+      <label>Množství<input class="line-qty" type="number" step="0.01" value="${line.qty}" /></label>
+      <label>Cena / jedn.<input class="line-price" type="number" step="0.01" value="${line.unitPrice || ''}" /></label>
       <label class="state-field">Stav<select class="line-state">
         <option value="new" ${line.state === 'new' ? 'selected' : ''}>Nová</option>
         <option value="review" ${line.state === 'review' ? 'selected' : ''}>Zkontrolovat</option>
@@ -327,7 +457,8 @@ function renderInvoiceLines() {
       </select></label>
       <button class="icon-btn remove-line" title="Odstranit">×</button>
     </div>
-  `).join('') : '<div class="empty-state">OCR text rozlož na položky nebo přidej řádek ručně.</div>';
+  `;
+  }).join('') : '<div class="empty-state">OCR text rozlož na položky nebo přidej řádek ručně.</div>';
 
   wrap.querySelectorAll('.invoice-line').forEach(row => {
     const i = Number(row.dataset.index);
@@ -341,7 +472,7 @@ function renderInvoiceLines() {
 }
 
 function normalizeWords(text) {
-  return String(text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length > 1);
+  return normalizedText(text).split(/\s+/).filter(w => w.length > 1);
 }
 function similarity(a, b) {
   const aw = new Set(normalizeWords(a));
@@ -351,6 +482,18 @@ function similarity(a, b) {
   return intersection / Math.max(aw.size, bw.size);
 }
 function bestProductMatch(text) {
+  const countedKey = detectCountedItemKey(text);
+  if (countedKey) {
+    const definition = COUNTED_ITEM_DEFINITIONS[countedKey];
+    const candidates = state.products.filter(p => isCountedItem(p) && p.itemKind === definition.kind && p.itemSubtype === definition.subtype);
+    let bestCounted = candidates[0] || null;
+    let bestCountedScore = 0;
+    candidates.forEach(p => {
+      const s = Math.max(similarity(text, p.name), ...(p.aliases || []).map(a => similarity(text, a)));
+      if (s > bestCountedScore) { bestCountedScore = s; bestCounted = p; }
+    });
+    if (bestCounted) return { product: bestCounted, score: Math.max(0.9, bestCountedScore), countedKey };
+  }
   let best = null;
   let score = 0;
   state.products.forEach(p => {
@@ -365,6 +508,36 @@ function extractVolumeMl(text) {
   const liters = String(text).match(/(\d+(?:[.,]\d+)?)\s*l\b/i);
   if (liters) return num(liters[1]) * 1000;
   return null;
+}
+function extractInvoiceQuantity(text, countedKey = null) {
+  const plain = String(text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const explicit = plain.match(/(-?\s*\d+(?:[,.]\d+)?)\s*(ks|kus\w*|bal\w*|kart\w*|role|lahv\w*|btl)\b/i);
+  if (explicit) return num(explicit[1]);
+  const packagingPatterns = {
+    packaging_crate: 'preprav\\w*|bedn\\w*|crate\\w*',
+    packaging_bottle: 'sklo|lahv\\w*|bottle\\w*',
+    packaging_keg: 'sud\\w*|keg\\w*'
+  };
+  if (packagingPatterns[countedKey]) {
+    const afterPackaging = plain.match(new RegExp(`(?:${packagingPatterns[countedKey]})\\s*(?:[:x-]\\s*)?(-?\\s*\\d+(?:[,.]\\d+)?)\\b(?!\\s*(?:ml|l)\\b)`, 'i'));
+    if (afterPackaging) return num(afterPackaging[1]);
+  }
+  return 1;
+}
+function signedInvoiceQuantity(qty, unitPrice) {
+  const quantity = num(qty);
+  if (quantity < 0) return quantity;
+  return num(unitPrice) < 0 ? -quantity : quantity;
+}
+function boundCountedQuantity(availableQuantity, requestedQuantity) {
+  const requested = num(requestedQuantity);
+  if (requested >= 0) return { applied: requested, untracked: 0 };
+  const available = Math.max(0, num(availableQuantity));
+  const applied = -Math.min(available, Math.abs(requested));
+  return { applied, untracked: Math.max(0, Math.abs(requested) - Math.abs(applied)) };
+}
+function capCountedMovement(productId, requestedQuantity) {
+  return boundCountedQuantity(stockUnits(productId), requestedQuantity);
 }
 function parseInvoiceText() {
   const text = document.getElementById('ocrText').value;
@@ -386,13 +559,12 @@ function parseInvoiceText() {
     if (line.length < 5 || ignored.test(line) || !/[A-Za-zÁ-ž]/.test(line)) return;
     const numberMatches = [...line.matchAll(/-?\d+(?:[ .]\d{3})*(?:[,.]\d{1,2})?/g)];
     if (!numberMatches.length) return;
-    const qtyUnit = line.match(/(\d+(?:[,.]\d+)?)\s*(ks|kus|bal|kart|láh|lah|btl)\b/i);
-    const qty = qtyUnit ? num(qtyUnit[1]) : 1;
     const unitPrice = num(numberMatches[numberMatches.length - 1][0]);
     const firstNumberIndex = numberMatches[0].index ?? line.length;
     let rawName = line.slice(0, firstNumberIndex).replace(/[|;:]+$/g, '').trim();
     if (rawName.length < 3) rawName = line.replace(/\s+-?\d+(?:[,.]\d+)?\s*$/, '').trim();
     const match = bestProductMatch(rawName);
+    const qty = extractInvoiceQuantity(line, match?.countedKey || detectCountedItemKey(rawName));
     const detectedVolumeMl = extractVolumeMl(line);
     if (rawName.length >= 3 && unitPrice >= 0) candidates.push({
       id: uid('line'), rawName, productId: match?.product?.id || '', qty, unitPrice,
@@ -470,26 +642,44 @@ async function handleInvoiceFile(file) {
 
 function saveReceipt() {
   syncInvoiceDraftFromDom();
-  const approved = invoiceDraftLines.filter(l => l.state === 'approved' && l.productId && l.qty > 0);
+  const approved = invoiceDraftLines.filter(l => l.state === 'approved' && l.productId && num(l.qty) !== 0);
   if (!approved.length) return toast('Nejdřív označ alespoň jednu položku jako schválenou.');
   const blockers = [];
-  approved.forEach(line => {
+  const orderedApproved = [...approved].sort((a, b) => Number(signedInvoiceQuantity(a.qty, a.unitPrice) < 0) - Number(signedInvoiceQuantity(b.qty, b.unitPrice) < 0));
+  orderedApproved.forEach(line => {
     const p = productById(line.productId);
     if (!p) return blockers.push(line.rawName);
+    if (isCountedItem(p)) return;
     if (!p.volumeMl && line.detectedVolumeMl) p.volumeMl = line.detectedVolumeMl;
     if (!p.volumeMl) blockers.push(p.name);
   });
   if (blockers.length) return toast(`Doplň objem balení: ${blockers.slice(0, 3).join(', ')}${blockers.length > 3 ? '…' : ''}`, 5000);
   const invoiceId = uid('invoice');
   const date = document.getElementById('invoiceDate').value || today();
-  approved.forEach(line => {
+  let untrackedTotal = 0;
+  orderedApproved.forEach(line => {
     const p = productById(line.productId);
-    p.purchasePrice = num(line.unitPrice);
+    const unitPrice = Math.abs(num(line.unitPrice));
+    const requestedQuantity = signedInvoiceQuantity(line.qty, line.unitPrice);
+    if (unitPrice > 0) p.purchasePrice = unitPrice;
+    const alias = String(line.rawName || '').trim();
+    const knownNames = [p.name, ...(p.aliases || [])].map(normalizedText);
+    if (alias.length >= 3 && !knownNames.includes(normalizedText(alias))) p.aliases = [...(p.aliases || []), alias].slice(-30);
     p.updatedAt = new Date().toISOString();
-    state.movements.push({
-      id: uid('mov'), type: 'receipt', productId: p.id, quantityMl: num(line.qty) * num(p.volumeMl),
-      date, unitPrice: num(line.unitPrice), invoiceId, note: line.rawName, createdAt: new Date().toISOString()
-    });
+    const movement = {
+      id: uid('mov'), type: requestedQuantity < 0 ? 'return' : 'receipt', productId: p.id,
+      date, unitPrice, invoiceId, note: line.rawName, createdAt: new Date().toISOString()
+    };
+    if (isCountedItem(p)) {
+      const bounded = capCountedMovement(p.id, requestedQuantity);
+      movement.quantityUnits = bounded.applied;
+      movement.requestedQuantityUnits = requestedQuantity;
+      movement.untrackedUnits = bounded.untracked;
+      untrackedTotal += bounded.untracked;
+    } else {
+      movement.quantityMl = requestedQuantity * num(p.volumeMl);
+    }
+    state.movements.push(movement);
   });
   state.invoices.push({
     id: invoiceId,
@@ -505,7 +695,9 @@ function saveReceipt() {
   document.getElementById('invoiceFile').value = '';
   renderInvoiceLines();
   saveState();
-  toast(`Naskladněno ${approved.length} položek.`);
+  toast(untrackedTotal
+    ? `Zpracováno ${approved.length} položek. ${decimal(untrackedTotal, 2)} vrácených jednotek mimo evidenci bylo ponecháno na stavu 0.`
+    : `Zpracováno ${approved.length} položek.` , 5000);
 }
 function syncInvoiceDraftFromDom() {
   document.querySelectorAll('#invoiceLines .invoice-line').forEach(row => {
@@ -536,7 +728,11 @@ function selectInventoryProduct(productId) {
   document.getElementById('currentProductBadge').textContent = p.barcode || 'EAN nedoplněn';
   document.getElementById('inventoryMeasureEmpty').classList.add('hidden');
   document.getElementById('inventoryMeasureForm').classList.remove('hidden');
-  document.getElementById('currentProductCard').innerHTML = `<div><div class="name">${esc(p.name)}</div><div class="sub">${esc(p.category)} · ${p.volumeMl ? `${decimal(p.volumeMl, 0)} ml` : 'objem chybí'} · ${esc(zone?.name || '')}</div></div>${statusBadge(productComplete(p) ? p.calibrationStatus : 'missing')}`;
+  document.getElementById('currentProductCard').innerHTML = `<div><div class="name">${esc(p.name)}</div><div class="sub">${esc(p.category)} · ${isCountedItem(p) ? `${countedItemLabel(p)} · ${esc(p.countUnit || 'ks')}` : p.volumeMl ? `${decimal(p.volumeMl, 0)} ml` : 'objem chybí'} · ${esc(zone?.name || '')}</div></div>${statusBadge(isPackaging(p) ? 'packaging' : isConsumable(p) ? 'consumable' : productComplete(p) ? p.calibrationStatus : 'missing')}`;
+  document.getElementById('grossWeightText').textContent = isCountedItem(p) ? `Skutečný počet (${p.countUnit || 'ks'})` : 'Hmotnost otevřené lahve v g';
+  document.getElementById('grossWeight').step = isCountedItem(p) ? '0.01' : '0.1';
+  document.getElementById('sealedCountLabel').classList.toggle('hidden', isCountedItem(p));
+  document.getElementById('itemTempLabel').classList.toggle('hidden', isCountedItem(p));
   document.getElementById('grossWeight').value = '';
   document.getElementById('sealedCount').value = '0';
   document.getElementById('itemTemp').value = zone?.tempC ?? state.currentInventory.tempC;
@@ -546,6 +742,15 @@ function selectInventoryProduct(productId) {
   setTimeout(() => document.getElementById('grossWeight').focus(), 50);
 }
 function calculateMeasurement(p, grossWeight, sealedCount, itemTemp) {
+  if (isCountedItem(p)) {
+    const expectedUnits = stockUnits(p.id);
+    const actualUnits = Math.max(0, num(grossWeight));
+    const diffUnits = actualUnits - expectedUnits;
+    const costDifference = diffUnits * num(p.purchasePrice);
+    const hasBaseline = movementCount(p.id) > 0;
+    const status = !hasBaseline ? 'baseline' : Math.abs(diffUnits) < 0.001 ? 'ok' : 'issue';
+    return { valid: true, counted: true, actualUnits, expectedUnits, diffUnits, costDifference, status, hasBaseline };
+  }
   const expectedMl = stockMl(p.id);
   const hasBaseline = movementCount(p.id) > 0;
   if (!p.volumeMl || p.tareG === null || !p.coefMlPerG) return { valid: false, expectedMl, hasBaseline, reason: 'Doplň objem balení, táru a koeficient ml/g.' };
@@ -571,6 +776,16 @@ function updateMeasurementPreview() {
     wrap.innerHTML = `<div class="calc-block"><span>Nelze vypočítat</span><strong class="warning">Chybí kalibrace</strong></div><div class="calc-block"><span>Co doplnit</span><strong style="font-size:14px">${esc(result.reason)}</strong></div>`;
     return;
   }
+  if (result.counted) {
+    const unit = esc(p.countUnit || 'ks');
+    wrap.innerHTML = `
+      <div class="calc-block"><span>Skutečný stav</span><strong>${decimal(result.actualUnits, 2)} ${unit}</strong></div>
+      <div class="calc-block"><span>Očekávaný stav</span><strong>${decimal(result.expectedUnits, 2)} ${unit}</strong></div>
+      <div class="calc-block"><span>Rozdíl</span><strong class="${result.diffUnits < 0 ? 'negative' : result.diffUnits > 0 ? 'positive' : ''}">${result.diffUnits >= 0 ? '+' : ''}${decimal(result.diffUnits, 2)} ${unit}</strong></div>
+      <div class="calc-block"><span>Finanční dopad</span><strong class="${result.costDifference < 0 ? 'negative' : 'positive'}">${result.costDifference >= 0 ? '+' : ''}${money(result.costDifference)}</strong></div>
+      <div class="calc-block"><span>Stav měření</span><strong>${result.status === 'baseline' ? 'Počáteční stav' : result.status === 'ok' ? 'Souhlasí' : 'Prověřit'}</strong></div>`;
+    return;
+  }
   wrap.innerHTML = `
     <div class="calc-block"><span>Skutečný stav</span><strong>${mlText(result.actualMl)}</strong></div>
     <div class="calc-block"><span>Očekávaný stav</span><strong>${mlText(result.expectedMl)}</strong></div>
@@ -583,8 +798,9 @@ function updateMeasurementPreview() {
 function saveInventoryLine(forceIssue = false) {
   const p = productById(currentInventoryProductId);
   if (!p) return toast('Vyber produkt.');
-  const gross = num(document.getElementById('grossWeight').value);
-  if (!gross) return toast('Zadej hmotnost lahve.');
+  const grossInput = document.getElementById('grossWeight').value;
+  const gross = num(grossInput);
+  if (grossInput === '' || (!isCountedItem(p) && !gross)) return toast(isCountedItem(p) ? 'Zadej skutečný počet.' : 'Zadej hmotnost lahve.');
   const result = calculateMeasurement(p, gross, document.getElementById('sealedCount').value, document.getElementById('itemTemp').value);
   if (!result.valid) return toast(result.reason, 5000);
   const line = {
@@ -603,13 +819,16 @@ function renderInventoryLines() {
   document.getElementById('inventoryProgressBadge').textContent = `${lines.length} položek`;
   document.getElementById('inventoryLines').innerHTML = lines.length ? lines.map(l => {
     const p = productById(l.productId);
-    return `<div class="item-row"><div><strong>${esc(p?.name || 'Produkt')}</strong><div class="meta">${mlText(l.actualMl)} · rozdíl ${l.diffMl >= 0 ? '+' : ''}${mlText(l.diffMl)} · ${decimal(l.tempC, 1)} °C</div></div><div>${statusBadge(l.status)}<button class="btn btn-small edit-inv-line" data-id="${l.productId}">Opravit</button></div></div>`;
+    const details = isCountedItem(p)
+      ? `${decimal(l.actualUnits, 2)} ${esc(p.countUnit || 'ks')} · rozdíl ${num(l.diffUnits) >= 0 ? '+' : ''}${decimal(l.diffUnits, 2)} ${esc(p.countUnit || 'ks')}`
+      : `${mlText(l.actualMl)} · rozdíl ${l.diffMl >= 0 ? '+' : ''}${mlText(l.diffMl)} · ${decimal(l.tempC, 1)} °C`;
+    return `<div class="item-row"><div><strong>${esc(p?.name || 'Produkt')}</strong><div class="meta">${details}</div></div><div>${statusBadge(l.status)}<button class="btn btn-small edit-inv-line" data-id="${l.productId}">Opravit</button></div></div>`;
   }).join('') : '<div class="empty-state">Žádná změřená položka.</div>';
   document.querySelectorAll('.edit-inv-line').forEach(btn => btn.addEventListener('click', () => {
     const line = state.currentInventory.lines.find(l => l.productId === btn.dataset.id);
     selectInventoryProduct(btn.dataset.id);
     if (line) {
-      document.getElementById('grossWeight').value = line.grossWeightG;
+      document.getElementById('grossWeight').value = isCountedItem(productById(line.productId)) ? line.actualUnits : line.grossWeightG;
       document.getElementById('sealedCount').value = line.sealedCount;
       document.getElementById('itemTemp').value = line.tempC;
       document.getElementById('inventoryNote').value = line.note || '';
@@ -626,6 +845,21 @@ function closeInventory() {
   if (!lines.length) return toast('Inventura zatím nemá žádnou položku.');
   if (!confirm(`Uzavřít inventuru s ${lines.length} položkami a dorovnat evidenční sklad na skutečnost?`)) return;
   lines.forEach(line => {
+    const p = productById(line.productId);
+    if (isCountedItem(p)) {
+      const currentExpected = stockUnits(line.productId);
+      const adjustment = Math.max(0, num(line.actualUnits)) - currentExpected;
+      if (Math.abs(adjustment) > 0.001) state.movements.push({
+        id: uid('mov'), type: 'adjustment', productId: line.productId, quantityUnits: adjustment,
+        requestedQuantityUnits: adjustment, untrackedUnits: 0, date: state.currentInventory.date,
+        inventoryId: state.currentInventory.id, note: line.note || line.status, createdAt: new Date().toISOString()
+      });
+      state.movements.filter(m => m.productId === line.productId && num(m.untrackedUnits) > 0 && !m.resolvedAt).forEach(m => {
+        m.resolvedAt = new Date().toISOString();
+        m.resolvedByInventoryId = state.currentInventory.id;
+      });
+      return;
+    }
     const currentExpected = stockMl(line.productId);
     const adjustment = num(line.actualMl) - currentExpected;
     if (Math.abs(adjustment) > 0.001) state.movements.push({
@@ -706,7 +940,7 @@ async function handleBarcode(code) {
 function renderSaleProductSelect() {
   const select = document.getElementById('saleProduct');
   const current = select.value;
-  select.innerHTML = productOptions(current);
+  select.innerHTML = productOptions(current, true, p => !isCountedItem(p));
 }
 function updateSaleFormFromProduct() {
   const p = productById(document.getElementById('saleProduct').value);
@@ -803,6 +1037,16 @@ function setupEvents() {
   document.getElementById('newProductBtn').addEventListener('click', () => openProductModal());
   document.getElementById('productSearch').addEventListener('input', renderProducts);
   document.getElementById('onlyIncomplete').addEventListener('change', renderProducts);
+  document.getElementById('productItemMode').addEventListener('change', () => {
+    const definition = COUNTED_ITEM_DEFINITIONS[document.getElementById('productItemMode').value];
+    if (definition) {
+      document.getElementById('productCountUnit').value = definition.countUnit;
+      const category = document.getElementById('productCategory');
+      const defaultCategories = new Set(Object.values(COUNTED_ITEM_DEFINITIONS).map(item => item.category));
+      if (!category.value.trim() || defaultCategories.has(category.value.trim())) category.value = definition.category;
+    }
+    updateProductModeUI();
+  });
   ['productVolume', 'productTare', 'productFullWeight'].forEach(id => document.getElementById(id).addEventListener('input', updateCoefHelper));
   document.getElementById('useAutoCoefBtn').addEventListener('click', () => {
     const coef = updateCoefHelper();
@@ -814,24 +1058,34 @@ function setupEvents() {
     event.preventDefault();
     const id = document.getElementById('productId').value || uid('p');
     const old = productById(id);
+    const selectedMode = document.getElementById('productItemMode').value;
+    const countedDefinition = COUNTED_ITEM_DEFINITIONS[selectedMode] || null;
+    const counted = !!countedDefinition;
     const p = {
       ...(old || {}), id,
       name: document.getElementById('productName').value.trim(),
       category: document.getElementById('productCategory').value.trim(),
       barcode: document.getElementById('productBarcode').value.trim(),
-      volumeMl: num(document.getElementById('productVolume').value) || null,
-      abv: document.getElementById('productAbv').value === '' ? null : num(document.getElementById('productAbv').value),
-      shotMl: num(document.getElementById('productShot').value) || 40,
-      salePrice: num(document.getElementById('productSalePrice').value),
+      volumeMl: counted ? null : num(document.getElementById('productVolume').value) || null,
+      abv: counted || document.getElementById('productAbv').value === '' ? null : num(document.getElementById('productAbv').value),
+      shotMl: counted ? 1 : num(document.getElementById('productShot').value) || 40,
+      salePrice: counted ? 0 : num(document.getElementById('productSalePrice').value),
       purchasePrice: num(document.getElementById('productPurchasePrice').value),
-      tareG: document.getElementById('productTare').value === '' ? null : num(document.getElementById('productTare').value),
-      fullWeightG: document.getElementById('productFullWeight').value === '' ? null : num(document.getElementById('productFullWeight').value),
-      coefMlPerG: document.getElementById('productCoef').value === '' ? null : num(document.getElementById('productCoef').value),
+      tareG: counted || document.getElementById('productTare').value === '' ? null : num(document.getElementById('productTare').value),
+      fullWeightG: counted || document.getElementById('productFullWeight').value === '' ? null : num(document.getElementById('productFullWeight').value),
+      coefMlPerG: counted || document.getElementById('productCoef').value === '' ? null : num(document.getElementById('productCoef').value),
       refTempC: num(document.getElementById('productRefTemp').value),
       tempCoeffPctPer10C: num(document.getElementById('productTempCoeff').value),
       zoneId: document.getElementById('productZone').value,
-      calibrationStatus: document.getElementById('productCalibration').value,
-      unitMode: old?.unitMode || 'liquid', aliases: old?.aliases || [], createdAt: old?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString()
+      calibrationStatus: counted ? 'verified' : document.getElementById('productCalibration').value,
+      unitMode: counted ? 'counted' : selectedMode,
+      itemKind: counted ? countedDefinition.kind : 'product',
+      itemSubtype: counted ? countedDefinition.subtype : null,
+      countUnit: counted ? (document.getElementById('productCountUnit').value.trim() || countedDefinition.countUnit) : 'ks',
+      aliases: counted
+        ? [...new Set([...(old?.itemKind === countedDefinition.kind && old?.itemSubtype === countedDefinition.subtype ? old.aliases || [] : []), ...countedDefinition.aliases])]
+        : old?.aliases || [],
+      createdAt: old?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString()
     };
     const duplicate = state.products.find(x => x.barcode && p.barcode && x.barcode === p.barcode && x.id !== p.id);
     if (duplicate) return toast(`EAN už používá ${duplicate.name}.`, 5000);
@@ -883,7 +1137,7 @@ function setupEvents() {
     try {
       const imported = JSON.parse(await e.target.files[0].text());
       if (!imported.products || !imported.movements) throw new Error('Soubor nemá očekávanou strukturu.');
-      state = imported; saveState(); toast('Záloha importována.');
+      state = { ...imported, version: 2, products: ensureCountedCatalog(imported.products) }; saveState(); toast('Záloha importována.');
     } catch (error) { toast(`Import selhal: ${error.message}`, 5000); }
     e.target.value = '';
   });
@@ -905,4 +1159,19 @@ function init() {
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js').catch(console.warn);
 }
 
-document.addEventListener('DOMContentLoaded', init);
+if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', init);
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    detectCountedItemKey,
+    bestProductMatch,
+    extractInvoiceQuantity,
+    signedInvoiceQuantity,
+    boundCountedQuantity,
+    capCountedMovement,
+    ensureCountedCatalog,
+    isCountedItem,
+    isPackaging,
+    isConsumable
+  };
+}

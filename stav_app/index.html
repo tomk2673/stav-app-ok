@@ -80,7 +80,7 @@
           </article>
 
           <article class="panel">
-            <div class="panel-head"><h2>Položky k naskladnění</h2><span id="invoiceLineCount" class="badge muted">0</span></div>
+            <div class="panel-head"><h2>Položky ke zpracování</h2><span id="invoiceLineCount" class="badge muted">0</span></div>
             <div class="form-grid compact">
               <label>Dodavatel<input id="supplierName" type="text" placeholder="např. Makro" /></label>
               <label>Číslo faktury<input id="invoiceNumber" type="text" /></label>
@@ -89,7 +89,7 @@
             <div id="invoiceLines" class="line-editor"></div>
             <div class="button-row sticky-actions">
               <button id="addInvoiceLineBtn" class="btn">+ Přidat řádek</button>
-              <button id="saveReceiptBtn" class="btn btn-primary">Naskladnit zkontrolované</button>
+              <button id="saveReceiptBtn" class="btn btn-primary">Zpracovat schválené</button>
             </div>
           </article>
         </div>
@@ -116,9 +116,9 @@
             <form id="inventoryMeasureForm" class="hidden">
               <div id="currentProductCard" class="product-focus"></div>
               <div class="form-grid">
-                <label>Hmotnost otevřené lahve v g<input id="grossWeight" inputmode="decimal" type="number" step="0.1" required /></label>
-                <label>Celé neotevřené kusy<input id="sealedCount" inputmode="numeric" type="number" min="0" step="1" value="0" /></label>
-                <label>Teplota této položky °C<input id="itemTemp" type="number" step="0.1" /></label>
+                <label id="grossWeightLabel"><span id="grossWeightText">Hmotnost otevřené lahve v g</span><input id="grossWeight" inputmode="decimal" type="number" step="0.1" required /></label>
+                <label id="sealedCountLabel">Celé neotevřené kusy<input id="sealedCount" inputmode="numeric" type="number" min="0" step="1" value="0" /></label>
+                <label id="itemTempLabel">Teplota této položky °C<input id="itemTemp" type="number" step="0.1" /></label>
                 <label>Poznámka<input id="inventoryNote" type="text" placeholder="rozbití, přesun…" /></label>
               </div>
               <div id="measurementResult" class="calculation-card"></div>
@@ -167,7 +167,7 @@
       <section id="view-products" class="view">
         <div class="panel">
           <div class="panel-head products-head">
-            <div><h2>Produktový katalog</h2><p>Výchozí sortiment Ztraceného baru. EAN a kalibrace se doplní prvním skenem.</p></div>
+            <div><h2>Produktový katalog</h2><p>Nápoje, vratné obaly i spotřební materiál. EAN a kalibrace se doplní prvním skenem.</p></div>
             <button id="newProductBtn" class="btn btn-primary">+ Nový produkt</button>
           </div>
           <div class="toolbar-row">
@@ -212,24 +212,35 @@
           <label>Název<input id="productName" required /></label>
           <label>Kategorie<input id="productCategory" /></label>
           <label>EAN / čárový kód<input id="productBarcode" inputmode="numeric" /></label>
-          <label>Objem balení v ml<input id="productVolume" type="number" min="1" step="1" /></label>
-          <label>Alkohol % obj.<input id="productAbv" type="number" min="0" step="0.1" /></label>
-          <label>Prodejní porce v ml<input id="productShot" type="number" min="1" step="1" /></label>
-          <label>Prodejní cena porce<input id="productSalePrice" type="number" min="0" step="0.01" /></label>
-          <label>Poslední nákupní cena balení<input id="productPurchasePrice" type="number" min="0" step="0.01" /></label>
-          <label>Tára prázdné lahve v g<input id="productTare" type="number" min="0" step="0.1" /></label>
-          <label>Hmotnost plné lahve v g<input id="productFullWeight" type="number" min="0" step="0.1" /></label>
-          <label>Koeficient ml / g<input id="productCoef" type="number" min="0" step="0.0001" /></label>
-          <label>Referenční teplota °C<input id="productRefTemp" type="number" step="0.1" /></label>
-          <label>Teplotní korekce % / 10 °C<input id="productTempCoeff" type="number" step="0.01" /></label>
+          <label>Typ položky<select id="productItemMode">
+            <option value="liquid">Nápoj – objem / vážení</option>
+            <option value="unit">Kusový prodejní produkt</option>
+            <option value="packaging_crate">Vratný obal – přepravka</option>
+            <option value="packaging_bottle">Vratný obal – sklo / láhev</option>
+            <option value="packaging_keg">Vratný obal – sud / KEG</option>
+            <option value="consumable_waste_bags">Spotřeba – pytle na odpad</option>
+            <option value="consumable_cleaning">Spotřeba – úklidová chemie</option>
+            <option value="consumable_sanitation">Spotřeba – sanitační chemie</option>
+          </select></label>
+          <label class="counted-only-field hidden">Jednotka počítání<input id="productCountUnit" placeholder="ks, bal., role, l" /></label>
+          <label class="liquid-only-field">Objem balení v ml<input id="productVolume" type="number" min="1" step="1" /></label>
+          <label class="liquid-only-field">Alkohol % obj.<input id="productAbv" type="number" min="0" step="0.1" /></label>
+          <label class="liquid-only-field">Prodejní porce v ml<input id="productShot" type="number" min="1" step="1" /></label>
+          <label class="liquid-only-field">Prodejní cena porce<input id="productSalePrice" type="number" min="0" step="0.01" /></label>
+          <label><span id="productPurchasePriceText">Poslední nákupní cena balení</span><input id="productPurchasePrice" type="number" min="0" step="0.01" /></label>
+          <label class="liquid-only-field">Tára prázdné lahve v g<input id="productTare" type="number" min="0" step="0.1" /></label>
+          <label class="liquid-only-field">Hmotnost plné lahve v g<input id="productFullWeight" type="number" min="0" step="0.1" /></label>
+          <label class="liquid-only-field">Koeficient ml / g<input id="productCoef" type="number" min="0" step="0.0001" /></label>
+          <label class="liquid-only-field">Referenční teplota °C<input id="productRefTemp" type="number" step="0.1" /></label>
+          <label class="liquid-only-field">Teplotní korekce % / 10 °C<input id="productTempCoeff" type="number" step="0.01" /></label>
           <label>Skladovací zóna<select id="productZone"></select></label>
-          <label>Stav kalibrace<select id="productCalibration">
+          <label class="liquid-only-field">Stav kalibrace<select id="productCalibration">
             <option value="missing">Chybí</option>
             <option value="provisional">Provizorní</option>
             <option value="verified">Ověřená</option>
           </select></label>
         </div>
-        <div class="formula-box">
+        <div class="formula-box liquid-only-field">
           <strong>Automatický koeficient</strong>
           <span id="coefHelper">Doplň objem, táru a plnou hmotnost.</span>
           <button id="useAutoCoefBtn" type="button" class="btn btn-small">Použít výpočet</button>

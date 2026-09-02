@@ -37,6 +37,37 @@
     if (!wrap || !select || !syncBtn) return;
 
     wrap.classList.remove('hidden');
+    let syncing = false;
+
+    async function syncSelected(auto = false) {
+      if (syncing || !select.value || !window.PubGuruFastCapture?.queueNativeImages) return;
+      syncing = true;
+      const original = syncBtn.textContent;
+      syncBtn.disabled = true;
+      syncBtn.textContent = auto ? 'Kontroluji nové…' : 'Načítám nové…';
+      try {
+        const response = await call('syncAlbum', { albumId: select.value, limit: 30 });
+        const images = Array.isArray(response.images) ? response.images : [];
+        if (!images.length) {
+          syncBtn.textContent = auto ? 'Album je aktuální' : 'Žádné nové faktury';
+          setTimeout(() => { syncBtn.textContent = original; syncBtn.disabled = false; }, 1500);
+          return;
+        }
+        const result = await window.PubGuruFastCapture.queueNativeImages(images);
+        if (result?.completedAssetIds?.length) {
+          await call('markImported', { assetIds: result.completedAssetIds });
+        }
+        syncBtn.textContent = `Načteno ${result?.queued || 0}`;
+        setTimeout(() => { syncBtn.textContent = original; syncBtn.disabled = false; }, 1800);
+      } catch (error) {
+        console.error(error);
+        syncBtn.textContent = 'Synchronizace selhala';
+        setTimeout(() => { syncBtn.textContent = original; syncBtn.disabled = false; }, 2200);
+      } finally {
+        syncing = false;
+      }
+    }
+
     try {
       const response = await call('listAlbums');
       const albums = Array.isArray(response.albums) ? response.albums : [];
@@ -54,36 +85,12 @@
         if (select.value) localStorage.setItem('pub_guru_invoice_album_id', select.value);
         syncBtn.disabled = !select.value;
       });
+      syncBtn.addEventListener('click', () => syncSelected(false));
+      if (saved && select.value === saved) setTimeout(() => syncSelected(true), 350);
     } catch (error) {
       console.error(error);
       select.innerHTML = '<option value="">Povol přístup k Fotkám</option>';
     }
-
-    syncBtn.addEventListener('click', async () => {
-      if (!select.value || !window.PubGuruFastCapture?.queueNativeImages) return;
-      const original = syncBtn.textContent;
-      syncBtn.disabled = true;
-      syncBtn.textContent = 'Načítám nové…';
-      try {
-        const response = await call('syncAlbum', { albumId: select.value, limit: 30 });
-        const images = Array.isArray(response.images) ? response.images : [];
-        if (!images.length) {
-          syncBtn.textContent = 'Žádné nové faktury';
-          setTimeout(() => { syncBtn.textContent = original; syncBtn.disabled = false; }, 1800);
-          return;
-        }
-        const result = await window.PubGuruFastCapture.queueNativeImages(images);
-        if (result?.completedAssetIds?.length) {
-          await call('markImported', { assetIds: result.completedAssetIds });
-        }
-        syncBtn.textContent = `Načteno ${result?.queued || 0}`;
-        setTimeout(() => { syncBtn.textContent = original; syncBtn.disabled = false; }, 1800);
-      } catch (error) {
-        console.error(error);
-        syncBtn.textContent = 'Synchronizace selhala';
-        setTimeout(() => { syncBtn.textContent = original; syncBtn.disabled = false; }, 2200);
-      }
-    });
   }
 
   document.addEventListener('DOMContentLoaded', initAlbumUI);

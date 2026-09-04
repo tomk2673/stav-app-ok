@@ -3,12 +3,17 @@
 (function () {
   const LOCAL_STATE_KEY = 'stav_app_v1';
   const SYNC_MARKER_KEY = 'pub_guru_backend_sync_v1';
+  let localStateRetries = 0;
 
   function readLocal() {
     try { return JSON.parse(localStorage.getItem(LOCAL_STATE_KEY) || 'null'); }
     catch { return null; }
   }
   function writeLocal(value) { localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(value)); }
+
+  function unitMode(value) {
+    return ['liquid', 'unit', 'counted'].includes(value) ? value : 'liquid';
+  }
 
   function toDbProduct(p, organizationId) {
     return {
@@ -29,7 +34,10 @@
       temp_coeff_pct_per_10c: p.tempCoeffPctPer10C ?? null,
       calibration_status: ['missing','provisional','verified'].includes(p.calibrationStatus) ? p.calibrationStatus : 'missing',
       aliases: Array.isArray(p.aliases) ? p.aliases : [],
-      unit_mode: p.unitMode === 'unit' ? 'unit' : 'liquid',
+      unit_mode: unitMode(p.unitMode),
+      item_kind: p.unitMode === 'counted' ? p.itemKind : 'product',
+      item_subtype: p.unitMode === 'counted' ? p.itemSubtype : null,
+      count_unit: p.countUnit || 'ks',
       storage_zone_key: p.zoneId || null,
       updated_at: new Date().toISOString()
     };
@@ -55,7 +63,10 @@
       tempCoeffPctPer10C: p.temp_coeff_pct_per_10c == null ? 1.25 : Number(p.temp_coeff_pct_per_10c),
       zoneId: p.storage_zone_key || fallback.zoneId || 'shelf',
       calibrationStatus: p.calibration_status || 'missing',
-      unitMode: p.unit_mode === 'unit' ? 'unit' : 'liquid',
+      unitMode: unitMode(p.unit_mode),
+      itemKind: p.item_kind || 'product',
+      itemSubtype: p.item_subtype || null,
+      countUnit: p.count_unit || 'ks',
       aliases: Array.isArray(p.aliases) ? p.aliases : [],
       updatedAt: p.updated_at || fallback.updatedAt || new Date().toISOString(),
       createdAt: p.created_at || fallback.createdAt || new Date().toISOString()
@@ -66,9 +77,12 @@
     return {
       id: `db_${m.id}`,
       backendId: m.id,
-      type: m.movement_type,
+      type: m.movement_type === 'manual_correction' ? 'adjustment' : m.movement_type,
       productId: productClientKey,
       quantityMl: Number(m.quantity_ml || 0),
+      quantityUnits: m.quantity_units == null ? null : Number(m.quantity_units),
+      requestedQuantityUnits: m.requested_quantity_units == null ? null : Number(m.requested_quantity_units),
+      untrackedUnits: Number(m.untracked_units || 0),
       date: String(m.occurred_at || m.created_at).slice(0, 10),
       note: m.reason || '',
       sourceType: m.source_type || null,
@@ -77,14 +91,15 @@
     };
   }
 
-  async function seedProductsIfNeeded(client, ctx, local) {
-    const { data: existing, error } = await client.from('products').select('id').eq('organization_id', ctx.organization.id).limit(1);
+  async function syncMissingProducts(client, ctx, local) {
+    const { data: existing, error } = await client.from('products').select('client_key').eq('organization_id', ctx.organization.id);
     if (error) throw error;
-    if (existing?.length) return false;
     if (!['owner','manager'].includes(ctx.role)) return false;
     const products = Array.isArray(local?.products) ? local.products : [];
-    if (!products.length) return false;
-    const insert = await client.from('products').insert(products.map(p => toDbProduct(p, ctx.organization.id)));
+    const existingKeys = new Set((existing || []).map(p => p.client_key).filter(Boolean));
+    const missing = products.filter(p => p?.id && !existingKeys.has(p.id));
+    if (!missing.length) return false;
+    const insert = await client.from('products').insert(missing.map(p => toDbProduct(p, ctx.organization.id)));
     if (insert.error) throw insert.error;
     return true;
   }
@@ -95,12 +110,16 @@
     if (!ctx?.user || !ctx?.organization || !ctx?.venue) return;
     const client = window.PubGuruBackend.client;
     const local = readLocal();
-    if (!local) return;
+    if (!local) {
+      if (localStateRetries++ < 20) setTimeout(run, 100);
+      return;
+    }
+    localStateRetries = 0;
 
-    await seedProductsIfNeeded(client, ctx, local);
+    await syncMissingProducts(client, ctx, local);
 
     const productsResult = await client.from('products')
-      .select('id,client_key,name,category,ean,volume_ml,abv,shot_ml,sale_price,current_purchase_price,tare_g,full_weight_g,ml_per_g,ref_temp_c,temp_coeff_pct_per_10c,calibration_status,aliases,unit_mode,storage_zone_key,created_at,updated_at')
+      .select('id,client_key,name,category,ean,volume_ml,abv,shot_ml,sale_price,current_purchase_price,tare_g,full_weight_g,ml_per_g,ref_temp_c,temp_coeff_pct_per_10c,calibration_status,aliases,unit_mode,item_kind,item_subtype,count_unit,storage_zone_key,created_at,updated_at')
       .eq('organization_id', ctx.organization.id).is('archived_at', null).order('name');
     if (productsResult.error) throw productsResult.error;
 
@@ -109,7 +128,7 @@
     const uuidToClient = new Map((productsResult.data || []).map(p => [p.id, p.client_key]));
 
     const movementsResult = await client.from('stock_movements')
-      .select('id,product_id,movement_type,quantity_ml,source_type,source_id,reason,occurred_at,created_at')
+      .select('id,product_id,movement_type,quantity_ml,quantity_units,requested_quantity_units,untracked_units,source_type,source_id,reason,occurred_at,created_at')
       .eq('organization_id', ctx.organization.id).eq('venue_id', ctx.venue.id).order('occurred_at', { ascending: true });
     if (movementsResult.error) throw movementsResult.error;
     const remoteMovements = (movementsResult.data || []).map(m => [m, uuidToClient.get(m.product_id)])

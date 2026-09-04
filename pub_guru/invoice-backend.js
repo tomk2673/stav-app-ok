@@ -13,6 +13,7 @@
     const x = Number(String(v ?? '').replace(/\s/g, '').replace(',', '.'));
     return Number.isFinite(x) ? x : 0;
   };
+  const signedQuantity = (quantity, unitPrice) => (n(quantity) < 0 || n(unitPrice) < 0) ? -Math.abs(n(quantity)) : Math.abs(n(quantity));
 
   function localState() {
     try { return JSON.parse(localStorage.getItem(LOCAL_STATE_KEY) || 'null'); }
@@ -57,6 +58,10 @@
       temp_coeff_pct_per_10c: p?.tempCoeffPctPer10C ?? null,
       calibration_status: ['missing','provisional','verified'].includes(p?.calibrationStatus) ? p.calibrationStatus : 'missing',
       aliases: Array.isArray(p?.aliases) ? p.aliases : [],
+      unit_mode: ['liquid','unit','counted'].includes(p?.unitMode) ? p.unitMode : 'liquid',
+      item_kind: p?.unitMode === 'counted' ? p.itemKind : 'product',
+      item_subtype: p?.unitMode === 'counted' ? p.itemSubtype : null,
+      count_unit: p?.countUnit || 'ks',
       updated_at: new Date().toISOString()
     };
   }
@@ -64,7 +69,7 @@
   async function findProduct(localId) {
     if (!localId) return null;
     const { data, error } = await client().from('products')
-      .select('id,name,current_purchase_price,volume_ml')
+      .select('id,name,current_purchase_price,volume_ml,unit_mode,item_kind,item_subtype,count_unit')
       .eq('organization_id', ctx.organization.id).eq('client_key', localId).maybeSingle();
     if (error) throw error;
     return data || null;
@@ -81,10 +86,10 @@
     if (existing) {
       const update = await client().from('products').update(payload).eq('id', existing.id);
       if (update.error) throw update.error;
-      return { ...existing, name: payload.name, current_purchase_price: payload.current_purchase_price, volume_ml: payload.volume_ml };
+      return { ...existing, name: payload.name, current_purchase_price: payload.current_purchase_price, volume_ml: payload.volume_ml, unit_mode: payload.unit_mode, item_kind: payload.item_kind, item_subtype: payload.item_subtype, count_unit: payload.count_unit };
     }
     const inserted = await client().from('products').insert(payload)
-      .select('id,name,current_purchase_price,volume_ml').single();
+      .select('id,name,current_purchase_price,volume_ml,unit_mode,item_kind,item_subtype,count_unit').single();
     if (inserted.error) throw inserted.error;
     return inserted.data;
   }
@@ -175,13 +180,13 @@
 
   async function persistInvoice(snapshot) {
     if (!isLead()) return persistInvoiceCapture(snapshot);
-    const approved = snapshot.rows.filter(r => r.state === 'approved' && r.localProductId && r.qty > 0);
+    const approved = snapshot.rows.filter(r => r.state === 'approved' && r.localProductId && n(r.qty) !== 0);
     if (!approved.length) return;
     if (snapshot.fingerprint && await duplicateInvoice(snapshot.fingerprint)) {
       window.toast?.('Faktura už je v PUB GURU databázi.', 5000); return;
     }
 
-    const total = approved.reduce((s, r) => s + r.qty * r.unitPrice, 0);
+    const total = approved.reduce((s, r) => s + signedQuantity(r.qty, r.unitPrice) * Math.abs(n(r.unitPrice)), 0);
     const { data: invoice, error: invoiceError } = await client().from('invoices').insert({
       organization_id: ctx.organization.id, venue_id: ctx.venue.id, supplier_name: snapshot.supplier,
       invoice_number: snapshot.number, issue_date: snapshot.date, total_amount: total,
@@ -195,7 +200,7 @@
       const product = await ensureProduct(row.localProductId, row.productName || row.rawName);
       const lineInsert = await client().from('invoice_lines').insert({
         invoice_id: invoice.id, organization_id: ctx.organization.id, raw_name: row.rawName, product_id: product.id,
-        quantity: row.qty, unit: 'ks', unit_price: row.unitPrice, line_total: row.qty * row.unitPrice,
+        quantity: signedQuantity(row.qty, row.unitPrice), unit: product.count_unit || 'ks', unit_price: Math.abs(n(row.unitPrice)), line_total: signedQuantity(row.qty, row.unitPrice) * Math.abs(n(row.unitPrice)),
         match_method: 'confirmed_local_mapping', match_confidence: 1, status: 'approved',
         original_values: { raw_name: row.rawName, local_product_id: row.localProductId }
       }).select('id').single();
@@ -203,12 +208,12 @@
 
       const priceInsert = await client().from('purchase_price_history').insert({
         organization_id: ctx.organization.id, venue_id: ctx.venue.id, product_id: product.id,
-        invoice_line_id: lineInsert.data.id, unit_price: row.unitPrice
+        invoice_line_id: lineInsert.data.id, unit_price: Math.abs(n(row.unitPrice))
       });
       if (priceInsert.error) throw priceInsert.error;
 
       const productUpdate = await client().from('products')
-        .update({ current_purchase_price: row.unitPrice, updated_at: new Date().toISOString() }).eq('id', product.id);
+        .update({ current_purchase_price: Math.abs(n(row.unitPrice)), updated_at: new Date().toISOString() }).eq('id', product.id);
       if (productUpdate.error) throw productUpdate.error;
     }
 
@@ -242,6 +247,7 @@
     for (const line of lines) {
       const p = state.products?.find(x => x.id === line.productId);
       const product = await ensureProduct(line.productId, p?.name || 'Produkt');
+      const counted = product.unit_mode === 'counted';
       if (line.status === 'issue') issueCount += 1;
       purchaseImpact += n(line.costDifference ?? line.purchaseValueDifference);
       saleImpact += n(line.saleDifference ?? line.saleValueDifference);
@@ -249,12 +255,15 @@
         inventory_session_id: session.id,
         organization_id: ctx.organization.id,
         product_id: product.id,
-        expected_ml: n(line.expectedMl),
-        measured_ml: n(line.actualMl ?? line.measuredMl),
-        difference_ml: n(line.diffMl ?? line.differenceMl),
-        gross_weight_g: n(line.grossWeightG),
-        sealed_count: n(line.sealedCount),
-        temperature_c: n(line.tempC),
+        expected_ml: counted ? null : n(line.expectedMl),
+        measured_ml: counted ? null : n(line.actualMl ?? line.measuredMl),
+        difference_ml: counted ? null : n(line.diffMl ?? line.differenceMl),
+        expected_units: counted ? n(line.expectedUnits) : null,
+        measured_units: counted ? n(line.actualUnits ?? line.measuredUnits) : null,
+        difference_units: counted ? n(line.diffUnits ?? line.differenceUnits) : null,
+        gross_weight_g: counted ? null : n(line.grossWeightG),
+        sealed_count: counted ? null : n(line.sealedCount),
+        temperature_c: counted ? null : n(line.tempC),
         purchase_value_difference: n(line.costDifference ?? line.purchaseValueDifference),
         sale_value_difference: n(line.saleDifference ?? line.saleValueDifference),
         note: line.note || null,

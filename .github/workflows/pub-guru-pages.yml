@@ -3,6 +3,8 @@ name: PUB GURU V1
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -37,8 +39,11 @@ jobs:
           test -f pub_guru/closings.html
           test -f pub_guru/app-config.js
           test -f pub_guru/backend.js
+      - name: Unit and contract tests
+        run: node --test tests/*.test.js
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: test
     environment:
       name: github-pages

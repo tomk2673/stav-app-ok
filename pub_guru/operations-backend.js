@@ -28,7 +28,10 @@
       temp_coeff_pct_per_10c: p.tempCoeffPctPer10C ?? null,
       calibration_status: ['missing','provisional','verified'].includes(p.calibrationStatus) ? p.calibrationStatus : 'missing',
       aliases: Array.isArray(p.aliases) ? p.aliases : [],
-      unit_mode: p.unitMode === 'unit' ? 'unit' : 'liquid',
+      unit_mode: ['liquid', 'unit', 'counted'].includes(p.unitMode) ? p.unitMode : 'liquid',
+      item_kind: p.unitMode === 'counted' ? p.itemKind : 'product',
+      item_subtype: p.unitMode === 'counted' ? p.itemSubtype : null,
+      count_unit: p.countUnit || 'ks',
       storage_zone_key: p.zoneId || null,
       updated_at: new Date().toISOString()
     };

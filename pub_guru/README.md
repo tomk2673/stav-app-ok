@@ -1,43 +1,40 @@
-# STAV. – funkční MVP
+# PUB GURU v1
 
 Mobilní PWA pro:
 
-- OCR fotografií a PDF faktur,
-- kontrolu položek a naskladnění,
-- skenování EAN přes kameru,
-- váhovou inventuru běžnou kuchyňskou váhou,
-- produktový koeficient ml/g, táru a teplotní korekci,
-- samostatný stav každé inventurní a fakturační položky,
-- ruční zápis prodeje, nákladů, hrubého zisku a marže,
-- lokální uložení dat a export/import zálohy.
+- OCR fotografií a PDF faktur, kontrolu položek a naskladnění,
+- rychlé uložení více dokladů do fronty a následné schválení vedoucím,
+- denní uzávěrky s kontrolou OCR a zamknutím po finalizaci,
+- auditované skladové pohyby a neměnné zaúčtované doklady,
+- vratné obaly a spotřební materiál vedené v kusech,
+- váhovou inventuru lahví s tárou, koeficientem ml/g a teplotní korekcí,
+- role majitel, vedoucí, zaměstnanec, účetní a servis.
 
 ## Spuštění
 
-Nejlépe přes lokální HTTPS nebo běžný webhosting. Kamera na iPhonu vyžaduje HTTPS.
-
-Jednoduchý lokální test na počítači:
+Z kořene repozitáře:
 
 ```bash
 python3 -m http.server 8080
 ```
 
-Pak otevřít `http://localhost:8080`.
+Pak otevři `http://localhost:8080/pub_guru/start.html`. Kamera na telefonu vyžaduje HTTPS; testovací nasazení proto používá GitHub Pages.
 
-## Důležitá přesnost
+Automatická kontrola a nasazení jsou v `.github/workflows/pub-guru-pages.yml`. Pull request spouští syntaktické, jednotkové a kontraktové testy. Nasazení proběhne pouze z `main` nebo ručně přes `workflow_dispatch`.
 
-Výchozí teplotní korekce je pouze provizorní. U každého konkrétního SKU je potřeba doplnit:
+## Backend a bezpečnost
 
-- EAN,
-- objem balení,
-- táru,
-- hmotnost plné lahve nebo ověřený koeficient,
-- produktový teplotní koeficient,
-- skladovací zónu.
+Prohlížeč používá pouze veřejný Supabase publishable key z `app-config.js`. Privilegovaný `service_role` klíč do klienta nepatří.
 
-Aplikace schválně neodvozuje hustotu pouze z procent alkoholu. Stejné ABV neznamená stejnou hustotu.
+Databázové změny jsou v `database/`. Produkční tabulky mají RLS a explicitní oprávnění. Zaúčtované faktury, uzavřené inventury, finalizované uzávěrky a skladový ledger se nepřepisují. Oprava probíhá novým auditovaným záznamem.
 
-## Omezení MVP
+Kusové položky ukládají jednotky odděleně od mililitrů. Záporný pohyb se na databázi omezí na evidovaný zůstatek; neaplikovaný zbytek zůstane uložen jako `untracked_units`, takže se stav nedostane pod nulu a původní požadavek nezmizí.
 
-- OCR položky rozpozná a připraví k ruční kontrole, není to účetní autopilot.
-- Pro teoretický sklad se prodeje zatím zapisují ručně. Další krok je import z pokladny a receptury míchaných nápojů.
-- Foto měření hladiny je připravené jako další modul, váhová inventura je nyní plně funkční.
+## Ověření
+
+```bash
+for f in pub_guru/*.js; do node --check "$f"; done
+node --test tests/*.test.js
+```
+
+OCR je pomocník, ne účetní autopilot. Každou rozpoznanou položku a finanční hodnotu musí před zaúčtováním potvrdit oprávněný uživatel.

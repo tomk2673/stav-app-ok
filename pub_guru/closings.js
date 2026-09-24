@@ -13,6 +13,8 @@ let ctx = null;
 let fileFingerprint = null;
 let fileName = null;
 let parsedSnapshot = null;
+let batchFiles = [];
+let batchRunning = false;
 
 function backend() {
   if (!window.PubGuruBackend) throw new Error('Backend PUB GURU není dostupný.');
@@ -156,7 +158,7 @@ async function isDuplicate(fingerprint) {
   return data || null;
 }
 
-async function recognizeImage(file) {
+async function recognizeImage(file, options = {}) {
   if (!window.Tesseract) throw new Error('OCR knihovna se nenačetla.');
   const wrap = document.getElementById('ocrProgressWrap');
   const bar = document.getElementById('ocrProgress');
@@ -169,6 +171,7 @@ async function recognizeImage(file) {
   const duplicateBadge = document.getElementById('duplicateBadge');
   if (duplicate) {
     duplicateBadge.textContent = 'duplicitní doklad'; duplicateBadge.className = 'badge danger';
+    if (options.skipDuplicate) return { duplicate: true, existing: duplicate };
     toast(`Tento doklad už existuje (${duplicate.business_date}).`, 5000);
   } else {
     duplicateBadge.textContent = 'nový doklad'; duplicateBadge.className = 'badge muted';
@@ -188,7 +191,42 @@ async function recognizeImage(file) {
   }});
   bar.style.width = '100%'; status.textContent = 'OCR dokončeno.';
   const text = normalizeOcrText(result.data.text); setValue('closingOcrText', text); applyParsed(parseClosingText(text));
+  return { duplicate: false, parsed: parseClosingText(text) };
 }
+
+function renderBatchQueue() {
+  const el = document.getElementById('batchQueue');
+  if (!el) return;
+  el.innerHTML = batchFiles.length ? batchFiles.map((item, i) => `<div class="closing-row"><div><strong>${esc(item.file.name || `Uzávěrka ${i + 1}`)}</strong><small>${esc(item.message || (item.status === 'done' ? 'zpracováno' : item.status === 'error' ? 'chyba' : item.status === 'duplicate' ? 'duplicitní · přeskočeno' : item.status === 'processing' ? 'OCR…' : 'čeká'))}</small></div><span class="badge ${item.status === 'done' ? '' : item.status === 'error' ? 'danger' : 'muted'}">${i + 1}/${batchFiles.length}</span></div>`).join('') : '';
+}
+
+async function processBatch(files) {
+  if (batchRunning) return;
+  batchFiles = [...files].filter(file => file.type.startsWith('image/')).map(file => ({ file, status: 'queued', message: '' }));
+  if (!batchFiles.length) return toast('Vyber fotografie uzávěrek.');
+  batchRunning = true; renderBatchQueue();
+  let saved = 0, duplicates = 0, errors = 0;
+  for (const item of batchFiles) {
+    item.status = 'processing'; item.message = 'OCR a kontrola duplicity…'; renderBatchQueue();
+    try {
+      clearForm(false);
+      const result = await recognizeImage(item.file, { skipDuplicate: true });
+      if (result?.duplicate) { item.status = 'duplicate'; item.message = 'Už je v databázi'; duplicates++; renderBatchQueue(); continue; }
+      const form = currentForm();
+      if (!form.totalAmount && !form.cashAmount && !form.cardAmount) throw new Error('OCR nenašlo částku');
+      await saveClosing(false, { batch: true });
+      item.status = 'done'; item.message = 'Uloženo ke kontrole'; saved++;
+    } catch (error) {
+      console.error(error); item.status = 'error'; item.message = error.message || 'Zpracování selhalo'; errors++;
+    }
+    renderBatchQueue();
+  }
+  batchRunning = false;
+  document.getElementById('closingFile').value = '';
+  await Promise.all([renderClosings(), renderAudit()]);
+  toast(`Dávka hotová: ${saved} uloženo, ${duplicates} duplicit, ${errors} chyb.`, 7000);
+}
+
 
 async function writeAudit(eventType, entityId, beforeData = null, afterData = null, reason = null) {
   const { error } = await client().from('audit_events').insert({
@@ -199,7 +237,7 @@ async function writeAudit(eventType, entityId, beforeData = null, afterData = nu
   if (error) throw error;
 }
 
-async function saveClosing(finalize) {
+async function saveClosing(finalize, options = {}) {
   const form = currentForm();
   if (!form.businessDate) return toast('Chybí datum uzávěrky.');
   if (!form.totalAmount && !form.cashAmount && !form.cardAmount) return toast('Chybí částka uzávěrky.');
@@ -234,7 +272,7 @@ async function saveClosing(finalize) {
   await writeAudit(finalize ? 'closing.finalized' : 'closing.saved', closing.id, null, row, corrections.length ? reason : null);
   await Promise.all([renderClosings(), renderAudit()]);
   clearForm(false);
-  toast(finalize ? 'Uzávěrka je v databázi uzavřená a zamčená.' : 'Koncept uzávěrky uložen do databáze.');
+  if (!options.batch) toast(finalize ? 'Uzávěrka je v databázi uzavřená a zamčená.' : 'Koncept uzávěrky uložen do databáze.');
 }
 
 function clearForm(clearFile = true) {
@@ -275,7 +313,12 @@ async function init() {
     setValue('businessDate', today());
     ['cashAmount','cardAmount','totalAmount','transactionCount','refundsAmount'].forEach(id => document.getElementById(id).addEventListener('input', updateCheck));
     document.getElementById('closingFile').addEventListener('change', async event => {
-      const file = event.target.files?.[0]; if (!file) return;
+      const files = [...(event.target.files || [])]; if (!files.length) return;
+      if (files.length > 1) {
+        try { await processBatch(files); } catch (error) { console.error(error); toast(`Dávka selhala: ${error.message}`, 6500); }
+        return;
+      }
+      const file = files[0];
       try { await recognizeImage(file); toast('Uzávěrka načtena. Zkontroluj hodnoty.'); }
       catch (error) { console.error(error); toast(`OCR se nepodařilo: ${error.message}`, 5500); }
     });

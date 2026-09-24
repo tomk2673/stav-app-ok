@@ -53,10 +53,7 @@ drop policy if exists supplier_document_profiles_write_lead on public.supplier_d
 create policy supplier_document_profiles_write_lead
 on public.supplier_document_profiles for all to authenticated
 using (public.has_org_role(organization_id, array['owner','manager']))
-with check (
-  created_by = (select auth.uid())
-  and public.has_org_role(organization_id, array['owner','manager'])
-);
+with check (public.has_org_role(organization_id, array['owner','manager']));
 
 drop policy if exists supplier_document_samples_read_member on public.supplier_document_samples;
 create policy supplier_document_samples_read_member
@@ -67,10 +64,7 @@ drop policy if exists supplier_document_samples_write_lead on public.supplier_do
 create policy supplier_document_samples_write_lead
 on public.supplier_document_samples for all to authenticated
 using (public.has_org_role(organization_id, array['owner','manager']))
-with check (
-  created_by = (select auth.uid())
-  and public.has_org_role(organization_id, array['owner','manager'])
-);
+with check (public.has_org_role(organization_id, array['owner','manager']));
 
 revoke all on table public.supplier_document_profiles from anon, authenticated;
 revoke all on table public.supplier_document_samples from anon, authenticated;

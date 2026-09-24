@@ -1149,6 +1149,7 @@ function setupEvents() {
 
 function init() {
   ensureCurrentInventory();
+  if (!localStorage.getItem(STORAGE_KEY)) saveState(false);
   document.getElementById('invoiceDate').value = today();
   document.getElementById('saleDate').value = today();
   document.getElementById('periodFrom').value = monthStart();

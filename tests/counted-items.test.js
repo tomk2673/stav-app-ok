@@ -10,7 +10,7 @@ const {
   boundCountedQuantity,
   capCountedMovement,
   ensureCountedCatalog
-} = require('../stav_app/app.js');
+} = require('../pub_guru/app.js');
 
 test('rozpozná všechny tři skupiny vratných obalů', () => {
   assert.equal(detectCountedItemKey('Vratný obal – přepravka'), 'packaging_crate');

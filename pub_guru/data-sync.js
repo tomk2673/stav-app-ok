@@ -2,7 +2,7 @@
 
 (function () {
   const LOCAL_STATE_KEY = 'stav_app_v1';
-  const SYNC_MARKER_KEY = 'pub_guru_backend_sync_v1';
+  let syncing = null;
   let localStateRetries = 0;
 
   function readLocal() {
@@ -118,40 +118,41 @@
 
     await syncMissingProducts(client, ctx, local);
 
-    const productsResult = await client.from('products')
-      .select('id,client_key,name,category,ean,volume_ml,abv,shot_ml,sale_price,current_purchase_price,tare_g,full_weight_g,ml_per_g,ref_temp_c,temp_coeff_pct_per_10c,calibration_status,aliases,unit_mode,item_kind,item_subtype,count_unit,storage_zone_key,created_at,updated_at')
-      .eq('organization_id', ctx.organization.id).is('archived_at', null).order('name');
-    if (productsResult.error) throw productsResult.error;
+    const snapshot = await client.rpc('pos_inventory_snapshot', {p_venue: ctx.venue.id});
+    if (snapshot.error) throw snapshot.error;
+    if (!snapshot.data) throw new Error('Provozovna není dostupná.');
+    const productsResult = {data:snapshot.data.products};
 
     const byLocalId = new Map((local.products || []).map(p => [p.id, p]));
     const remoteProducts = (productsResult.data || []).filter(p => p.client_key).map(p => fromDbProduct(p, byLocalId.get(p.client_key) || {}));
     const uuidToClient = new Map((productsResult.data || []).map(p => [p.id, p.client_key]));
 
-    const movementsResult = await client.from('stock_movements')
-      .select('id,product_id,movement_type,quantity_ml,quantity_units,requested_quantity_units,untracked_units,source_type,source_id,reason,occurred_at,created_at')
-      .eq('organization_id', ctx.organization.id).eq('venue_id', ctx.venue.id).order('occurred_at', { ascending: true });
-    if (movementsResult.error) throw movementsResult.error;
+    const movementsResult = {data:snapshot.data.movements};
     const remoteMovements = (movementsResult.data || []).map(m => [m, uuidToClient.get(m.product_id)])
       .filter(([, key]) => key).map(([m, key]) => fromDbMovement(m, key));
 
-    if (!local.legacyMovements && Array.isArray(local.movements) && local.movements.some(m => !String(m.id || '').startsWith('db_'))) local.legacyMovements = local.movements;
-    local.products = remoteProducts.length ? remoteProducts : local.products;
-    local.movements = remoteMovements;
-    local.backend = { organizationId: ctx.organization.id, venueId: ctx.venue.id, syncedAt: new Date().toISOString() };
-    writeLocal(local);
-
-    const marker = JSON.stringify({ org: ctx.organization.id, venue: ctx.venue.id, productCount: remoteProducts.length, movementCount: remoteMovements.length });
-    const previous = sessionStorage.getItem(SYNC_MARKER_KEY);
-    if (previous !== marker) {
-      sessionStorage.setItem(SYNC_MARKER_KEY, marker);
-      location.reload();
-    }
+    const latest = readLocal() || local;
+    if (!latest.legacyMovements && Array.isArray(latest.movements) && latest.movements.some(m => !String(m.id || '').startsWith('db_'))) latest.legacyMovements = latest.movements;
+    const update = {products:remoteProducts, movements:remoteMovements, backend:{organizationId:ctx.organization.id,venueId:ctx.venue.id,syncedAt:snapshot.data.asOf,pendingPosCount:snapshot.data.pendingPosCount}};
+    if (window.PubGuruApplyStockSnapshot) window.PubGuruApplyStockSnapshot(update);
+    else writeLocal({...latest,...update});
+    const status = document.getElementById('stock-sync-status');
+    if (status) status.textContent = `Společný sklad ověřen ${new Date(snapshot.data.asOf).toLocaleTimeString('cs-CZ')}${snapshot.data.pendingPosCount ? ` · ${snapshot.data.pendingPosCount} odpisů z pokladny čeká na recepturu` : ''}`;
   }
 
-  const run = () => sync().catch(error => {
+  function refresh() {
+    if (!syncing) syncing=sync().finally(()=>{syncing=null;});
+    return syncing;
+  }
+  window.PubGuruDataSync = {refresh};
+  const run = () => refresh().catch(error => {
     console.error('PUB GURU data sync failed', error);
-    window.toast?.(`Synchronizace skladu selhala: ${error.message}`, 6000);
+    const status = document.getElementById('stock-sync-status');
+    if (status) status.textContent = 'Stav skladu není aktuálně ověřený. Zkontroluj připojení.';
   });
+  setInterval(()=>{if(!document.hidden)run();},10000);
+  window.addEventListener('focus',run);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
   else run();
 })();
+

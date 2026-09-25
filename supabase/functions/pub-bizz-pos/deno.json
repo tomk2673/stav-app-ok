@@ -1,0 +1,4 @@
+{
+  "imports": {"supabase": "npm:@supabase/supabase-js@2.117.2"},
+  "compilerOptions": {"allowJs": true, "checkJs": false}
+}

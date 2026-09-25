@@ -230,6 +230,16 @@ let scanner = null;
 let scannerCallback = null;
 let selectProductCallback = null;
 
+// Refresh the shared stock without replacing an open invoice draft or inventory inputs.
+if (typeof window !== 'undefined') window.PubGuruApplyStockSnapshot = function(snapshot) {
+  state.products = snapshot.products;
+  state.movements = snapshot.movements;
+  state.backend = snapshot.backend;
+  saveState(false);
+  renderDashboard();
+  if (currentInventoryProductId) updateMeasurementPreview();
+};
+
 function saveState(render = true) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if (render) renderAll();
@@ -795,7 +805,11 @@ function updateMeasurementPreview() {
     <div class="calc-block"><span>Stav měření</span><strong>${result.status === 'baseline' ? 'Počáteční stav' : result.status === 'ok' ? 'Souhlasí' : 'Prověřit'}</strong></div>
   `;
 }
-function saveInventoryLine(forceIssue = false) {
+async function saveInventoryLine(forceIssue = false) {
+  if (window.PubGuruDataSync) {
+    try { await window.PubGuruDataSync.refresh(); }
+    catch (error) { return toast(`Stav skladu se nepodařilo ověřit: ${error.message}`, 6000); }
+  }
   const p = productById(currentInventoryProductId);
   if (!p) return toast('Vyber produkt.');
   const grossInput = document.getElementById('grossWeight').value;

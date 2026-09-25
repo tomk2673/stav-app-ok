@@ -1,0 +1,10 @@
+{
+  "devDependencies": {
+    "jsdom": "30.1.1"
+  },
+  "name": "pub-bizz-browser-tests",
+  "private": true,
+  "scripts": {
+    "test": "node --test *.test.cjs"
+  }
+}

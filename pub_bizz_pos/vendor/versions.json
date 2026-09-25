@@ -1,0 +1,7 @@
+{
+  "@supabase/supabase-js": {
+    "version": "2.117.2",
+    "file": "supabase-2.117.2.js",
+    "sha256": "59d39487c3589843b410322d8a3d562ce022aba1e5ccb16898ef3fb2a0da2ecd"
+  }
+}

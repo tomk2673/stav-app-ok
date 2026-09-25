@@ -1,34 +1,56 @@
-# PUB-BIZZ POS 1.0
+# PUB-BIZZ POS 2.0 — společná pokladna PUB GURU
 
-Nouzová dotyková pokladna pro jeden prohlížeč / jedno zařízení. Samostatný modul v repozitáři PUB GURU. Bez externích runtime závislostí, analytiky či odesílání tržeb třetím stranám.
+Pokladna, faktury, sklad, inventury a uzávěrky jsou ve stejném repozitáři `tomk2673/stav-app-ok` a ve stávajícím projektu PUB GURU `gnfqlfxuagcgjztaueot`. Online pokladna sdílí účty mezi PC a telefonem; bez potvrzení serveru nezobrazuje operaci jako uloženou.
 
-## Spuštění
+## Použití
 
-`python3 -m http.server 8080` v této složce, pak `http://localhost:8080/`. Pro produkci nasadit obsah složky na Vercel (framework Other, bez buildu). Používat stabilní produkční doménu. Každý jiný origin má vlastní data.
+1. V PUB GURU otevřít **Pokladna**, případně cestu `/pokladna` na společné doméně. Přihlášení je stejným účtem PUB GURU; na stejné doméně se existující relace sdílí. Při více provozovnách je nutný výběr.
+2. Ceník obsahuje **208 položek s číselnou cenou**. Všech 30 položek bez ceny, včetně „Kolek“, je na pokyn vynecháno. Kódy Agnisu zůstaly. Cuba libre #4328 i #4336 stojí **130 Kč**. Nejasné objemy v názvech nejsou automaticky převáděné na receptury.
+3. V **Nastavení** doplnit provozovatele a skutečný režim DPH. Sazby DPH nejsou odhadnuté. U plátce je sazba povinná před markováním položky.
+4. V části **Sklad** přiřadit každé prodávané položce skutečné suroviny a množství na jednu porci: například 40 ml destilátu; koktejl může mít více surovin. Žádná receptura není bez potvrzení uživatele předvyplněná do produkčních dat. K dispozici je 68 stávajících skladových položek. Službu lze výslovně označit „bez odpisu“ s důvodem.
+5. Otevřít směnu, markovat na rychlý nebo pojmenovaný účet. Účty se obnovují každé 3 sekundy. Na telefonu je dole rychlé tlačítko k aktuálnímu účtu.
+6. Otevření platby rezervuje účet. Kartu zpracovat na samostatném terminálu a potom potvrdit. Po zavření dialogu zůstane rezervace, dokud obsluha zkontroluje stav platby a dokončí ji nebo účet uvolní. Terminál ani tiskárna nejsou přímo ovládané z webu.
+7. Prodej bez receptury zůstává v seznamu chybějících odpisů. Po nastavení receptury lze jednou provést odpis k původnímu prodeji. Inventura vidí počet čekajících odpisů.
+8. Vratka peněz automaticky nevrací spotřebované nápoje na sklad. Fyzicky vrácené zboží vyžaduje zaškrtnutí volby. Vrací se pouze skutečně odepsané množství, včetně kusových položek s nedostatkem zásob.
+9. Uzavřená směna vytvoří záznam v **Uzávěrkách PUB GURU** ve stavu **ke kontrole**. Doklady se exportují do CSV nebo JSON. Tisk probíhá přes prohlížeč (80 mm podle konkrétní tiskárny).
 
-1. Ceník obsahuje 208 položek s číselnou cenou dodaných uživatelem 25. 9. 2026. Všech 30 položek bez ceny (včetně Kolek) je na výslovný pokyn vynecháno z pokladny. Čísla Agnisu jsou zachována. Cuba libre #4328 a #4336 stojí na výslovný pokyn uživatele 130 Kč. Nejasné zápisy objemů v názvech jsou převzaty bez odhadu; nejsou použity pro odpis skladu. Doplnit chybějící ceny podle skutečnosti. Hromadné vložení používá řádky `název; cena; kategorie; porce; sazba DPH`.
-2. Nastavení: vyplnit provozovatele a jeho skutečný režim DPH. Neznámý režim je na výtisku označen jako provozní záznam. Při plátci je sazba na prodeji povinná.
-3. Otevřít směnu se skutečnou počáteční hotovostí. Markovat na rychlý nebo pojmenovaný účet.
-4. Uhradit celý účet nebo vybrané kusy. Kartu obsluhovat na samostatném terminálu a potvrdit až po úspěchu.
-5. Zaplatit otevřené účty, spočítat hotovost, uzavřít směnu a stáhnout JSON zálohu.
+## Nasazení jednoho balíčku na Vercel
 
-## Data a integrita
+Použít **existující projekt pro `stav-app-ok`**, větev `main`, **Root Directory ponechat prázdné / kořen repozitáře**, Framework **Other**, bez buildu. Kořenový `vercel.json` zachovává vstup do PUB GURU a přidává `/pokladna` → `/pub_bizz_pos/index.html`. Nasazení pouze složky `pub_bizz_pos` by neobsahovalo obrazovky inventury a faktur.
 
-Samostatný soubor `PUB-BIZZ-pokladna-offline.html` vzniká příkazem `python3 build-standalone.py` a obsahuje stejný kód i ceník bez síťových závislostí. Otevřít na PC v běžném okně Chrome / Edge a ponechat na stejném místě. Používá vlastní místní úložiště podle původu stránky; před přechodem na web stáhnout a obnovit JSON zálohu. Nezprovozňovat současně soubor a web jako dvě nezávislé pokladny pro stejné účty.
+Přímé vytvoření produkčního deploymentu v připojeném účtu Vercel dne 25. 9. 2026 vrátilo **403 — chybějící oprávnění**. To není potvrzení publikovaného webu. Zdrojové soubory jsou připravené pro standardní nasazení existujícího repozitáře.
 
-- IndexedDB: načtení aktuálního stavu, ověření, zapsání účtu + platby + historie v jedné readwrite transakci. UI potvrzuje až `oncomplete`. Po chybě transakce nezůstává částečně uložená platba.
-- Platby používají jedinečný operationId, kontrolu revize účtu a cenu zachycenou v položce. Idempotentní opakování nezdvojí tržbu. Souběžné transakce se serializují; druhá změněná revize se odmítne.
-- Peníze jsou celá čísla v haléřích. Hotovostní platba zaokrouhlena na Kč, karta přesně, kombinace obsahuje celé Kč hotově a přesný zbytek kartou. Rozdíl zaokrouhlení je samostatný údaj.
-- Vratka má samostatný záporný doklad, je možná jednou a pouze v otevřené směně původního prodeje. Platba na terminálu ani vrácení peněz nejsou automatické.
-- Doklady a uzavřené směny nelze v UI přepsat. Místní historii nelze vydávat za bezpečnostně nezměnitelný serverový audit.
-- Service worker uloží shell po prvním úspěšném online načtení. Data IndexedDB při nové verzi nemaže. Aktualizace čeká na zavření starých oken, neobnovuje pokladnu uprostřed práce.
-- Záloha používá SHA-256 pro kontrolu poškození, nikoliv ověření autora. Obnova je povolena jen do prázdné pokladny bez aktivní směny. Soubor před obnovou prochází kontrolou formátu a součtů. Po migraci nesmí současně běžet stará kopie.
-- Data nemají cloudovou kopii. Smazání dat prohlížeče nebo ztráta zařízení bez zálohy je ztratí. Neprovozovat v soukromém okně. Uložení zálohy vyžaduje dokončení stažení uživatelem.
+Backend je nasazený v PUB GURU:
 
-## Budoucí PUB-BIZZ propojení
+- migrace `20260925174410_pub_bizz_shared_register`, `20260925174607_pub_bizz_payment_reservations`, `20260925175141_pub_bizz_inventory_snapshot`;
+- Edge Function `pub-bizz-pos`, zapnuté `verify_jwt` a další ověření uživatele přes Auth;
+- browser používá pouze veřejný publishable key z `config.js`. Service role zůstává v prostředí Edge Function.
 
-Záloha `pubbizz.pos.backup.v1` obsahuje stabilní venueId, deviceId, productId, orderId, receiptId, operationId, shiftId, snapshot cen / DPH a chronologické auditní události. Produkt/řádek má stockProductId pro budoucí mapování skladu. Automatická synchronizace, cloudová autorizace a odpis skladu nejsou součástí tohoto vydání. Před více zařízeními zavést serverovou idempotenci a tenant-scoped autentizaci. Databázová migrace pro PUB GURU se v tomto vydání neprovádí.
+Při změně doménového kódu spustit z kořene `python3 pub_bizz_pos/sync-edge.py` a nasadit aktualizovaný obsah `supabase/functions/pub-bizz-pos`. Migrace v repozitáři odpovídají skutečně přiděleným verzím v databázi; původní PUB GURU schema je v adresáři `database`.
+
+## Integrita a oprávnění
+
+- Pro každou provozovnu je jeden autoritativní stav. Frontend posílá příkazy, nemůže poslat vlastní tržby ani přepsat celý stav.
+- PostgreSQL zamkne řádek pokladny, ověří revizi, uloží účtenku, skladové pohyby, audit a případnou uzávěrku v jedné transakci. Nesouhlas revize vyvolá nové vyhodnocení příkazu na serveru.
+- Každý příkaz má UUID a kontrolní hash obsahu. Prohlížeč uloží identifikátor před odesláním. Při ztracené odpovědi se opakuje stejný požadavek; nová platba zůstane zablokovaná do ověření.
+- Platba navíc kontroluje revizi účtu a rezervaci. Ceny a receptura se zachytí do dokladu a pozdější úprava ceníku ho nepřepíše.
+- Serverově ověřená role staff markuje a přijímá platby; owner/manager spravuje ceník, receptury, vratky, hotovost a uzávěrky. Accountant má čtení. RLS omezuje čtení na členství v organizaci. Tabulky pokladny nemají přímé zápisové oprávnění pro klienta; interní commit RPC je dostupné jen service role.
+- Inventura čte úplný skladový přehled v jednom SQL snapshotu, včetně příjmů z faktur a odpisů POS. Obnovuje se po 10 sekundách, při návratu do okna a před uložením měření; aktualizace zachová rozepsané měření a fakturu. Uložená dřívější měření se zpětně nepřepočítávají.
+- Peníze jsou v haléřích. Do původní tabulky uzávěrek se převádějí na Kč. Hotovost zaokrouhlená na Kč, karta přesná, kombinace v celých Kč hotově a přesný zbytek kartou.
+- Jde o první sdílenou verzi: historie je zatím součástí JSON stavu, bez archivace a stránkování dlouhodobé historie. Vratka se provádí jen v otevřené směně původního prodeje.
+
+## Původní místní verze
+
+`PUB-BIZZ-pokladna-offline.html` je oddělená nouzová pokladna pro jedno zařízení. Její data se automaticky nepřičítají do společných tržeb a skladu. Původní data v prohlížeči se nemažou; tlačítko v Nastavení stáhne jejich kopii. Lokální soubor se obnoví příkazem `python3 pub_bizz_pos/build-standalone.py`. Místní záloha nesmí přepsat společný serverový stav. Místní a sdílenou pokladnu nepoužívat současně pro stejný účet.
 
 ## Ověření
 
-Z kořene repozitáře: `node --test tests/pub-bizz-pos.test.js`. Browser acceptance: otevření směny, ceny, účet, částečná a karetní platba, odmítnutí nedoplatku, obnova po reloadu, vratka, uzávěrka, záloha a offline reload. Tisk přes browser ověřit na konkrétním ovladači tiskárny podniku.
+```sh
+node --test tests/pub-bizz-pos.test.js tests/pub-bizz-server.test.js
+npm ci --prefix tests/pos-web
+npm test --prefix tests/pos-web
+```
+
+`tests/pub-bizz-database.sql` ověřuje v transakci zakončené ROLLBACK atomický odpis, deduplikaci, konflikt revizí, chybějící recepturu, dodatečný odpis, fyzickou vratku, nedostatek kusových zásob, uzávěrku a izolaci cizího uživatele. Testovací tržby ani zásoby v databázi nezůstávají.
+
+UI testy používají DOM a simulovaný transport k otestování ztracené odpovědi po úspěšném commitu, opakování stejného UUID, platební rezervace a zachování rozpracované inventury. Nejsou testem přihlášení konkrétního uživatele ani reálného telefonu/tiskárny. U nasazené Edge Function je ověřený preflight 204 a odmítnutí nepřihlášeného požadavku 401.

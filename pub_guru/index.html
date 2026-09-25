@@ -31,6 +31,7 @@
       </div>
       <nav class="nav" aria-label="Hlavní navigace">
         <button class="nav-btn active" data-view="dashboard">Přehled</button>
+        <a class="pub-link" href="../pub_bizz_pos/index.html">Pokladna</a>
         <button class="nav-btn" data-view="invoices">Faktury</button>
         <a class="pub-link" href="closings.html">Uzávěrky</a>
         <button class="nav-btn" data-view="inventory">Inventura</button>
@@ -103,6 +104,7 @@
 
       <section id="view-inventory" class="view">
         <div class="inventory-toolbar panel">
+          <p id="stock-sync-status" role="status">Ověřuji společný sklad…</p>
           <div class="form-grid compact inventory-setup">
             <label>Zóna<select id="inventoryZone"></select></label>
             <label>Teplota zóny °C<input id="inventoryTemp" type="number" step="0.1" /></label>

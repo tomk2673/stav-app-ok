@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#121716"><meta name="description" content="PUB-BIZZ pokladna pro bar. Účty, placení a uzávěrka směny.">
+  <title>PUB-BIZZ · Pokladna</title>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="manifest" href="./manifest.webmanifest"><link rel="stylesheet" href="./style.css">
+  <script src="./catalog.js" defer></script><script src="./core.js" defer></script><script src="./storage.js" defer></script><script src="./app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="PUB-BIZZ pokladna"><span class="brandmark">P<span>·</span></span><span>PUB<span class="brand-light">BIZZ</span><small>POKLADNA</small></span></a>
+    <nav aria-label="Hlavní navigace"><button data-view="pos" class="active">Pokladna</button><button data-view="history">Doklady</button><button data-view="overview">Směna</button><button data-view="catalog">Ceník</button><button data-view="settings">Nastavení</button></nav>
+    <div class="top-right"><span id="network" class="network">Místní pokladna</span><button id="fullscreen" class="iconbutton" aria-label="Celá obrazovka" title="Celá obrazovka">⛶</button></div>
+  </header>
+  <div class="contextbar"><div><strong id="venue">ZTRACENÝ BAR</strong><span class="context-divider">/</span><span id="shift-label">Načítám data…</span></div><div class="save-state" id="save-state" role="status">Otevírám úložiště</div></div>
+  <main id="app"><div class="loading">Otevírám pokladnu…</div></main>
+  <footer class="footer"><span>PUB-BIZZ <b>POS 1.0</b></span><span id="offline-status">Data tohoto prohlížeče · jedno zařízení</span><button data-action="backup">Stáhnout zálohu ↗</button></footer>
+  <dialog id="dialog" aria-labelledby="dialog-title"><form id="dialog-form"><div class="dialog-head"><h2 id="dialog-title"></h2><button type="button" class="iconbutton close-dialog" aria-label="Zavřít">×</button></div><div id="dialog-body"></div><p id="dialog-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary close-dialog">Zpět</button><button type="submit" id="dialog-submit" class="primary">Uložit</button></div></form></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div><div id="print-area"></div><input type="file" id="restore-input" accept="application/json,.json" hidden>
+  <noscript>Pokladna potřebuje zapnutý JavaScript.</noscript>
+</body>
+</html>

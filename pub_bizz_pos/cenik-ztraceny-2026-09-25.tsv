@@ -1,0 +1,255 @@
+@Pivo
+50	12 Radegast 0,3	50
+51	12 Radegast 0,5	65
+63	10° Radegast 0,3	42
+56	10° Radegast 0,5	49
+57	12 Pilsner Urquell 0,3	55
+58	12 Pilsner Urquell 0,5	69
+61	Pivo nealko	45
+71	Corona MEXICO 0,33	69
+83	Frisco 0,33	55
+@Víno
+501	Bílé víno rozlev 0,1	35
+1001	Cervené vino rozlev 0.1	35
+1653	Prosecco 1L čep	450
+1654	Prosecco vald. 0,1 čep	45
+1657	Bohemia sekt 0,75	350
+1658	Prosecco 0,75	350
+@Likéry
+1801	Becherovka 0,04	70
+1802	Lemond 0,04	70
+1803	Fernet stock 0,04	60
+1804	Fernet citrus 0,04	60
+1805	Jagermeister 0,04	65
+1806	Zelená 0,04	50
+@Destiláty
+2302	Gin Beefeater 0,04	70
+2303	Gin Bombay 0,04	95
+2304	Tequila stříbrná 0,04	90
+2305	Tequila zlatá 0,04	90
+2306	Hruškovice R. Jelinek 0,04	90
+2307	Hruška zlatá 40% 0,04	95
+2308	Slivovice bílá budík 0,04	90
+2309	Gin Malfy 0,04	110
+2312	Finlandia kokos 0,04	70
+2314	Finlandia brusinka	70
+2315	Finlandia vodka 0,04	70
+2316	Gin Hendricks 0,04	130
+2317	Absinth 0,04	90
+2318	Vodka Nemiroff 0,04	70
+2319	Gin Columbian White 0,04	90
+2320	Beluga Noble 0,04	160
+2321	Cabrito Reposado 0,04	130
+2322	Patrón Reposado 0,041	165
+2323	Gin Broker's 0,04	70
+2324	Cabrito blanco 0,04	130
+2325	Gin Beefeater PINK 0,04	85
+2326	Hruškovice Williams 0,04	90
+2327	OMG gin 0,04	140
+2328	Gin Tanqueray 0,041	120
+2329	Gin Gin 0,04	125
+2330	Gin Beefeater Orange 0,041	85
+2331	Jagermeister Scharf 0,041	65
+2332	Vodka Botanical 0,041	70
+2333	Gin Endorphin 0,041	145
+2334	Gin Malfy Arancia 0,041	120
+2335	Gin Malfy Limone 0,041	120
+2336	Gin Opihr London 0,041	140
+2337	Brugal anejo 0,04	90
+2338	Highland park 12y 0,04	160
+2339	Macallan 12y 0,04	350
+2340	Famous groose 0,04	80
+@Rumy
+2801	Kraken black spiced 2y 0,041	95
+2802	Legendario elixir 7y 0,041	90
+2803	El Dorado 12 y 0,041	130
+2804	Don papa 7y 0,04	140
+2805	Diplomatico 15y 0,04	160
+2806	Pyrat XO 15y 0,04	140
+2807	Zacapa 23y 0,04	185
+2808	Plantation XO 20y 0,04	185
+2809	Rum Havana 3y 0,04	70
+2810	Rum Tuzemský 0,04	55
+2811	Captain Morgan 0,04	70
+2812	Bucanero rum 7y 0,04	80
+2813	Bacardi spiced 0,04	70
+2814	Bacardi 0,04	70
+2815	Malibu 0,04	70
+2816	Havana Anos 7y 0,04	90
+2817	Dictador 12y 0,04	130
+2818	Rum santos Dumont 0,04	140
+2819	Rum Angostura 7 Υ.0.0,04	80
+2820	Rum Angostura 1919 0,04	120
+2821	Rum Republica 0,04	65
+2822	Blue Mauritius 0,04	165
+2823	Diplomatico 8yo 0,04	130
+2824	Diplomatico Planas 0,04	130
+2825	Morgan s colou	90
+2826	Morgan TIKI 0,04	70
+2827	Don Papa Baroko	150
+2828	Heffron 0,04	65
+2829	Bumbu 0,04	130
+@Whisky
+3301	Bushmills black bush 11y 0,041	80
+3302	Laphroaig 10y 0,04	130
+3303	Jack Daniel's 0,04	90
+3304	Jack D. Honey 0,04	95
+3305	Tullamore Dew 0,04	70
+3306	Jameson 3y 0,04	70
+3307	Glenfarclas 12y 0,04	90
+3308	Jack Daniel's Fire 0,04	95
+3309	Jim Beam 0,04	90
+3310	Ballantines 0,04	90
+3311	Chivas Regal 12y 0,04	120
+3312	Johnnie Walker Red Label 0,04	70
+3313	Bushmills original 0,04	90
+3314	J&B Rare 0,04	90
+3315	Talisker 10 Y.0.0,04	145
+3316	Trebisch 0,04	160
+3317	St.žitná Myslivecká reserva 0,041	70
+3318	Jack Daniels apple 0,04	95
+3319	Jack Daniels Akce	90
+3320	Jack Daniels Fire Akce	95
+3321	Jack Daniels Honey Akce	95
+3322	Jack Daniels Apple Akce	95
+3323	Tullamore Honey 0,04	80
+@Víno
+3400	Martini 0,1	90
+@Brandy
+3801	Metaxa 5* 0,04	70
+3802	Godet Pearadise 0,02	80
+3803	Rémy Martin XO 0,02	
+3804	Remy Martin VSOP 0,02	
+3805	Gruzinak 0,04	90
+@Koktejly
+4301	Havana+Cola 0,3	120
+4302	Mimosa	80
+4303	Gin ton les plody	95
+4304	Růžový Gin+tonic	100
+4305	Limetkový Gin+tonic	100
+4306	Gin tonik čerstvá okurka 0,31	100
+4307	Jack Daniel's+Cola	100
+4308	Morgan+Cola	90
+4309	Gin+tonic 0,3	95
+4310	Aperol Spritz	115
+4311	Hugo spritz	115
+4312	Mojito	130
+4313	Chupito 0,04	70
+4322	Finska brusinka zázvor	80
+4324	Finlandia kokos cola	80
+4326	Tequila sunrise 0,3	130
+4327	Sex ve Ztracené 0,3	130
+4328	Cuba libre 0,3	120
+4329	Cosmopolitan 0,08	120
+4330	Mojito nealko	70
+4331	Vodka s džusem	90
+4332	Piña colada	130
+4333	ChiChi drink.	
+4334	Modrá laguna	130
+4335	Malibu Orchid	130
+4336	Cuba libre	130
+4337	Mojito	130
+4338	Sex ve Ztracené	130
+4339	Ježibabin koktejl	
+4340	Oživovač mrtvol	
+4341	Šroubovák	
+4342	Jager BOMB	
+4343	Skinny bitch	95
+4344	Jack Daniel's Fire štrůdl	110
+4345	Nápoj lásky	
+4349	Spritz Bianco	
+4350	Spritz Rosso	
+4351	Chuan malý	
+4352	HOUBA (ČVO,1+Cola0,1)	45
+4355	Drink of the Day	95
+4553	HeffronCola (0,1+0,1)	180
+4554	SVIÑA 0,04	55
+@Nealko
+4801	Okurková limonáda 0,3	
+4802	Zázvorová limonáda 0,3	
+4804	Domáci levandulová limonáda	
+4821	Perlivá voda 0,33	40
+4822	Neperlivá voda 0,33	40
+4823	Coca-Cola 0,33	45
+4824	Coca-Cola light 0,33	45
+4825	Orangina 0,25	45
+4826	Tonic 0,33	45
+4827	Džus pomeranč 0,2	45
+4828	Džus jahoda 0,2	45
+4829	Džus jablko 0,2	45
+4830	Red Bull 0,25	80
+4831	Kofola čep 0,5	55
+4833	Malina čep 0,4	45
+4836	Jemně perlivá voda 0,33	45
+4837	Mattoni Spritz 0,33	45
+4838	Limetková limonáda 0,33	45
+4839	Bonaqua 0,25	45
+4840	Fanta 0,33	45
+4841	Crodino 0,1	60
+4842	Voda s citronem 0,7	55
+4843	Kofola čep 0,3	40
+4844	Coca cola zero 0,25plech	45
+4845	Coca cola zero 0,33	45
+4846	Coca cola 0,1 gun	15
+4847	Tonik Ginger 0,33	45
+4848	Sprite 0,33 plech	45
+4850	Limonada čep 0,1	15
+4852	Fever water	45
+@Ostatní
+4853	Kolkovné	500
+@Nealko
+4854	Tonik 0,1 gun	15
+4855	Džus rybíz 0,2	45
+4856	Tonik růžový 0,33	45
+4857	Thomas Henry Grapefruit 0,21	
+4858	Fanta 0,1 gun	15
+4859	Sprite 0,1 gun	15
+4860	Soda 0,1 gun	10
+4861	Džus rozlev 0,1	15
+@Teplé nápoje
+5301	Espresso Lungo	45
+5302	Espresso	45
+5303	Caffé ristretto	45
+5304	Turecká káva	45
+5305	Latte Macchiato	
+5306	Cappuccino	
+5307	Videňská káva	
+5308	Čaj	55
+5309	Zázvorový čaj čerstvý	55
+5310	Frappe	
+5311	Grog	70
+5312	Rioba čaj	55
+5313	Latte macchiato kokos	70
+5314	Hot capitan a džus	80
+5315	Svařák	60
+@Rumy
+5751	Lahev Republica 0,7L	1050
+@Snacks
+5801	Brambůrky solené	45
+5802	Brambůrky česnekové	45
+5803	Snack	45
+5804	Arašídy KK	55
+5805	Sušené maso	
+5806	Sušené maso 3 ks	
+5807	Brambůrky hořčicové	45
+5808	Občerstvení	
+5809	Tyčinky pekařské	45
+5810	ZIGI oříšky	45
+5811	Havlikovi tyčinky sýrové	45
+5812	Hradecké tyčinky	45
+5813	Škvarková pomazánka, chléb	
+5814	Tapas	
+5815	Zelené olivy	
+5816	Guláš	100
+5817	Obložená mísa	900
+5818	Cibulové kroužky	45
+5819	Křupky	40
+5820	Tyčinky	45
+5821	HOT DOG	95
+@Tabák a doplňky
+6301	Cigarety Marlboro gold 1ks	Kolek
+6302	Zapalovač	
+6303	Iqos Yellow	
+6304	Iqos Mentol	
+@Ostatní
+6501	Rozbité sklo	

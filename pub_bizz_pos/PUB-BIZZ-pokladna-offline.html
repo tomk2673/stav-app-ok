@@ -1,0 +1,2909 @@
+<!doctype html>
+<html lang="cs" data-standalone="true">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#121716"><meta name="description" content="PUB-BIZZ pokladna pro bar. Účty, placení a uzávěrka směny.">
+  <title>PUB-BIZZ · Pokladna</title>
+  <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxOTIiIGhlaWdodD0iMTkyIiB2aWV3Qm94PSIwIDAgMTkyIDE5MiI+PHJlY3Qgd2lkdGg9IjE5MiIgaGVpZ2h0PSIxOTIiIHJ4PSI0NCIgZmlsbD0iI2Q0Zjc3ZCIvPjx0ZXh0IHg9IjQyIiB5PSIxMzYiIGZvbnQtZmFtaWx5PSJBcmlhbCxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyNCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IiMyMzMzMTMiPlA8L3RleHQ+PGNpcmNsZSBjeD0iMTQ0IiBjeT0iMTM0IiByPSIxMCIgZmlsbD0iIzIzMzMxMyIvPjwvc3ZnPgo=" type="image/svg+xml"><style>:root{color-scheme:dark;--bg:#101513;--surface:#191f1c;--raised:#222a26;--line:#303a34;--text:#f2f5ef;--muted:#a3afa5;--lime:#d4f77d;--lime-text:#233313;--danger:#ffa99b;--radius:14px;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:16px}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}button,input,select,textarea{font:inherit}button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}button{border:1px solid transparent;cursor:pointer;touch-action:manipulation}button:disabled{cursor:not-allowed;opacity:.38}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--lime);outline-offset:3px}button:hover:not(:disabled){filter:brightness(1.09)}button:active:not(:disabled){transform:translateY(1px)}a{color:inherit}h1,h2,h3,p{margin:0}h1{font-size:1.8rem;letter-spacing:-.05em}h2{font-size:1.35rem;letter-spacing:-.025em}h3{font-size:1.05rem}small,.small{font-size:.8125rem}.muted{color:var(--muted)}.topbar{height:88px;display:flex;align-items:center;justify-content:space-between;gap:28px;padding:0 28px;border-bottom:1px solid var(--line)}.brand{display:flex;align-items:center;gap:11px;min-width:190px;text-decoration:none;font-size:1.18rem;font-weight:850;letter-spacing:-.06em}.brandmark{display:flex;align-items:center;justify-content:center;width:44px;height:44px;background:var(--lime);border-radius:12px;color:var(--lime-text);font-size:1.9rem}.brandmark span{font-weight:600}.brand-light{font-weight:400;margin-left:3px}.brand small{display:block;letter-spacing:.21em;color:var(--muted);font-weight:550;font-size:.625rem;margin-top:4px}.topbar nav{display:flex;gap:4px}.topbar nav button{background:transparent;color:var(--muted);font-size:.9375rem;padding:13px 19px;border-radius:10px;font-weight:600}.topbar nav button.active{background:var(--raised);color:var(--text)}.top-right{display:flex;gap:12px;align-items:center}.network{font-size:.8125rem;color:var(--muted);white-space:nowrap}.network::before{content:'';width:6px;height:6px;background:var(--lime);border-radius:50%;display:inline-block;margin-right:7px}.network.offline::before{background:#ffce7f}.iconbutton{background:transparent;color:var(--muted);width:42px;height:42px;border:1px solid var(--line);border-radius:10px;font-size:1.5rem}.contextbar{display:flex;align-items:center;justify-content:space-between;padding:18px 28px;gap:12px;font-size:.8125rem;color:var(--muted)}.contextbar strong{font-size:.8rem;letter-spacing:.045em;color:#dce4d9}.context-divider{margin:0 13px;color:#506051}.save-state{font-size:.8125rem}.save-state.error{color:var(--danger)}main{padding:6px 28px 24px;min-height:calc(100dvh - 191px)}.pos-layout{display:grid;grid-template-columns:172px minmax(0,1fr) 355px;gap:22px;min-height:calc(100dvh - 205px);align-items:stretch}.accounts{padding:7px 0;display:flex;flex-direction:column;gap:9px}.eyebrow{font-size:.75rem;letter-spacing:.09em;font-weight:700;color:var(--muted);text-transform:uppercase}.section-label{display:flex;align-items:center;justify-content:space-between;margin:3px 0 15px}.badge{background:var(--raised);padding:3px 8px;font-size:.75rem;border-radius:6px;color:var(--muted)}.account{width:100%;text-align:left;display:flex;gap:12px;align-items:center;background:transparent;color:var(--text);border-radius:12px;padding:16px 11px;min-height:74px;border:1px solid var(--line)}.account.active{border-color:var(--lime);background:#242e1d}.account-number{font-size:1rem;color:var(--muted);flex-shrink:0;width:27px;text-align:center}.account.active .account-number{color:var(--lime)}.account-name{font-size:.875rem;font-weight:600;overflow-wrap:anywhere}.account-amount{display:block;font-size:.8125rem;color:var(--muted);margin-top:5px}.account.active .account-amount{color:var(--lime)}.add-account{background:transparent;border:1px dashed #475444;color:var(--muted);border-radius:12px;padding:15px 8px;margin-top:5px;min-height:52px}.sidebar-note{font-size:.8125rem;line-height:1.65;color:#879589;margin-top:auto;padding-top:32px}.sidebar-note strong{color:#c5d1bd;display:block}.catalog-area{display:flex;flex-direction:column;min-width:0}.workspace-heading{display:flex;justify-content:space-between;gap:16px;align-items:center;margin:0 0 22px}.workspace-heading p{margin-top:6px;font-size:.875rem;color:var(--muted)}.search{position:relative;margin-bottom:17px}.search input{width:100%;padding:15px 17px 15px 43px;background:var(--surface);border:1px solid var(--line);border-radius:12px;color:var(--text);min-height:52px}.search-icon{position:absolute;left:16px;top:15px;color:var(--muted)}.categories{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:20px}.category{background:var(--surface);color:var(--muted);padding:11px 14px;border:1px solid var(--line);border-radius:9px;font-size:.8125rem;font-weight:600;min-height:43px}.category.active{color:var(--lime-text);background:var(--lime);border-color:var(--lime)}.products{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;align-content:start}.product{position:relative;min-height:132px;text-align:left;padding:18px 15px 14px;background:var(--surface);border:1px solid var(--line);border-radius:13px;color:var(--text);display:flex;flex-direction:column;overflow:hidden}.product::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--category,#a0b2f7)}.product-cat{font-size:.625rem;letter-spacing:.1em;text-transform:uppercase;color:var(--category,#a0b2f7);margin-bottom:13px;font-weight:700}.product-name{font-size:.9375rem;font-weight:650;line-height:1.3;overflow-wrap:anywhere}.product-serving{font-size:.8125rem;color:var(--muted);margin-top:5px}.product-price{font-size:1.08rem;margin-top:auto;padding-top:15px;font-weight:750}.product-price.unset{color:var(--muted);font-size:.8125rem;font-weight:500}.product-plus{position:absolute;right:12px;bottom:12px;font-size:1.3rem;color:var(--category,#a0b2f7)}.quick-product{border-style:dashed;background:transparent;justify-content:center;align-items:center;text-align:center;color:var(--muted)}.quick-product::before{display:none}.quick-product span{font-size:1.6rem;margin-bottom:10px}.notice{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:13px 16px;background:#272a1b;border:1px solid #424b2d;border-radius:11px;font-size:.8125rem;line-height:1.5;color:#d8e1b9;margin-bottom:18px}.notice .textbutton{white-space:nowrap}.textbutton{background:transparent;color:var(--lime);font-size:.875rem;padding:6px;text-decoration:underline;text-underline-offset:4px}.receipt{display:flex;flex-direction:column;background:#f4f6ef;color:#20291f;border-radius:17px;overflow:hidden;min-height:590px}.receipt-head{padding:22px 22px 18px;border-bottom:1px dashed #cdd5c8;display:flex;align-items:center;justify-content:space-between;gap:12px}.receipt-head h2{font-size:1.15rem}.receipt-head p{font-size:.75rem;color:#6a7768;margin-top:5px}.receipt-number{border:1px solid #d3dccb;border-radius:8px;padding:6px 9px;color:#67715f;font-size:.8125rem}.receipt-items{padding:7px 21px;flex:1;min-height:160px}.receipt-empty{height:100%;min-height:230px;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;gap:15px;color:#83907d}.receipt-empty span{font-size:2.5rem;font-weight:300}.receipt-empty p{max-width:200px;font-size:.875rem;line-height:1.6}.line{padding:16px 0;border-bottom:1px solid #e0e5dc}.line-top{display:flex;justify-content:space-between;gap:15px;font-size:.9rem;font-weight:650;line-height:1.4}.line-top span{overflow-wrap:anywhere}.line-bottom{display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:12px;font-size:.8125rem;color:#73806b}.quantity{display:flex;gap:12px;align-items:center;font-weight:650;color:#263222}.quantity button{width:36px;height:34px;background:#e6ebdf;border:1px solid #d4ddce;border-radius:7px;color:#354c2d;font-size:1.1rem}.receipt-bottom{padding:18px 21px 21px;background:#edf1e5;border-top:1px dashed #cdd5c8}.receipt-meta{display:flex;justify-content:space-between;font-size:.8125rem;color:#6b7862;margin-bottom:16px}.receipt-total{display:flex;justify-content:space-between;align-items:baseline;font-weight:550;font-size:1rem;margin-bottom:20px}.receipt-total strong{font-size:2rem;letter-spacing:-.055em}.payment-buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px}.payment-buttons button{border-radius:10px;min-height:62px;font-weight:700;font-size:.9375rem}.paycash{background:#263820;color:#f2f6eb}.paycard{background:#d2ed99;color:#24331b}.splitbutton{width:100%;background:transparent;color:#526446;padding:14px 4px 0;font-size:.8125rem}.shift-start{background:var(--lime);color:var(--lime-text);font-weight:700;border-radius:11px;padding:14px 18px;min-height:50px}.primary,.secondary,.danger-button{padding:13px 20px;border-radius:10px;min-height:48px;font-weight:650}.primary{background:var(--lime);color:var(--lime-text)}.secondary{background:var(--raised);color:var(--text);border:1px solid var(--line)}.danger-button{background:#422923;color:#ffc1b3;border:1px solid #613a30}.footer{padding:0 28px 18px;display:flex;align-items:center;justify-content:space-between;gap:15px;color:#849184;font-size:.75rem}.footer b{font-weight:450;color:#536653;margin-left:8px}.footer button{background:transparent;color:#acb99e;font-size:.75rem;padding:5px}.page{max-width:1140px;margin:8px auto 30px}.page .workspace-heading{margin-bottom:26px}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin-bottom:24px}.stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px}.stat .eyebrow{font-size:.7rem}.stat strong{display:block;font-size:1.9rem;margin-top:14px;letter-spacing:-.04em}.stat.lime{background:var(--lime);color:var(--lime-text)}.stat.lime .eyebrow{color:#4c652e}.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:24px;margin-bottom:20px}.panel h3{margin-bottom:18px}.panel p{line-height:1.65;color:var(--muted);font-size:.875rem}.actions{display:flex;gap:10px;flex-wrap:wrap}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px}table{width:100%;border-collapse:collapse;text-align:left;font-size:.875rem}th{background:var(--raised);padding:13px 16px;color:var(--muted);font-weight:550;white-space:nowrap}td{border-top:1px solid var(--line);padding:14px 16px}td button{white-space:nowrap}.amount{text-align:right;font-variant-numeric:tabular-nums}.table-actions{display:flex;gap:9px;justify-content:flex-end}.empty{padding:42px;text-align:center;color:var(--muted);font-size:.9375rem;line-height:1.7}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:17px}.field{display:flex;flex-direction:column;gap:8px;font-size:.875rem;color:#c8d2c2}.field.full{grid-column:1/-1}.field input,.field select,.field textarea{width:100%;background:#111812;border:1px solid #40503c;color:var(--text);border-radius:9px;padding:12px;min-height:48px}.field textarea{min-height:110px;resize:vertical}.field small{font-size:.75rem;color:var(--muted);line-height:1.5}.form-actions{margin-top:22px;display:flex;gap:12px;flex-wrap:wrap}.inline-check{display:flex;gap:10px;align-items:center;font-size:.875rem;line-height:1.5;padding:14px 0}.inline-check input{width:21px;height:21px;accent-color:#d4f77d;flex-shrink:0}.section-gap{margin-top:24px}.help{font-size:.875rem;color:var(--muted);line-height:1.65;margin:0 0 20px}.payment-summary{background:var(--raised);padding:20px;border-radius:12px;margin:18px 0;font-size:.875rem}.summary-row{display:flex;justify-content:space-between;gap:10px;margin:8px 0}.summary-row.total{font-size:1.35rem;font-weight:700;padding-bottom:10px}.selected-line{display:grid;grid-template-columns:minmax(0,1fr) 78px;gap:18px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line);font-size:.875rem}.selected-line input{width:78px;padding:10px;background:#111812;border:1px solid #40503c;color:var(--text);border-radius:8px}.selected-line small{color:var(--muted);display:block;margin-top:4px}.receipt-preview{font-family:ui-monospace,monospace;background:#f7f9f2;color:#182418;padding:22px;border-radius:10px;font-size:.875rem;line-height:1.55}.receipt-preview header{text-align:center}.receipt-preview h3{margin-bottom:4px}.receipt-preview hr{border:0;border-top:1px dashed #9bad94;margin:16px 0}.receipt-preview .muted{color:#586e4e}.receipt-preview table{font:inherit}.receipt-preview td{border:0;padding:6px 0;font-size:.8125rem}.receipt-preview .summary-row{margin:5px 0}.receipt-preview .footnote{font-size:.75rem;margin-top:18px;text-align:center}.tag{font-size:.75rem;border-radius:5px;padding:4px 8px;background:#293923;color:#c6e4b8}.tag.orange{color:#f0d5a9;background:#3f3326}.error{color:var(--danger);font-size:.875rem;line-height:1.5;margin-top:12px}.error:empty{display:none}dialog{border:1px solid #475340;border-radius:20px;background:#191f1b;color:var(--text);padding:27px;width:min(560px,calc(100% - 28px));max-height:90dvh;box-shadow:0 25px 120px #0008}dialog::backdrop{background:#050906cc;backdrop-filter:blur(4px)}.dialog-head{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-bottom:22px}.dialog-head h2{font-size:1.4rem}.dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.toast{position:fixed;bottom:25px;left:50%;transform:translate(-50%,20px);padding:15px 22px;background:var(--lime);color:var(--lime-text);border-radius:12px;box-shadow:0 9px 40px #0005;font-size:.9rem;opacity:0;pointer-events:none;transition:.15s;z-index:20;max-width:90vw;text-align:center}.toast.visible{opacity:1;transform:translate(-50%,0)}.toast.bad{background:#fac2b4;color:#4e2116}.loading{padding:70px;text-align:center;color:var(--muted)}#print-area{display:none}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+@media(min-width:1500px){.pos-layout{grid-template-columns:200px minmax(0,1fr) 400px;gap:30px}.products{grid-template-columns:repeat(4,minmax(0,1fr))}.product{min-height:158px}.product-name{font-size:1.05rem}.topbar,.contextbar{padding-left:36px;padding-right:36px}main{padding-left:36px;padding-right:36px}}
+@media(max-width:1150px){.pos-layout{grid-template-columns:140px minmax(0,1fr) 310px;gap:15px}.products{grid-template-columns:repeat(2,minmax(0,1fr))}.topbar{gap:12px;padding:0 20px}.topbar nav button{padding:12px}.top-right .network{display:none}main{padding:6px 20px 24px}.contextbar{padding:16px 20px}.brand{min-width:170px}.receipt-total strong{font-size:1.8rem}}
+@media(max-width:850px){.topbar{height:auto;min-height:78px;flex-wrap:wrap;padding:15px 18px 10px;gap:12px}.topbar nav{order:3;width:100%;overflow:auto;justify-content:space-between}.topbar nav button{flex:1;white-space:nowrap}.top-right{margin-left:auto}.contextbar{padding:15px 18px;align-items:flex-start}.save-state{max-width:120px;text-align:right}.pos-layout{grid-template-columns:minmax(0,1fr) 310px;gap:16px}.accounts{grid-column:1/-1;flex-direction:row;overflow:auto;align-items:stretch;padding:0 0 6px;max-width:100%}.accounts .section-label,.sidebar-note{display:none}.account{width:150px;min-width:150px;min-height:65px;padding:12px}.add-account{min-width:120px;margin:0}.products{grid-template-columns:repeat(2,minmax(0,1fr))}.workspace-heading{margin-bottom:18px}h1{font-size:1.6rem}.workspace-heading .small{display:none}.receipt{min-height:540px}.cards{grid-template-columns:repeat(2,1fr)}.footer{padding:0 18px 18px}.footer>span:nth-child(2){display:none}}
+@media(max-width:630px){main{padding:4px 14px 24px}.contextbar{font-size:.75rem;padding:14px}.contextbar strong{font-size:.7rem}.context-divider{margin:0 7px}.pos-layout{grid-template-columns:1fr;gap:19px}.products{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.product{padding:15px 11px 12px;min-height:126px}.product-name{font-size:.875rem}.product-cat{font-size:.625rem}.receipt{min-height:300px;order:3}.receipt-empty{min-height:100px;padding:20px}.receipt-empty span{display:none}.receipt-items{min-height:90px}.workspace-heading{margin-bottom:15px}.workspace-heading p{font-size:.8125rem}.receipt-total strong{font-size:2rem}.topbar nav button{font-size:.8125rem;padding:11px 6px}.categories{gap:6px}.category{padding:10px 12px}.search{margin-bottom:12px}.form-grid{grid-template-columns:1fr}.field.full{grid-column:1}.page{margin-top:0}.panel{padding:18px}.cards{gap:10px}.stat{padding:17px}.stat strong{font-size:1.45rem}.stat .eyebrow{font-size:.625rem}.page .workspace-heading{align-items:flex-start;flex-wrap:wrap}.table-wrap table{min-width:580px}dialog{padding:21px}.notice{font-size:.8rem}.contextbar>div:first-child{display:flex;flex-wrap:wrap;gap:5px}.context-divider{display:none}#shift-label{width:100%}.account{min-width:140px}.save-state{min-width:106px}.product-price{font-size:1rem}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+@media print{@page{size:80mm auto;margin:4mm}body{background:#fff;color:#000}body>*:not(#print-area){display:none!important}#print-area{display:block;width:72mm;margin:0 auto}.receipt-preview{padding:0;background:white;color:black;font-size:10pt;border:0}.receipt-preview td{font-size:9pt}.receipt-preview .muted{color:#333}.receipt-preview .footnote{font-size:8pt}}
+</style>
+  
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="PUB-BIZZ pokladna"><span class="brandmark">P<span>·</span></span><span>PUB<span class="brand-light">BIZZ</span><small>POKLADNA</small></span></a>
+    <nav aria-label="Hlavní navigace"><button data-view="pos" class="active">Pokladna</button><button data-view="history">Doklady</button><button data-view="overview">Směna</button><button data-view="catalog">Ceník</button><button data-view="settings">Nastavení</button></nav>
+    <div class="top-right"><span id="network" class="network">Místní pokladna</span><button id="fullscreen" class="iconbutton" aria-label="Celá obrazovka" title="Celá obrazovka">⛶</button></div>
+  </header>
+  <div class="contextbar"><div><strong id="venue">ZTRACENÝ BAR</strong><span class="context-divider">/</span><span id="shift-label">Načítám data…</span></div><div class="save-state" id="save-state" role="status">Otevírám úložiště</div></div>
+  <main id="app"><div class="loading">Otevírám pokladnu…</div></main>
+  <footer class="footer"><span>PUB-BIZZ <b>POS 1.0</b></span><span id="offline-status">Data tohoto prohlížeče · jedno zařízení</span><button data-action="backup">Stáhnout zálohu ↗</button></footer>
+  <dialog id="dialog" aria-labelledby="dialog-title"><form id="dialog-form"><div class="dialog-head"><h2 id="dialog-title"></h2><button type="button" class="iconbutton close-dialog" aria-label="Zavřít">×</button></div><div id="dialog-body"></div><p id="dialog-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary close-dialog">Zpět</button><button type="submit" id="dialog-submit" class="primary">Uložit</button></div></form></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div><div id="print-area"></div><input type="file" id="restore-input" accept="application/json,.json" hidden>
+  <noscript>Pokladna potřebuje zapnutý JavaScript.</noscript>
+<script>/* User-supplied Agnis price list. Excludes all 30 unpriced entries; Cuba libre 130 CZK as requested. */
+(function(root){ const catalog = {
+  "version": "ztraceny-2026-09-25-r3",
+  "products": [
+    {
+      "id": "agnis-50",
+      "sourceCode": "50",
+      "name": "12 Radegast 0,3",
+      "category": "Pivo",
+      "serving": "",
+      "price": 5000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-51",
+      "sourceCode": "51",
+      "name": "12 Radegast 0,5",
+      "category": "Pivo",
+      "serving": "",
+      "price": 6500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-63",
+      "sourceCode": "63",
+      "name": "10° Radegast 0,3",
+      "category": "Pivo",
+      "serving": "",
+      "price": 4200,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-56",
+      "sourceCode": "56",
+      "name": "10° Radegast 0,5",
+      "category": "Pivo",
+      "serving": "",
+      "price": 4900,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-57",
+      "sourceCode": "57",
+      "name": "12 Pilsner Urquell 0,3",
+      "category": "Pivo",
+      "serving": "",
+      "price": 5500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-58",
+      "sourceCode": "58",
+      "name": "12 Pilsner Urquell 0,5",
+      "category": "Pivo",
+      "serving": "",
+      "price": 6900,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-61",
+      "sourceCode": "61",
+      "name": "Pivo nealko",
+      "category": "Pivo",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-71",
+      "sourceCode": "71",
+      "name": "Corona MEXICO 0,33",
+      "category": "Pivo",
+      "serving": "",
+      "price": 6900,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-83",
+      "sourceCode": "83",
+      "name": "Frisco 0,33",
+      "category": "Pivo",
+      "serving": "",
+      "price": 5500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-501",
+      "sourceCode": "501",
+      "name": "Bílé víno rozlev 0,1",
+      "category": "Víno",
+      "serving": "",
+      "price": 3500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-1001",
+      "sourceCode": "1001",
+      "name": "Cervené vino rozlev 0.1",
+      "category": "Víno",
+      "serving": "",
+      "price": 3500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-1653",
+      "sourceCode": "1653",
+      "name": "Prosecco 1L čep",
+      "category": "Víno",
+      "serving": "",
+      "price": 45000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-1654",
+      "sourceCode": "1654",
+      "name": "Prosecco vald. 0,1 čep",
+      "category": "Víno",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-1657",
+      "sourceCode": "1657",
+      "name": "Bohemia sekt 0,75",
+      "category": "Víno",
+      "serving": "",
+      "price": 35000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-1658",
+      "sourceCode": "1658",
+      "name": "Prosecco 0,75",
+      "category": "Víno",
+      "serving": "",
+      "price": 35000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-1801",
+      "sourceCode": "1801",
+      "name": "Becherovka 0,04",
+      "category": "Likéry",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-1802",
+      "sourceCode": "1802",
+      "name": "Lemond 0,04",
+      "category": "Likéry",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-1803",
+      "sourceCode": "1803",
+      "name": "Fernet stock 0,04",
+      "category": "Likéry",
+      "serving": "",
+      "price": 6000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-1804",
+      "sourceCode": "1804",
+      "name": "Fernet citrus 0,04",
+      "category": "Likéry",
+      "serving": "",
+      "price": 6000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-1805",
+      "sourceCode": "1805",
+      "name": "Jagermeister 0,04",
+      "category": "Likéry",
+      "serving": "",
+      "price": 6500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-1806",
+      "sourceCode": "1806",
+      "name": "Zelená 0,04",
+      "category": "Likéry",
+      "serving": "",
+      "price": 5000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2302",
+      "sourceCode": "2302",
+      "name": "Gin Beefeater 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2303",
+      "sourceCode": "2303",
+      "name": "Gin Bombay 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2304",
+      "sourceCode": "2304",
+      "name": "Tequila stříbrná 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2305",
+      "sourceCode": "2305",
+      "name": "Tequila zlatá 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2306",
+      "sourceCode": "2306",
+      "name": "Hruškovice R. Jelinek 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2307",
+      "sourceCode": "2307",
+      "name": "Hruška zlatá 40% 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2308",
+      "sourceCode": "2308",
+      "name": "Slivovice bílá budík 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2309",
+      "sourceCode": "2309",
+      "name": "Gin Malfy 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 11000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2312",
+      "sourceCode": "2312",
+      "name": "Finlandia kokos 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2314",
+      "sourceCode": "2314",
+      "name": "Finlandia brusinka",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2315",
+      "sourceCode": "2315",
+      "name": "Finlandia vodka 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2316",
+      "sourceCode": "2316",
+      "name": "Gin Hendricks 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2317",
+      "sourceCode": "2317",
+      "name": "Absinth 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2318",
+      "sourceCode": "2318",
+      "name": "Vodka Nemiroff 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2319",
+      "sourceCode": "2319",
+      "name": "Gin Columbian White 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2320",
+      "sourceCode": "2320",
+      "name": "Beluga Noble 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 16000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2321",
+      "sourceCode": "2321",
+      "name": "Cabrito Reposado 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2322",
+      "sourceCode": "2322",
+      "name": "Patrón Reposado 0,041",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 16500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2323",
+      "sourceCode": "2323",
+      "name": "Gin Broker's 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2324",
+      "sourceCode": "2324",
+      "name": "Cabrito blanco 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2325",
+      "sourceCode": "2325",
+      "name": "Gin Beefeater PINK 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 8500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2326",
+      "sourceCode": "2326",
+      "name": "Hruškovice Williams 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2327",
+      "sourceCode": "2327",
+      "name": "OMG gin 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 14000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2328",
+      "sourceCode": "2328",
+      "name": "Gin Tanqueray 0,041",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 12000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2329",
+      "sourceCode": "2329",
+      "name": "Gin Gin 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 12500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2330",
+      "sourceCode": "2330",
+      "name": "Gin Beefeater Orange 0,041",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 8500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2331",
+      "sourceCode": "2331",
+      "name": "Jagermeister Scharf 0,041",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 6500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2332",
+      "sourceCode": "2332",
+      "name": "Vodka Botanical 0,041",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2333",
+      "sourceCode": "2333",
+      "name": "Gin Endorphin 0,041",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 14500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2334",
+      "sourceCode": "2334",
+      "name": "Gin Malfy Arancia 0,041",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 12000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2335",
+      "sourceCode": "2335",
+      "name": "Gin Malfy Limone 0,041",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 12000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2336",
+      "sourceCode": "2336",
+      "name": "Gin Opihr London 0,041",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 14000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2337",
+      "sourceCode": "2337",
+      "name": "Brugal anejo 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2338",
+      "sourceCode": "2338",
+      "name": "Highland park 12y 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 16000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2339",
+      "sourceCode": "2339",
+      "name": "Macallan 12y 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 35000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2340",
+      "sourceCode": "2340",
+      "name": "Famous groose 0,04",
+      "category": "Destiláty",
+      "serving": "",
+      "price": 8000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2801",
+      "sourceCode": "2801",
+      "name": "Kraken black spiced 2y 0,041",
+      "category": "Rumy",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2802",
+      "sourceCode": "2802",
+      "name": "Legendario elixir 7y 0,041",
+      "category": "Rumy",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2803",
+      "sourceCode": "2803",
+      "name": "El Dorado 12 y 0,041",
+      "category": "Rumy",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2804",
+      "sourceCode": "2804",
+      "name": "Don papa 7y 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 14000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2805",
+      "sourceCode": "2805",
+      "name": "Diplomatico 15y 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 16000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2806",
+      "sourceCode": "2806",
+      "name": "Pyrat XO 15y 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 14000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2807",
+      "sourceCode": "2807",
+      "name": "Zacapa 23y 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 18500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2808",
+      "sourceCode": "2808",
+      "name": "Plantation XO 20y 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 18500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2809",
+      "sourceCode": "2809",
+      "name": "Rum Havana 3y 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2810",
+      "sourceCode": "2810",
+      "name": "Rum Tuzemský 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 5500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2811",
+      "sourceCode": "2811",
+      "name": "Captain Morgan 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2812",
+      "sourceCode": "2812",
+      "name": "Bucanero rum 7y 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 8000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2813",
+      "sourceCode": "2813",
+      "name": "Bacardi spiced 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2814",
+      "sourceCode": "2814",
+      "name": "Bacardi 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2815",
+      "sourceCode": "2815",
+      "name": "Malibu 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2816",
+      "sourceCode": "2816",
+      "name": "Havana Anos 7y 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2817",
+      "sourceCode": "2817",
+      "name": "Dictador 12y 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2818",
+      "sourceCode": "2818",
+      "name": "Rum santos Dumont 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 14000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2819",
+      "sourceCode": "2819",
+      "name": "Rum Angostura 7 Υ.0.0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 8000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2820",
+      "sourceCode": "2820",
+      "name": "Rum Angostura 1919 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 12000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2821",
+      "sourceCode": "2821",
+      "name": "Rum Republica 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 6500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2822",
+      "sourceCode": "2822",
+      "name": "Blue Mauritius 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 16500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2823",
+      "sourceCode": "2823",
+      "name": "Diplomatico 8yo 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2824",
+      "sourceCode": "2824",
+      "name": "Diplomatico Planas 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2825",
+      "sourceCode": "2825",
+      "name": "Morgan s colou",
+      "category": "Rumy",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2826",
+      "sourceCode": "2826",
+      "name": "Morgan TIKI 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2827",
+      "sourceCode": "2827",
+      "name": "Don Papa Baroko",
+      "category": "Rumy",
+      "serving": "",
+      "price": 15000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2828",
+      "sourceCode": "2828",
+      "name": "Heffron 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 6500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-2829",
+      "sourceCode": "2829",
+      "name": "Bumbu 0,04",
+      "category": "Rumy",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3301",
+      "sourceCode": "3301",
+      "name": "Bushmills black bush 11y 0,041",
+      "category": "Whisky",
+      "serving": "",
+      "price": 8000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3302",
+      "sourceCode": "3302",
+      "name": "Laphroaig 10y 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3303",
+      "sourceCode": "3303",
+      "name": "Jack Daniel's 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3304",
+      "sourceCode": "3304",
+      "name": "Jack D. Honey 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3305",
+      "sourceCode": "3305",
+      "name": "Tullamore Dew 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3306",
+      "sourceCode": "3306",
+      "name": "Jameson 3y 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3307",
+      "sourceCode": "3307",
+      "name": "Glenfarclas 12y 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3308",
+      "sourceCode": "3308",
+      "name": "Jack Daniel's Fire 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3309",
+      "sourceCode": "3309",
+      "name": "Jim Beam 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3310",
+      "sourceCode": "3310",
+      "name": "Ballantines 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3311",
+      "sourceCode": "3311",
+      "name": "Chivas Regal 12y 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 12000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3312",
+      "sourceCode": "3312",
+      "name": "Johnnie Walker Red Label 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3313",
+      "sourceCode": "3313",
+      "name": "Bushmills original 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3314",
+      "sourceCode": "3314",
+      "name": "J&B Rare 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3315",
+      "sourceCode": "3315",
+      "name": "Talisker 10 Y.0.0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 14500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3316",
+      "sourceCode": "3316",
+      "name": "Trebisch 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 16000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3317",
+      "sourceCode": "3317",
+      "name": "St.žitná Myslivecká reserva 0,041",
+      "category": "Whisky",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3318",
+      "sourceCode": "3318",
+      "name": "Jack Daniels apple 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3319",
+      "sourceCode": "3319",
+      "name": "Jack Daniels Akce",
+      "category": "Whisky",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3320",
+      "sourceCode": "3320",
+      "name": "Jack Daniels Fire Akce",
+      "category": "Whisky",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3321",
+      "sourceCode": "3321",
+      "name": "Jack Daniels Honey Akce",
+      "category": "Whisky",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3322",
+      "sourceCode": "3322",
+      "name": "Jack Daniels Apple Akce",
+      "category": "Whisky",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3323",
+      "sourceCode": "3323",
+      "name": "Tullamore Honey 0,04",
+      "category": "Whisky",
+      "serving": "",
+      "price": 8000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3400",
+      "sourceCode": "3400",
+      "name": "Martini 0,1",
+      "category": "Víno",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3801",
+      "sourceCode": "3801",
+      "name": "Metaxa 5* 0,04",
+      "category": "Brandy",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3802",
+      "sourceCode": "3802",
+      "name": "Godet Pearadise 0,02",
+      "category": "Brandy",
+      "serving": "",
+      "price": 8000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-3805",
+      "sourceCode": "3805",
+      "name": "Gruzinak 0,04",
+      "category": "Brandy",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4301",
+      "sourceCode": "4301",
+      "name": "Havana+Cola 0,3",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 12000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4302",
+      "sourceCode": "4302",
+      "name": "Mimosa",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 8000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4303",
+      "sourceCode": "4303",
+      "name": "Gin ton les plody",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4304",
+      "sourceCode": "4304",
+      "name": "Růžový Gin+tonic",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 10000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4305",
+      "sourceCode": "4305",
+      "name": "Limetkový Gin+tonic",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 10000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4306",
+      "sourceCode": "4306",
+      "name": "Gin tonik čerstvá okurka 0,31",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 10000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4307",
+      "sourceCode": "4307",
+      "name": "Jack Daniel's+Cola",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 10000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4308",
+      "sourceCode": "4308",
+      "name": "Morgan+Cola",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4309",
+      "sourceCode": "4309",
+      "name": "Gin+tonic 0,3",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4310",
+      "sourceCode": "4310",
+      "name": "Aperol Spritz",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 11500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4311",
+      "sourceCode": "4311",
+      "name": "Hugo spritz",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 11500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4312",
+      "sourceCode": "4312",
+      "name": "Mojito",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4313",
+      "sourceCode": "4313",
+      "name": "Chupito 0,04",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4322",
+      "sourceCode": "4322",
+      "name": "Finska brusinka zázvor",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 8000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4324",
+      "sourceCode": "4324",
+      "name": "Finlandia kokos cola",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 8000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4326",
+      "sourceCode": "4326",
+      "name": "Tequila sunrise 0,3",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4327",
+      "sourceCode": "4327",
+      "name": "Sex ve Ztracené 0,3",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4328",
+      "sourceCode": "4328",
+      "name": "Cuba libre 0,3",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4329",
+      "sourceCode": "4329",
+      "name": "Cosmopolitan 0,08",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 12000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4330",
+      "sourceCode": "4330",
+      "name": "Mojito nealko",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4331",
+      "sourceCode": "4331",
+      "name": "Vodka s džusem",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 9000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4332",
+      "sourceCode": "4332",
+      "name": "Piña colada",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4334",
+      "sourceCode": "4334",
+      "name": "Modrá laguna",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4335",
+      "sourceCode": "4335",
+      "name": "Malibu Orchid",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4336",
+      "sourceCode": "4336",
+      "name": "Cuba libre",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4337",
+      "sourceCode": "4337",
+      "name": "Mojito",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4338",
+      "sourceCode": "4338",
+      "name": "Sex ve Ztracené",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 13000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4343",
+      "sourceCode": "4343",
+      "name": "Skinny bitch",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4344",
+      "sourceCode": "4344",
+      "name": "Jack Daniel's Fire štrůdl",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 11000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4352",
+      "sourceCode": "4352",
+      "name": "HOUBA (ČVO,1+Cola0,1)",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4355",
+      "sourceCode": "4355",
+      "name": "Drink of the Day",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4553",
+      "sourceCode": "4553",
+      "name": "HeffronCola (0,1+0,1)",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 18000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4554",
+      "sourceCode": "4554",
+      "name": "SVIÑA 0,04",
+      "category": "Koktejly",
+      "serving": "",
+      "price": 5500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4821",
+      "sourceCode": "4821",
+      "name": "Perlivá voda 0,33",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4822",
+      "sourceCode": "4822",
+      "name": "Neperlivá voda 0,33",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4823",
+      "sourceCode": "4823",
+      "name": "Coca-Cola 0,33",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4824",
+      "sourceCode": "4824",
+      "name": "Coca-Cola light 0,33",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4825",
+      "sourceCode": "4825",
+      "name": "Orangina 0,25",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4826",
+      "sourceCode": "4826",
+      "name": "Tonic 0,33",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4827",
+      "sourceCode": "4827",
+      "name": "Džus pomeranč 0,2",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4828",
+      "sourceCode": "4828",
+      "name": "Džus jahoda 0,2",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4829",
+      "sourceCode": "4829",
+      "name": "Džus jablko 0,2",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4830",
+      "sourceCode": "4830",
+      "name": "Red Bull 0,25",
+      "category": "Nealko",
+      "serving": "",
+      "price": 8000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4831",
+      "sourceCode": "4831",
+      "name": "Kofola čep 0,5",
+      "category": "Nealko",
+      "serving": "",
+      "price": 5500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4833",
+      "sourceCode": "4833",
+      "name": "Malina čep 0,4",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4836",
+      "sourceCode": "4836",
+      "name": "Jemně perlivá voda 0,33",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4837",
+      "sourceCode": "4837",
+      "name": "Mattoni Spritz 0,33",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4838",
+      "sourceCode": "4838",
+      "name": "Limetková limonáda 0,33",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4839",
+      "sourceCode": "4839",
+      "name": "Bonaqua 0,25",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4840",
+      "sourceCode": "4840",
+      "name": "Fanta 0,33",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4841",
+      "sourceCode": "4841",
+      "name": "Crodino 0,1",
+      "category": "Nealko",
+      "serving": "",
+      "price": 6000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4842",
+      "sourceCode": "4842",
+      "name": "Voda s citronem 0,7",
+      "category": "Nealko",
+      "serving": "",
+      "price": 5500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4843",
+      "sourceCode": "4843",
+      "name": "Kofola čep 0,3",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4844",
+      "sourceCode": "4844",
+      "name": "Coca cola zero 0,25plech",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4845",
+      "sourceCode": "4845",
+      "name": "Coca cola zero 0,33",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4846",
+      "sourceCode": "4846",
+      "name": "Coca cola 0,1 gun",
+      "category": "Nealko",
+      "serving": "",
+      "price": 1500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4847",
+      "sourceCode": "4847",
+      "name": "Tonik Ginger 0,33",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4848",
+      "sourceCode": "4848",
+      "name": "Sprite 0,33 plech",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4850",
+      "sourceCode": "4850",
+      "name": "Limonada čep 0,1",
+      "category": "Nealko",
+      "serving": "",
+      "price": 1500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4852",
+      "sourceCode": "4852",
+      "name": "Fever water",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4853",
+      "sourceCode": "4853",
+      "name": "Kolkovné",
+      "category": "Ostatní",
+      "serving": "",
+      "price": 50000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4854",
+      "sourceCode": "4854",
+      "name": "Tonik 0,1 gun",
+      "category": "Nealko",
+      "serving": "",
+      "price": 1500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4855",
+      "sourceCode": "4855",
+      "name": "Džus rybíz 0,2",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4856",
+      "sourceCode": "4856",
+      "name": "Tonik růžový 0,33",
+      "category": "Nealko",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4858",
+      "sourceCode": "4858",
+      "name": "Fanta 0,1 gun",
+      "category": "Nealko",
+      "serving": "",
+      "price": 1500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4859",
+      "sourceCode": "4859",
+      "name": "Sprite 0,1 gun",
+      "category": "Nealko",
+      "serving": "",
+      "price": 1500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4860",
+      "sourceCode": "4860",
+      "name": "Soda 0,1 gun",
+      "category": "Nealko",
+      "serving": "",
+      "price": 1000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-4861",
+      "sourceCode": "4861",
+      "name": "Džus rozlev 0,1",
+      "category": "Nealko",
+      "serving": "",
+      "price": 1500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5301",
+      "sourceCode": "5301",
+      "name": "Espresso Lungo",
+      "category": "Teplé nápoje",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5302",
+      "sourceCode": "5302",
+      "name": "Espresso",
+      "category": "Teplé nápoje",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5303",
+      "sourceCode": "5303",
+      "name": "Caffé ristretto",
+      "category": "Teplé nápoje",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5304",
+      "sourceCode": "5304",
+      "name": "Turecká káva",
+      "category": "Teplé nápoje",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5308",
+      "sourceCode": "5308",
+      "name": "Čaj",
+      "category": "Teplé nápoje",
+      "serving": "",
+      "price": 5500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5309",
+      "sourceCode": "5309",
+      "name": "Zázvorový čaj čerstvý",
+      "category": "Teplé nápoje",
+      "serving": "",
+      "price": 5500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5311",
+      "sourceCode": "5311",
+      "name": "Grog",
+      "category": "Teplé nápoje",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5312",
+      "sourceCode": "5312",
+      "name": "Rioba čaj",
+      "category": "Teplé nápoje",
+      "serving": "",
+      "price": 5500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5313",
+      "sourceCode": "5313",
+      "name": "Latte macchiato kokos",
+      "category": "Teplé nápoje",
+      "serving": "",
+      "price": 7000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5314",
+      "sourceCode": "5314",
+      "name": "Hot capitan a džus",
+      "category": "Teplé nápoje",
+      "serving": "",
+      "price": 8000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5315",
+      "sourceCode": "5315",
+      "name": "Svařák",
+      "category": "Teplé nápoje",
+      "serving": "",
+      "price": 6000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5751",
+      "sourceCode": "5751",
+      "name": "Lahev Republica 0,7L",
+      "category": "Rumy",
+      "serving": "",
+      "price": 105000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5801",
+      "sourceCode": "5801",
+      "name": "Brambůrky solené",
+      "category": "Snacks",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5802",
+      "sourceCode": "5802",
+      "name": "Brambůrky česnekové",
+      "category": "Snacks",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5803",
+      "sourceCode": "5803",
+      "name": "Snack",
+      "category": "Snacks",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5804",
+      "sourceCode": "5804",
+      "name": "Arašídy KK",
+      "category": "Snacks",
+      "serving": "",
+      "price": 5500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5807",
+      "sourceCode": "5807",
+      "name": "Brambůrky hořčicové",
+      "category": "Snacks",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5809",
+      "sourceCode": "5809",
+      "name": "Tyčinky pekařské",
+      "category": "Snacks",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5810",
+      "sourceCode": "5810",
+      "name": "ZIGI oříšky",
+      "category": "Snacks",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5811",
+      "sourceCode": "5811",
+      "name": "Havlikovi tyčinky sýrové",
+      "category": "Snacks",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5812",
+      "sourceCode": "5812",
+      "name": "Hradecké tyčinky",
+      "category": "Snacks",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5816",
+      "sourceCode": "5816",
+      "name": "Guláš",
+      "category": "Snacks",
+      "serving": "",
+      "price": 10000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5817",
+      "sourceCode": "5817",
+      "name": "Obložená mísa",
+      "category": "Snacks",
+      "serving": "",
+      "price": 90000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5818",
+      "sourceCode": "5818",
+      "name": "Cibulové kroužky",
+      "category": "Snacks",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5819",
+      "sourceCode": "5819",
+      "name": "Křupky",
+      "category": "Snacks",
+      "serving": "",
+      "price": 4000,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5820",
+      "sourceCode": "5820",
+      "name": "Tyčinky",
+      "category": "Snacks",
+      "serving": "",
+      "price": 4500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    },
+    {
+      "id": "agnis-5821",
+      "sourceCode": "5821",
+      "name": "HOT DOG",
+      "category": "Snacks",
+      "serving": "",
+      "price": 9500,
+      "vatRate": null,
+      "active": true,
+      "stockProductId": "",
+      "priceNote": ""
+    }
+  ]
+}; if(typeof module!=="undefined") module.exports=catalog; else root.POSCatalog=catalog; })(globalThis);
+
+/* PUB-BIZZ POS — money is stored in integer haléře; state changes commit atomically. */
+(function (root) {
+  'use strict';
+  const catalog = typeof module !== 'undefined' ? require('./catalog.js') : root.POSCatalog;
+  const uid = () => globalThis.crypto.randomUUID();
+  const check = (ok, message) => { if (!ok) throw new Error(message); };
+  const integer = (x, max = 100000000) => Number.isSafeInteger(x) && x >= 0 && x <= max;
+  const clean = (s, max = 120) => String(s || '').trim().slice(0, max);
+  function money(value) {
+    const s = String(value).trim().replace(/\s/g, '').replace(',', '.');
+    check(/^\d{1,7}(\.\d{1,2})?$/.test(s), 'Zadej platnou částku, nejvýš dvě desetinná místa.');
+    return Math.round(Number(s) * 100);
+  }
+  const sum = (lines) => lines.reduce((n, l) => n + l.price * l.quantity, 0);
+  function initial() {
+    return { schema: 1, deviceId: uid(), venueId: uid(), revision: 0, sequence: 0, catalogVersion: catalog.version,
+      settings: { venue: 'ZTRACENÝ BAR', company: '', address: '', ico: '', dic: '', vat: 'unknown', operator: 'Obsluha' },
+      products: structuredClone(catalog.products),
+      orders: [{ id: 'bar', name: 'Rychlý prodej', lines: [], revision: 0 }], shifts: [], receipts: [], audit: [], lastBackup: null };
+  }
+  const activeShift = s => s.shifts.find(x => !x.closedAt);
+  function totals(s, shiftId) {
+    const sh = s.shifts.find(x => x.id === shiftId);
+    const receipts = s.receipts.filter(x => x.shiftId === shiftId);
+    const cash = receipts.reduce((n, x) => n + x.cash, 0);
+    const card = receipts.reduce((n, x) => n + x.card, 0);
+    const movements = (sh?.movements || []).reduce((n, x) => n + x.amount, 0);
+    return { cash, card, total: cash + card, count: receipts.filter(x => x.kind === 'sale').length,
+      refunds: receipts.filter(x => x.kind === 'refund').length, movements, opening: sh?.opening || 0, expected: (sh?.opening || 0) + cash + movements };
+  }
+  function selectedLines(order, selected) {
+    check(Array.isArray(selected) && selected.length > 0, 'Vyber položky k zaplacení.');
+    check(new Set(selected.map(x => x.id)).size === selected.length, 'Položka je ve výběru dvakrát.');
+    return selected.map(x => {
+      const l = order.lines.find(l => l.id === x.id);
+      check(l && integer(x.quantity, 999) && x.quantity > 0 && x.quantity <= l.quantity, 'Účet se změnil. Znovu otevři platbu.');
+      return { ...l, quantity: x.quantity };
+    });
+  }
+  function payment(raw, mode, received, splitCash) {
+    check(integer(raw) && raw > 0, 'Účet musí mít kladnou hodnotu.');
+    check(['cash', 'card', 'split'].includes(mode), 'Vyber způsob platby.');
+    const total = mode === 'cash' ? Math.round(raw / 100) * 100 : raw;
+    check(total > 0, 'Částka po zaokrouhlení musí být kladná.');
+    const cash = mode === 'cash' ? total : mode === 'card' ? 0 : splitCash;
+    check(integer(cash) && cash <= total && (mode !== 'split' || cash % 100 === 0), 'Hotovost zadej v celých Kč, nejvýš do výše účtu.');
+    const card = total - cash;
+    check(integer(received) && received >= cash, 'Přijatá hotovost je nižší než částka k úhradě.');
+    return { total, cash, card, received, change: received - cash, rounding: total - raw, mode };
+  }
+  function execute(s, type, p = {}, now = new Date().toISOString()) {
+    let result = null;
+    const sh = activeShift(s);
+    const needShift = () => { check(sh, 'Nejdřív otevři směnu.'); return sh; };
+    const order = () => { const o = s.orders.find(x => x.id === p.orderId); check(o, 'Účet už neexistuje.'); return o; };
+    if (type === 'openShift') {
+      check(!sh, 'Směna už je otevřená.'); check(integer(p.opening), 'Neplatný počáteční vklad.');
+      const next = { id: uid(), openedAt: now, closedAt: null, opening: p.opening, operator: clean(p.operator) || s.settings.operator, movements: [] };
+      s.shifts.push(next); result = next;
+    } else if (type === 'newOrder') {
+      check(clean(p.name), 'Zadej název účtu.');
+      check(!s.orders.some(x => x.name.toLocaleLowerCase('cs') === clean(p.name).toLocaleLowerCase('cs')), 'Tento účet už existuje.');
+      result = { id: uid(), name: clean(p.name), lines: [], revision: 0 }; s.orders.push(result);
+    } else if (type === 'deleteOrder') {
+      const o = order(); check(o.id !== 'bar' && !o.lines.length, 'Smazat lze pouze prázdný pojmenovaný účet.'); s.orders = s.orders.filter(x => x.id !== o.id);
+    } else if (type === 'loadCatalog') {
+      if (s.catalogVersion === catalog.version) return null;
+      for (const item of catalog.products) {
+        const old = s.products.find(x => x.id === item.id);
+        if (!old) s.products.push(structuredClone(item));
+        else if (item.sourceCode === '4328' && old.price === 12000) old.price = 13000;
+      }
+      for (const old of s.products) if (old.price === null) old.active = false;
+      s.catalogVersion = catalog.version;
+    } else if (type === 'importProducts') {
+      check(Array.isArray(p.items) && p.items.length > 0 && p.items.length <= 300, 'Vlož 1 až 300 položek.');
+      for (const item of p.items) {
+        const matches = s.products.filter(x => x.name.toLocaleLowerCase('cs') === clean(item.name).toLocaleLowerCase('cs') && x.serving === clean(item.serving));
+        check(matches.length <= 1, `Položka ${clean(item.name)} má více kódů. Uprav ji jednotlivě v ceníku.`);
+        const old = matches[0];
+        execute(s, 'product', { ...item, id: old?.id, stockProductId: old?.stockProductId || '' }, now);
+      }
+    } else if (type === 'product') {
+      check(clean(p.name), 'Zadej název položky.');
+      check(integer(p.price) && p.price > 0, 'Cena musí být vyšší než nula.');
+      check(p.vatRate === null || (Number.isFinite(p.vatRate) && p.vatRate >= 0 && p.vatRate <= 100), 'Neplatná sazba DPH.');
+      const old = s.products.find(x => x.id === p.id);
+      result = { id: old?.id || uid(), sourceCode: old?.sourceCode || '', priceNote: '', name: clean(p.name), category: clean(p.category, 40) || 'Ostatní', serving: clean(p.serving, 40), price: p.price, vatRate: p.vatRate, active: p.active !== false, stockProductId: clean(p.stockProductId) };
+      if (old) Object.assign(old, result); else s.products.push(result);
+    } else if (type === 'archiveProduct') {
+      const product = s.products.find(x => x.id === p.id); check(product, 'Položka neexistuje.'); product.active = false;
+    } else if (type === 'addLine') {
+      needShift(); const o = order(); const pr = s.products.find(x => x.id === p.productId && x.active);
+      check(pr && integer(pr.price) && pr.price > 0, 'Nejdřív nastav cenu položky.');
+      check(s.settings.vat !== 'payer' || pr.vatRate !== null, 'U této položky nejdřív nastav sazbu DPH v ceníku.');
+      const line = o.lines.find(x => x.productId === pr.id && x.price === pr.price && x.vatRate === pr.vatRate && x.name === pr.name && x.serving === pr.serving);
+      if (line) { check(line.quantity < 999, 'Limit množství je 999.'); line.quantity++; }
+      else o.lines.push({ id: uid(), productId: pr.id, sourceCode: pr.sourceCode || '', stockProductId: pr.stockProductId, name: pr.name, serving: pr.serving, price: pr.price, vatRate: pr.vatRate, quantity: 1 });
+      check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
+    } else if (type === 'removeLine') {
+      needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.'); check(clean(p.reason), 'Doplň důvod opravy.');
+      l.quantity--; o.lines = o.lines.filter(x => x.quantity > 0); o.revision++;
+    } else if (type === 'checkout') {
+      check(typeof p.operationId === 'string' && p.operationId.length > 10, 'Chybí identifikátor platby.');
+      const duplicate = s.receipts.find(x => x.operationId === p.operationId); if (duplicate) return duplicate;
+      needShift(); const o = order(); check(o.revision === p.revision, 'Účet se změnil v jiném okně. Znovu otevři platbu.');
+      const lines = selectedLines(o, p.selected); const pay = payment(sum(lines), p.mode, p.received, p.splitCash);
+      check(!pay.card || p.cardConfirmed === true, 'Nejdřív potvrď úspěšnou platbu na terminálu.');
+      if (s.settings.vat === 'payer') check(lines.every(x => x.vatRate !== null), 'Na účtu chybí sazba DPH. Oprav položky před zaplacením.');
+      s.sequence++;
+      result = { id: uid(), operationId: p.operationId, number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, kind: 'sale', at: now, shiftId: sh.id, orderId: o.id, orderName: o.name, deviceId: s.deviceId, venueId: s.venueId, operator: sh.operator, settings: { ...s.settings }, lines, ...pay };
+      s.receipts.push(result);
+      for (const line of lines) o.lines.find(x => x.id === line.id).quantity -= line.quantity;
+      o.lines = o.lines.filter(x => x.quantity > 0); o.revision++;
+    } else if (type === 'refund') {
+      needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
+      check(sale && sale.shiftId === sh.id, 'Vratku lze provést pouze k prodeji v právě otevřené směně.');
+      check(!s.receipts.some(x => x.refundOf === sale.id), 'Tento doklad už má vratku.'); check(clean(p.reason), 'Doplň důvod vratky.');
+      check(!sale.card || p.cardConfirmed, 'Potvrď vrácení karetní platby na terminálu.');
+      s.sequence++; result = { ...sale, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0 };
+      s.receipts.push(result);
+    } else if (type === 'cashMovement') {
+      needShift(); check(Number.isSafeInteger(p.amount) && Math.abs(p.amount) <= 100000000 && p.amount !== 0, 'Neplatná částka.'); check(clean(p.reason), 'Doplň důvod pohybu hotovosti.');
+      sh.movements.push({ id: uid(), at: now, amount: p.amount, reason: clean(p.reason) });
+    } else if (type === 'closeShift') {
+      needShift(); check(!s.orders.some(x => x.lines.length), 'Zůstaly nezaplacené účty. Nejdřív je vyrovnej.'); check(integer(p.counted), 'Zadej spočítanou hotovost.');
+      sh.summary = totals(s, sh.id); sh.counted = p.counted; sh.difference = p.counted - sh.summary.expected; sh.closedAt = now; result = sh;
+    } else if (type === 'settings') {
+      check(['unknown', 'payer', 'nonpayer'].includes(p.vat), 'Neplatné nastavení DPH.');
+      check(clean(p.venue), 'Zadej název podniku.');
+      s.settings = { venue: clean(p.venue), company: clean(p.company), address: clean(p.address, 240), ico: clean(p.ico, 30), dic: clean(p.dic, 30), vat: p.vat, operator: clean(p.operator) || 'Obsluha' };
+    } else if (type === 'backup') s.lastBackup = now;
+    else throw new Error('Neznámá operace.');
+    s.revision++;
+    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : null, detail: structuredClone(p) });
+    return result;
+  }
+  function validate(s) {
+    check(s && s.schema === 1 && typeof s.deviceId === 'string' && typeof s.venueId === 'string', 'Soubor není záloha PUB-BIZZ.');
+    for (const k of ['products', 'orders', 'shifts', 'receipts', 'audit']) check(Array.isArray(s[k]) && s[k].length < 100000, 'Poškozená nebo příliš velká záloha.');
+    check(s.settings && typeof s.settings.venue === 'string' && ['unknown', 'payer', 'nonpayer'].includes(s.settings.vat) && integer(s.sequence) && integer(s.revision, 1000000000), 'Poškozená záloha.');
+    for (const collection of [s.products, s.orders, s.shifts, s.receipts]) check(collection.every(x => x && typeof x.id === 'string') && new Set(collection.map(x => x.id)).size === collection.length, 'Neplatné identifikátory v záloze.');
+    check(s.orders.some(o => o.id === 'bar'), 'Chybí účet rychlého prodeje.');
+    for (const p of s.products) check(typeof p.name === 'string' && typeof p.category === 'string' && (p.price === null || integer(p.price)), 'Poškozený ceník.');
+    for (const o of s.orders) {
+      check(typeof o.name === 'string' && integer(o.revision, 1000000000) && Array.isArray(o.lines), 'Poškozený účet.');
+      for (const l of o.lines) check(typeof l.id === 'string' && typeof l.name === 'string' && integer(l.price) && l.price > 0 && integer(l.quantity, 999) && l.quantity > 0, 'Neplatná položka v záloze.');
+    }
+    check(s.shifts.filter(x => !x.closedAt).length <= 1, 'Záloha obsahuje více otevřených směn.');
+    for (const sh of s.shifts) {
+      check(integer(sh.opening) && typeof sh.openedAt === 'string' && Array.isArray(sh.movements) && sh.movements.every(x => Number.isSafeInteger(x.amount)), 'Poškozená směna.');
+      if (sh.closedAt) check(sh.summary && Number.isSafeInteger(sh.summary.total) && integer(sh.counted) && Number.isSafeInteger(sh.difference), 'Poškozená uzávěrka.');
+    }
+    for (const r of s.receipts) {
+      check(['sale','refund'].includes(r.kind) && Array.isArray(r.lines) && r.lines.length && r.settings && typeof r.settings.venue === 'string' && s.shifts.some(x => x.id === r.shiftId), 'Poškozený doklad.');
+      check([r.total,r.cash,r.card,r.rounding].every(Number.isSafeInteger) && r.total === r.cash + r.card, 'Nesedí součet dokladu.');
+      for (const l of r.lines) check(integer(l.price) && integer(l.quantity, 999) && l.quantity > 0 && typeof l.name === 'string', 'Poškozená položka dokladu.');
+      const sign = r.kind === 'sale' ? 1 : -1;
+      check(sign * sum(r.lines) + r.rounding === r.total && sign * r.cash >= 0 && sign * r.card >= 0, 'Nesedí položky dokladu.');
+    }
+    return s;
+  }
+  const api = { initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines };
+  if (typeof module !== 'undefined') module.exports = api; else root.POSCore = api;
+})(globalThis);
+
+(function (root) {
+  'use strict';
+  let db, channel;
+  const DB_NAME = 'pub-bizz-pos-v1';
+  const clone = x => structuredClone(x);
+  function transaction(mode) {
+    try { return db.transaction('state', mode, { durability: 'strict' }); }
+    catch { return db.transaction('state', mode); }
+  }
+  function update(fn) {
+    return new Promise((resolve, reject) => {
+      const tx = transaction('readwrite'); const os = tx.objectStore('state'); let next, result, failure;
+      const request = os.get('current');
+      request.onsuccess = () => {
+        try { next = request.result ? clone(request.result) : POSCore.initial(); result = fn(next); os.put(next, 'current'); }
+        catch (e) { failure = e; tx.abort(); }
+      };
+      tx.oncomplete = () => { channel?.postMessage('updated'); resolve({ state: next, result }); };
+      tx.onerror = tx.onabort = () => reject(failure || tx.error || new Error('Data se nepodařilo uložit. Zkontroluj volné místo.'));
+    });
+  }
+  async function open(onChange) {
+    if (!root.indexedDB) throw new Error('Prohlížeč nemá dostupné úložiště. Použij běžné okno Chrome nebo Edge.');
+    db = await new Promise((resolve, reject) => {
+      const r = indexedDB.open(DB_NAME, 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('state');
+      r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error);
+      r.onblocked = () => reject(new Error('Zavři ostatní okna pokladny a obnov stránku.'));
+    });
+    if (root.BroadcastChannel) { channel = new BroadcastChannel(DB_NAME); channel.onmessage = onChange; }
+    const initialized = await update(s => { if (s.catalogVersion !== POSCatalog.version) POSCore.execute(s, 'loadCatalog'); }); return initialized.state;
+  }
+  const read = () => new Promise((resolve, reject) => {
+    const tx = transaction('readonly'); const r = tx.objectStore('state').get('current');
+    r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error);
+  });
+  async function restore(incoming) {
+    POSCore.validate(incoming);
+    return update(s => {
+      if (s.receipts.length || s.orders.some(x => x.lines.length) || POSCore.activeShift(s)) throw new Error('Obnova je možná jen v prázdné pokladně bez otevřené směny. Existující tržby nelze přepsat.');
+      for (const k of Object.keys(s)) delete s[k]; Object.assign(s, clone(incoming));
+      s.audit.push({ id: crypto.randomUUID(), at: new Date().toISOString(), type: 'restore', operator: s.settings.operator, detail: {} }); s.revision++;
+    });
+  }
+  root.POSStore = { open, read, restore, command: (type, payload) => update(s => POSCore.execute(s, type, payload)) };
+})(globalThis);
+
+/* No payment processor, cloud sync or analytics. Sales stay on this device. */
+'use strict';
+const C = POSCore, Store = POSStore;
+const $ = s => document.querySelector(s);
+const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const E = escapeHTML;
+const fmt = n => new Intl.NumberFormat('cs-CZ', { style:'currency', currency:'CZK', maximumFractionDigits:n % 100 ? 2 : 0 }).format(n / 100);
+const inputMoney = n => String(n / 100).replace('.', ',');
+const date = d => new Date(d).toLocaleString('cs-CZ', {timeZone:'Europe/Prague', day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+const colors = {'Pivo':'#f1c986','Destiláty':'#b1bcf3','Nealko':'#8acbb6','Víno':'#dbabd6','Koktejly':'#efaa91','Likéry':'#b6c49f','Rumy':'#daba8b','Whisky':'#e2b46a','Brandy':'#e3aa9e','Teplé nápoje':'#c6ba91','Snacks':'#98b8df'};
+let state, view = 'pos', current = 'bar', category = 'Pivo', query = '', toastTimer, submitting = false;
+const getOrder = () => state.orders.find(x => x.id === current) || state.orders[0];
+const btn = (label, action, cls = 'secondary', attrs = '') => `<button type="button" class="${cls}" data-action="${action}" ${attrs}>${label}</button>`;
+function toast(message, bad = false) { const t = $('#toast'); t.textContent = message; t.className = `toast visible${bad ? ' bad' : ''}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = 'toast', 4200); }
+async function command(type, payload) {
+  $('#save-state').textContent = 'Ukládám…';
+  try { const response = await Store.command(type, payload); state = response.state; render(); return response.result; }
+  catch (e) { $('#save-state').textContent = 'Změna nebyla uložena'; $('#save-state').classList.add('error'); throw e; }
+}
+function field(label, name, value = '', extra = '', full = false) { return `<label class="field${full ? ' full' : ''}">${label}<input name="${name}" value="${E(value)}" ${extra}></label>`; }
+function showDialog(title, body, submit, label = 'Uložit', onDone) {
+  window.paymentAbort?.abort();
+  const d = $('#dialog'); if (d.open) d.close();
+  $('#dialog-title').textContent = title; $('#dialog-body').innerHTML = body; $('#dialog-error').textContent = '';
+  $('#dialog-submit').textContent = label; $('#dialog-submit').hidden = !submit; $('#dialog-submit').disabled = false;
+  $('#dialog-form').onsubmit = async event => {
+    event.preventDefault(); if (!submit || submitting) return;
+    submitting = true; $('#dialog-submit').disabled = true; $('#dialog-error').textContent = '';
+    try { const result = await submit(new FormData(event.currentTarget)); d.close(); if (onDone) await onDone(result); }
+    catch (e) { if (d.open) $('#dialog-error').textContent = e.message || 'Operace se nepodařila.'; else toast(e.message || 'Operace se nepodařila.', true); }
+    finally { submitting = false; $('#dialog-submit').disabled = false; }
+  };
+  d.showModal();
+}
+function connection() { const online = navigator.onLine; $('#network').textContent = online ? 'Připojeno' : 'Bez internetu'; $('#network').classList.toggle('offline', !online); }
+function render() {
+  if (!state) return;
+  if (!state.orders.some(x => x.id === current)) current = 'bar';
+  $('#venue').textContent = state.settings.venue;
+  const sh = C.activeShift(state);
+  $('#shift-label').textContent = sh ? `Směna od ${date(sh.openedAt)} · ${sh.operator}` : 'Směna není otevřená';
+  $('#save-state').textContent = 'Uloženo v tomto zařízení'; $('#save-state').classList.remove('error');
+  document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  const templates = { pos: renderPOS, history: renderHistory, overview: renderOverview, catalog: renderCatalog, settings: renderSettings };
+  $('#app').innerHTML = templates[view]();
+  if (view === 'pos') {
+    renderProducts();
+    $('#search').addEventListener('input', e => { query = e.target.value; document.querySelectorAll('.category').forEach(b => b.classList.toggle('active', !query && b.dataset.id===category)); renderProducts(); });
+  }
+  if (view === 'settings') $('#settings-form').onsubmit = async e => { e.preventDefault(); try { await command('settings', Object.fromEntries(new FormData(e.currentTarget))); toast('Nastavení uložené.'); } catch(err) { toast(err.message, true); } };
+}
+function renderPOS() {
+  const o = getOrder(), sh = C.activeShift(state), activeProducts = state.products.filter(x => x.active), cats = ['Vše', ...new Set(activeProducts.map(x => x.category))];
+  const accounts = state.orders.map((a, i) => `<button class="account ${a.id === o.id ? 'active' : ''}" data-action="account" data-id="${E(a.id)}" aria-pressed="${a.id === o.id}"><span class="account-number">${a.id === 'bar' ? '↗' : String(i).padStart(2,'0')}</span><span class="account-name">${E(a.name)}<span class="account-amount">${a.lines.length ? fmt(C.sum(a.lines)) : 'Prázdný účet'}</span></span></button>`).join('');
+  const lines = o.lines.map(l => `<div class="line"><div class="line-top"><span>${E(l.name)}${l.serving ? `<small class="small"> · ${E(l.serving)}</small>` : ''}</span><strong>${fmt(l.price * l.quantity)}</strong></div><div class="line-bottom"><span>${fmt(l.price)} / ks</span><div class="quantity"><button data-action="minus" data-id="${E(l.id)}" aria-label="Odebrat ${E(l.name)}">−</button><span>${l.quantity}</span><button data-action="add" data-id="${E(l.productId)}" aria-label="Přidat ${E(l.name)}">+</button></div></div></div>`).join('');
+  return `<div class="pos-layout"><aside class="accounts"><div class="section-label"><span class="eyebrow">Otevřené účty</span><span class="badge">${state.orders.filter(x => x.lines.length).length}</span></div>${accounts}${btn('+ Nový účet','newOrder','add-account')}<div class="sidebar-note"><strong>Večer pod kontrolou.</strong>Rozdělané účty se ukládají po každé změně.</div></aside><section class="catalog-area"><div class="workspace-heading"><div><h1>Co to bude?</h1><p>Vyber nápoj a přidej ho na účet.</p></div><span class="eyebrow small">${activeProducts.length} položek</span></div>${!sh ? `<div class="notice"><span>Začni směnu a zadej hotovost v pokladně.</span>${btn('Otevřít směnu','openShift','shift-start')}</div>` : ''}${activeProducts.some(x => x.price === null) ? `<div class="notice"><span>${activeProducts.filter(x => x.price === null).length} položek v dodaném ceníku nemá cenu. Doplníš ji klepnutím; ostatní už můžeš markovat.</span></div>` : ''}<div class="search"><span class="search-icon">⌕</span><label class="sr-only" for="search">Hledat v nápojích</label><input id="search" type="search" placeholder="Název nebo číslo z Agnisu…" autocomplete="off" value="${E(query)}"></div><div class="categories" aria-label="Kategorie">${cats.map(c => `<button class="category ${category === c ? 'active' : ''}" data-action="category" data-id="${E(c)}" aria-pressed="${category === c}">${E(c)}</button>`).join('')}</div><div class="products" id="products"></div></section><section class="receipt" aria-label="Aktuální účet"><div class="receipt-head"><div><h2>${E(o.name)}</h2><p>${o.lines.length ? 'Účet zůstává otevřený do zaplacení' : 'Připravený pro dalšího hosta'}</p></div><span class="receipt-number">${String(state.orders.indexOf(o)).padStart(2, '0')}</span></div><div class="receipt-items">${lines || `<div class="receipt-empty"><span>≡</span><p>Účet je zatím prázdný.<br>Přidej první nápoj.</p></div>`}</div><div class="receipt-bottom"><div class="receipt-meta"><span>${o.lines.reduce((n,l) => n+l.quantity,0)} ks na účtu</span>${o.id !== 'bar' && !o.lines.length ? btn('Smazat účet','deleteOrder','splitbutton') : '<span>Ceny v Kč</span>'}</div><div class="receipt-total"><span>K zaplacení</span><strong>${fmt(C.sum(o.lines))}</strong></div><div class="payment-buttons">${btn('Hotově','payCash','paycash', !sh || !o.lines.length ? 'disabled' : '')}${btn('Kartou','payCard','paycard', !sh || !o.lines.length ? 'disabled' : '')}</div>${btn('Rozdělit platbu / položky','paySplit','splitbutton', !sh || !o.lines.length ? 'disabled' : '')}</div></section></div>`;
+}
+function renderProducts() {
+  const norm = s => s.toLocaleLowerCase('cs').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const products = state.products.filter(p => p.active && (query || category === 'Vše' || p.category === category) && norm(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(norm(query)));
+  $('#products').innerHTML = products.map(p => `<button class="product" style="--category:${colors[p.category] || '#a5c99a'}" data-action="add" data-id="${E(p.id)}"><span class="product-cat">${E(p.category)}${p.sourceCode ? ` · #${E(p.sourceCode)}` : ''}</span><span class="product-name">${E(p.name)}</span>${p.serving ? `<span class="product-serving">${E(p.serving)}</span>` : ''}<span class="product-price ${p.price === null ? 'unset' : ''}">${p.price === null ? (p.priceNote ? E(p.priceNote) + ' · zadat cenu' : 'Doplnit cenu') : fmt(p.price)}</span><span class="product-plus">+</span></button>`).join('') + `<button class="product quick-product" data-action="newProduct"><span>+</span>Nová položka</button>`;
+}
+function renderHistory() {
+  const rows = [...state.receipts].reverse().map(r => `<tr><td><strong>${E(r.number)}</strong><br><span class="muted small">${date(r.at)}</span></td><td>${E(r.orderName)}<br><span class="tag ${r.kind === 'refund' ? 'orange' : ''}">${r.kind === 'refund' ? 'Vratka' : 'Zaplaceno'}</span></td><td>${r.cash && r.card ? 'Kombinovaně' : r.card ? 'Karta' : 'Hotově'}</td><td class="amount">${fmt(r.total)}</td><td class="table-actions">${btn('Doklad','receipt','secondary',`data-id="${E(r.id)}"`)}${r.kind === 'sale' && r.shiftId === C.activeShift(state)?.id && !state.receipts.some(x => x.refundOf === r.id) ? btn('Vratka','refund','textbutton',`data-id="${E(r.id)}"`) : ''}</td></tr>`).join('');
+  return `<section class="page"><div class="workspace-heading"><div><h1>Doklady</h1><p>Prodeje a vratky z tohoto zařízení.</p></div>${btn('Export CSV','csv')}</div><div class="table-wrap"><table><thead><tr><th>Číslo / čas</th><th>Účet</th><th>Úhrada</th><th class="amount">Částka</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty">Zatím žádná platba. Doklady se objeví po zaplacení prvního účtu.</td></tr>'}</tbody></table></div></section>`;
+}
+function renderOverview() {
+  const sh = C.activeShift(state), t = sh ? C.totals(state, sh.id) : {total:0,cash:0,card:0,count:0,expected:0,opening:0,movements:0};
+  return `<section class="page"><div class="workspace-heading"><div><h1>${sh ? 'Dnešní směna' : 'Přehled směn'}</h1><p>${sh ? `Otevřeno ${date(sh.openedAt)} · ${E(sh.operator)}` : 'Otevři směnu a začni markovat.'}</p></div>${sh ? btn('Uzavřít směnu','closeShift','primary') : btn('Otevřít směnu','openShift','primary')}</div><div class="cards"><div class="stat lime"><span class="eyebrow">Tržba po vratkách</span><strong>${fmt(t.total)}</strong></div><div class="stat"><span class="eyebrow">Hotovostní tržba</span><strong>${fmt(t.cash)}</strong></div><div class="stat"><span class="eyebrow">Karetní tržba</span><strong>${fmt(t.card)}</strong></div><div class="stat"><span class="eyebrow">Počet prodejů</span><strong>${t.count}</strong></div></div>${sh ? `<div class="panel"><h3>Hotovost v pokladně</h3><div class="summary-row"><span class="muted">Počáteční vklad</span><strong>${fmt(t.opening)}</strong></div><div class="summary-row"><span class="muted">Vklady a výběry</span><strong>${fmt(t.movements)}</strong></div><div class="summary-row"><span class="muted">Očekávaná hotovost</span><strong>${fmt(t.expected)}</strong></div><div class="actions section-gap">${btn('Vklad / výběr','cashMovement')}${btn('Export CSV','csv')}${btn('Stáhnout zálohu','backup')}</div>${sh.movements.length ? `<div class="section-gap">${sh.movements.map(x => `<div class="summary-row small"><span>${date(x.at)} · ${E(x.reason)}</span><span>${fmt(x.amount)}</span></div>`).join('')}</div>` : ''}</div>` : ''}<div class="panel"><h3>Uzavřené směny</h3>${state.shifts.filter(x => x.closedAt).reverse().map(x => `<div class="summary-row"><span>${date(x.openedAt)} → ${date(x.closedAt)}<br><small class="muted">Hotovost: ${fmt(x.counted)} · rozdíl ${fmt(x.difference)}</small></span><strong>${fmt(x.summary.total)}</strong></div>`).join('') || '<p>Uzávěrky se tu zobrazí po skončení první směny.</p>'}</div></section>`;
+}
+function renderCatalog() {
+  return `<section class="page"><div class="workspace-heading"><div><h1>Nápojový lístek</h1><p>Ceny se do otevřených účtů zpětně nepřepisují.</p></div><div class="actions">${btn('Hromadně vložit','bulkProducts')}${btn('+ Nová položka','newProduct','primary')}</div></div><div class="table-wrap"><table><thead><tr><th>Položka</th><th>Kategorie</th><th>Porce</th><th class="amount">Cena</th><th></th></tr></thead><tbody>${state.products.filter(x => x.active).map(p => `<tr><td><strong>${E(p.name)}</strong>${p.sourceCode ? `<br><span class="muted small">Agnis #${E(p.sourceCode)}</span>` : ''}</td><td>${E(p.category)}</td><td>${E(p.serving) || '—'}</td><td class="amount">${p.price === null ? '<span class="tag orange">Chybí cena</span>' : fmt(p.price)}</td><td class="table-actions">${btn('Upravit','editProduct','secondary',`data-id="${E(p.id)}"`)}${btn('Skrýt','archiveProduct','textbutton',`data-id="${E(p.id)}"`)}</td></tr>`).join('')}</tbody></table></div></section>`;
+}
+function renderSettings() {
+  const s = state.settings;
+  return `<section class="page"><div class="workspace-heading"><div><h1>Nastavení pokladny</h1><p>Údaje provozovatele, tisk a zálohy.</p></div></div><form id="settings-form" class="panel"><h3>Údaje na dokladu</h3><div class="form-grid">${field('Název podniku','venue',s.venue,'required maxlength="120"')}${field('Jméno obsluhy','operator',s.operator,'required maxlength="120"')}${field('Provozovatel / firma','company',s.company,'maxlength="120"')}${field('Adresa provozovny','address',s.address,'maxlength="240"')}${field('IČ','ico',s.ico,'maxlength="30"')}${field('DIČ','dic',s.dic,'maxlength="30"')}<label class="field full">Režim DPH<select name="vat"><option value="unknown" ${s.vat==='unknown'?'selected':''}>Zatím nenastaveno — provozní záznam bez rozpisu DPH</option><option value="nonpayer" ${s.vat==='nonpayer'?'selected':''}>Neplátce DPH</option><option value="payer" ${s.vat==='payer'?'selected':''}>Plátce DPH — sazbu nastavím u každé položky</option></select></label></div><div class="form-actions"><button type="submit" class="primary">Uložit údaje</button></div></form><div class="panel"><h3>Zálohy a přenos dat</h3><p>Účty a tržby jsou uložené jen v tomto prohlížeči na tomto zařízení. Mezi PC a telefonem se zatím nesdílejí. Používej stejnou adresu a běžné okno prohlížeče; smazání dat webu smaže i pokladnu.</p><p class="section-gap">Zálohu JSON stáhni po směně. Obnovit ji můžeš v prázdné pokladně. Při přechodu na jiné zařízení přestaň markovat na původním.</p><div class="form-actions">${btn('Stáhnout úplnou zálohu','backup','primary')}${btn('Obnovit ze zálohy','restore')}${btn('Prodeje do CSV','csv')}</div><p class="section-gap small">Poslední vytvořená záloha: ${state.lastBackup ? date(state.lastBackup) : 'zatím žádná'}</p></div><div class="panel"><h3>Tisk a karetní terminál</h3><p>Doklad se tiskne přes tiskový dialog prohlížeče. Pro pokladní tiskárnu zvol papír 80 mm a vypni záhlaví a zápatí. Platbu kartou provedeš na terminálu a teprve po jejím úspěchu ji potvrdíš v pokladně.</p></div><div class="panel"><h3>PUB-BIZZ · další propojení</h3><p>Export zálohy obsahuje stabilní identifikátory položek, prodejů a směn pro další napojení na PUB GURU. Automatický odpis skladu ani synchronizace s ostatními moduly zatím nejsou zapnuté.</p><p class="section-gap small">Pokladna ${E(state.deviceId.slice(0,8).toUpperCase())} · ${state.audit.length} záznamů historie změn</p></div></section>`;
+}
+function openShift() {
+  showDialog('Otevřít směnu', `<p class="help">Kolik hotovosti je teď v zásuvce? Započítá se do kontroly uzávěrky.</p><div class="form-grid">${field('Počáteční hotovost (Kč)','opening','','required inputmode="decimal" placeholder="0"')}${field('Obsluha','operator',state.settings.operator,'required maxlength="120"')}</div>`, async f => {
+    const r = await command('openShift', {opening:C.money(f.get('opening')),operator:f.get('operator')});
+    navigator.storage?.persist?.().catch(() => {}); return r;
+  }, 'Otevřít směnu', () => toast('Směna je otevřená.'));
+}
+function editProduct(id, addAfter = false) {
+  const p = state.products.find(x => x.id === id) || {name:'',category:category !== 'Vše' ? category : 'Destiláty',serving:'',price:null,vatRate:null,stockProductId:''};
+  showDialog(p.id ? 'Upravit položku' : 'Nová položka', `<div class="form-grid">${field('Název','name',p.name,'required maxlength="120"',true)}${field('Cena v Kč','price',p.price === null ? '' : inputMoney(p.price),'required inputmode="decimal" placeholder="Zadej skutečnou cenu"')}${field('Velikost porce','serving',p.serving,'maxlength="40" placeholder="např. 0,04 l"')}<label class="field">Kategorie<input name="category" list="category-list" value="${E(p.category)}" maxlength="40" required><datalist id="category-list">${['Pivo','Destiláty','Nealko','Víno','Koktejly','Káva','Ostatní'].map(x=>`<option>${x}</option>`).join('')}</datalist></label>${field('Sazba DPH (%)','vatRate',p.vatRate ?? '',`type="number" min="0" max="100" step="0.01" ${state.settings.vat === 'payer' ? 'required' : ''} placeholder="Nezadáno"`)}</div>`, async f => {
+    const pr = await command('product', {id:p.id,name:f.get('name'),category:f.get('category'),price:C.money(f.get('price')),serving:f.get('serving'),vatRate:f.get('vatRate') === '' ? null : Number(f.get('vatRate')),stockProductId:p.stockProductId});
+    return pr;
+  }, addAfter && C.activeShift(state) ? 'Uložit a přidat na účet' : 'Uložit položku', async pr => { if (addAfter && C.activeShift(state)) await command('addLine',{orderId:current,productId:pr.id}); toast('Položka uložená.'); });
+}
+function pay(mode) {
+  const o = structuredClone(getOrder()); if (!o.lines.length) return;
+  const operationId = crypto.randomUUID(); const total = C.sum(o.lines); const startingCash = mode==='cash' ? Math.round(total/100)*100 : 0;
+  const selected = () => o.lines.map(l => ({id:l.id,quantity:Number($('#dialog-form').elements['line-'+l.id].value)})).filter(x=>x.quantity>0);
+  showDialog(mode === 'cash' ? 'Zaplatit hotově' : mode === 'card' ? 'Zaplatit kartou' : 'Rozdělit platbu', `<p class="help">Pro částečné placení uprav počet kusů. Zbytek zůstane na účtu.</p><div>${o.lines.map(l=>`<label class="selected-line"><span>${E(l.name)} ${E(l.serving)}<small>${fmt(l.price)} za kus</small></span><input aria-label="Zaplatit kusů ${E(l.name)}" type="number" name="line-${E(l.id)}" value="${l.quantity}" min="0" max="${l.quantity}" step="1" required></label>`).join('')}</div><div class="payment-summary" id="payment-summary"></div><div class="form-grid">${mode==='split'?field('Z toho hotově (Kč)','splitCash','0','required inputmode="decimal"'):''}${mode!=='card'?field('Přijato v hotovosti (Kč)','received',inputMoney(startingCash),'required inputmode="decimal"'):''}</div>${mode!=='cash'?'<label class="inline-check"><input type="checkbox" name="cardConfirmed" required>Platba kartou na terminálu proběhla úspěšně.</label>':''}`, async f => {
+    for (const l of o.lines) { const q = Number(f.get('line-'+l.id)); if (!Number.isSafeInteger(q) || q<0 || q>l.quantity) throw new Error('Neplatný počet kusů.'); }
+    return await command('checkout',{orderId:o.id,revision:o.revision,operationId,selected:selected(),mode,received:mode==='card'?0:C.money(f.get('received')),splitCash:mode==='split'?C.money(f.get('splitCash')):0,cardConfirmed:f.has('cardConfirmed')});
+  }, 'Potvrdit zaplacení', r => { toast(`Uloženo · ${r.number}`); receiptDialog(r); });
+  function preview() {
+    try {
+      const lines = C.selectedLines(o,selected()), raw=C.sum(lines), f=new FormData($('#dialog-form'));
+      const cash = mode==='cash'?Math.round(raw/100)*100:mode==='split'?C.money(f.get('splitCash')):0;
+      const received = mode==='card'?0:C.money(f.get('received'));
+      const p=C.payment(raw,mode,Math.max(cash,received),cash);
+      const cardCheck = $('#dialog-form').elements.cardConfirmed;
+      if (cardCheck) { cardCheck.required = p.card > 0; cardCheck.closest('label').hidden = p.card === 0; }
+      $('#payment-summary').innerHTML=`<div class="summary-row total"><span>K úhradě</span><strong>${fmt(p.total)}</strong></div>${p.rounding?`<div class="summary-row"><span>Zaokrouhlení</span><span>${fmt(p.rounding)}</span></div>`:''}${mode==='split'?`<div class="summary-row"><span>Na terminálu</span><strong>${fmt(p.card)}</strong></div>`:''}${mode!=='card'?`<div class="summary-row"><span>${received<cash?'Ještě chybí':'Vrátit hostovi'}</span><strong>${fmt(Math.abs(received-cash))}</strong></div>`:'<span class="muted small">Částku zadej na samostatném terminálu.</span>'}`;
+    } catch(e) { $('#payment-summary').textContent=e.message; }
+  }
+  $('#dialog-body').addEventListener('input',preview,{signal:(window.paymentAbort?.abort(),window.paymentAbort=new AbortController()).signal});
+  preview();
+}
+function receiptHTML(r) {
+  const s=r.settings, sign=r.kind==='refund'?-1:1, vat={};
+  for(const l of r.lines){if(l.vatRate!==null){const key=String(l.vatRate); const gross=l.price*l.quantity*sign; const tax=Math.round(gross*l.vatRate/(100+l.vatRate)); const v=vat[key]||(vat[key]={base:0,tax:0}); v.base+=gross-tax;v.tax+=tax;}}
+  return `<div class="receipt-preview"><header><h3>${E(s.venue)}</h3>${s.company?`<div>${E(s.company)}</div>`:''}${s.address?`<div>${E(s.address)}</div>`:''}${s.ico?`<div>IČ: ${E(s.ico)}${s.dic?' · DIČ: '+E(s.dic):''}</div>`:''}<div class="section-gap">${r.kind==='refund'?'VRATKA':'PRODEJNÍ DOKLAD'} ${E(r.number)}</div><div>${date(r.at)} · ${E(r.operator)}</div><div>${E(r.orderName)}</div></header><hr><table><tbody>${r.lines.map(l=>`<tr><td>${l.quantity}× ${E(l.name)} ${E(l.serving)}<br><span class="muted">${fmt(l.price)} / ks</span></td><td class="amount">${fmt(l.price*l.quantity*sign)}</td></tr>`).join('')}</tbody></table><hr>${r.rounding?`<div class="summary-row"><span>Zaokrouhlení</span><span>${fmt(r.rounding)}</span></div>`:''}<div class="summary-row total"><span>Celkem</span><strong>${fmt(r.total)}</strong></div>${r.cash?`<div class="summary-row"><span>Hotově</span><span>${fmt(r.cash)}</span></div>`:''}${r.card?`<div class="summary-row"><span>Kartou</span><span>${fmt(r.card)}</span></div>`:''}${r.change?`<div class="summary-row"><span>Přijato / vráceno</span><span>${fmt(r.received)} / ${fmt(r.change)}</span></div>`:''}${s.vat==='payer'?`<hr>${Object.entries(vat).map(([rate,v])=>`<div class="small">DPH ${E(rate)} % · základ ${fmt(v.base)} · daň ${fmt(v.tax)}</div>`).join('')}`:''}${r.reason?`<p class="section-gap">Důvod vratky: ${E(r.reason)}</p>`:''}<div class="footnote">${s.vat==='unknown'?'Provozní záznam — režim DPH není nastaven.':s.vat==='nonpayer'?'Provozovatel není plátcem DPH.':''}${!s.company||!s.ico||!s.address?'<br>Údaje provozovatele nejsou kompletní.':''}<br>PUB-BIZZ · Děkujeme za návštěvu.</div></div>`;
+}
+function receiptDialog(r) { showDialog(r.kind==='refund'?'Vratka uložená':'Zaplaceno',receiptHTML(r),async()=>{ $('#print-area').innerHTML=receiptHTML(r); window.print(); },'Vytisknout doklad'); }
+function download(name,content,type){ const url=URL.createObjectURL(new Blob([content],{type})); const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000); }
+async function backup(){ const s=await Store.read(); const data=JSON.stringify(s); const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(data)))).map(x=>x.toString(16).padStart(2,'0')).join(''); const stamp=new Date().toISOString().replace(/[:.]/g,'-');download(`PUB-BIZZ-zaloha-${stamp}.json`,JSON.stringify({format:'pubbizz.pos.backup.v1',hash,data:s},null,2),'application/json');await command('backup',{});toast('Záloha připravená ke stažení.'); }
+function csv(){
+  const cell=v=>{let s=String(v??''); if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
+  const rows=[['doklad','datum','typ','ucet','polozka','porce','pocet','cena_kc','celkem_polozka_kc','dph_procent','doklad_hotove_kc','doklad_karta_kc','doklad_zaokrouhleni_kc','směna_id','produkt_id','sklad_id']];
+  for(const r of state.receipts)r.lines.forEach((l,i)=>rows.push([r.number,r.at,r.kind,r.orderName,l.name,l.serving,l.quantity*(r.kind==='refund'?-1:1),inputMoney(l.price),inputMoney(l.price*l.quantity*(r.kind==='refund'?-1:1)),l.vatRate??'',i===0?inputMoney(r.cash):'',i===0?inputMoney(r.card):'',i===0?inputMoney(r.rounding):'',r.shiftId,l.productId,l.stockProductId]));
+  download(`PUB-BIZZ-prodeje-${new Date().toISOString().slice(0,10)}.csv`,'\uFEFF'+rows.map(r=>r.map(cell).join(';')).join('\r\n'),'text/csv;charset=utf-8');toast('CSV připravené ke stažení.');
+}
+function closeShift(){ const sh=C.activeShift(state);if(!sh)return;if(state.orders.some(x=>x.lines.length)){toast('Nejdřív zaplať všechny rozdělané účty.',true);return;}const t=C.totals(state,sh.id);showDialog('Uzavřít směnu',`<div class="payment-summary"><div class="summary-row"><span>Tržba</span><strong>${fmt(t.total)}</strong></div><div class="summary-row"><span>Očekávaná hotovost</span><strong>${fmt(t.expected)}</strong></div></div>${field('Spočítaná hotovost v zásuvce (Kč)','counted','','required inputmode="decimal"')}<p class="help section-gap">Směna se uzamkne. Doklady zůstanou uložené a stáhne se úplná záloha.</p>`,f=>command('closeShift',{counted:C.money(f.get('counted'))}),'Uzavřít a zálohovat',async()=>{view='overview';render();await backup();});}
+function bulkProducts(){showDialog('Hromadně vložit ceník',`<p class="help">Každý řádek: <strong>název; cena; kategorie; porce; DPH</strong>. Poslední tři údaje lze vynechat. Existující položky se shodným názvem a porcí se aktualizují.</p><label class="field">Položky<textarea name="rows" rows="9" required placeholder="Název nápoje; cena v Kč; kategorie; porce; DPH %"></textarea></label>`,async f=>{const rows=String(f.get('rows')).split(/\r?\n/).filter(x=>x.trim());if(rows.length>300)throw new Error('Najednou lze vložit nejvýš 300 položek.');const items=rows.map((row,i)=>{const [name,price,category='Ostatní',serving='',rate='']=row.split(';').map(x=>x.trim());if(!name||!price)throw new Error(`Na řádku ${i+1} chybí název nebo cena.`);return {name,price:C.money(price),category,serving,vatRate:rate===''?null:Number(rate.replace(',','.'))};});await command('importProducts',{items});},'Uložit ceník',()=>toast('Ceník byl uložený.'));}
+const actions={
+  account:async id=>{current=id;render();},category:async id=>{category=id;query='';render();},openShift,
+  newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta','name','','required maxlength="120" placeholder="např. Stůl 1 / Petr"'),f=>command('newOrder',{name:f.get('name')}),'Vytvořit účet',r=>{current=r.id;render();}),
+  deleteOrder:async()=>{await command('deleteOrder',{orderId:current});current='bar';render();},
+  add:async id=>{const p=state.products.find(x=>x.id===id);if(!p)return;if(p.price===null){editProduct(id,true);return;}if(!C.activeShift(state)){openShift();return;}await command('addLine',{orderId:current,productId:id});},
+  minus:id=>showDialog('Odebrat jeden kus',field('Důvod opravy','reason','Oprava namarkování','required maxlength="120"'),f=>command('removeLine',{orderId:current,lineId:id,reason:f.get('reason')}),'Odebrat kus'),
+  newProduct:()=>editProduct(),editProduct:id=>editProduct(id),archiveProduct:id=>showDialog('Skrýt položku',`<p class="help">${E(state.products.find(x=>x.id===id)?.name)} zmizí z nabídky. Existující účty a doklady zůstanou.</p>`,()=>command('archiveProduct',{id}),'Skrýt'),
+  payCash:()=>pay('cash'),payCard:()=>pay('card'),paySplit:()=>pay('split'),
+  receipt:id=>receiptDialog(state.receipts.find(x=>x.id===id)),
+  refund:id=>{const r=state.receipts.find(x=>x.id===id);showDialog('Vrátit celý doklad',`<p class="help">Doklad ${E(r.number)} · ${fmt(r.total)}. Vrací se stejným způsobem jako původní platba. Vratka se uloží samostatně.</p>${field('Důvod vratky','reason','','required maxlength="120"')}${r.card?'<label class="inline-check"><input type="checkbox" name="cardConfirmed" required>Vrácení karetní platby na terminálu proběhlo.</label>':''}`,f=>command('refund',{receiptId:id,reason:f.get('reason'),cardConfirmed:f.has('cardConfirmed')}),'Zapsat vratku',receiptDialog);},
+  cashMovement:()=>showDialog('Vklad / výběr hotovosti',`<div class="form-grid"><label class="field">Pohyb<select name="direction"><option value="1">Vklad do pokladny</option><option value="-1">Výběr z pokladny</option></select></label>${field('Částka v Kč','amount','','required inputmode="decimal"')}${field('Důvod','reason','','required maxlength="120"',true)}</div>`,f=>command('cashMovement',{amount:C.money(f.get('amount'))*Number(f.get('direction')),reason:f.get('reason')}),'Zapsat pohyb'),
+  closeShift,backup,csv,bulkProducts,restore:()=>$('#restore-input').click()
+};
+document.addEventListener('click',async e=>{
+  const close=e.target.closest('.close-dialog');if(close){if(!submitting)$('#dialog').close();return;}
+  const tab=e.target.closest('[data-view]');if(tab){view=tab.dataset.view;render();return;}
+  const b=e.target.closest('[data-action]');if(!b||b.disabled||!state)return;
+  const action=actions[b.dataset.action];if(action)try{await action(b.dataset.id);}catch(err){toast(err.message||'Operace se nepodařila.',true);}
+});
+$('#dialog').addEventListener('cancel',e=>{if(submitting)e.preventDefault();});
+$('#fullscreen').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();else toast('Na telefonu přidej pokladnu na plochu z nabídky prohlížeče.');}catch{toast('Prohlížeč celoobrazovkový režim nepovolil.',true);}});
+$('#restore-input').addEventListener('change',async e=>{
+  const file=e.target.files?.[0];e.target.value='';if(!file)return;
+  try{if(file.size>20000000)throw new Error('Záloha je příliš velká (maximum 20 MB).');const wrapper=JSON.parse(await file.text());if(wrapper.format!=='pubbizz.pos.backup.v1')throw new Error('Tohle není záloha PUB-BIZZ.');const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(wrapper.data))))).map(x=>x.toString(16).padStart(2,'0')).join('');if(hash!==wrapper.hash)throw new Error('Kontrolní součet nesedí. Soubor je změněný nebo poškozený.');C.validate(wrapper.data);showDialog('Obnovit pokladnu',`<p class="help">Záloha: <strong>${E(wrapper.data.settings.venue)}</strong><br>${wrapper.data.receipts.length} dokladů · ${wrapper.data.products.length} položek.<br>Po obnově používej pouze toto zařízení.</p>`,async()=>{const r=await Store.restore(wrapper.data);state=r.state;current='bar';render();},'Obnovit zálohu',()=>toast('Záloha byla obnovená.'));}catch(err){toast(err.message,true);}
+});
+window.addEventListener('online',connection);window.addEventListener('offline',connection);
+async function refresh(){if(state){try{const next=await Store.read();if(next.revision!==state.revision){state=next;render();}}catch{toast('Nepodařilo se načíst uložená data.',true);}}}
+window.addEventListener('focus',refresh);
+(async()=>{
+  try{state=await Store.open(refresh);C.validate(state);render();connection();
+    if(document.documentElement.dataset.standalone){$('#offline-status').textContent='Samostatná offline verze · data tohoto prohlížeče';}
+    else if('serviceWorker' in navigator){try{await navigator.serviceWorker.register('./sw.js');await navigator.serviceWorker.ready;$('#offline-status').textContent='Připraveno i bez internetu · jedno zařízení';}catch{$('#offline-status').textContent='Offline spuštění není připravené · data zůstávají místní';}}
+  }catch(e){$('#app').innerHTML=`<div class="panel"><h1>Pokladnu nelze otevřít</h1><p class="error">${E(e.message)}</p><p class="section-gap">Nic nemaž. Zkus běžné okno Chrome / Edge, nebo obnov stránku. Pokud máš zálohu, můžeš ji obnovit v novém profilu prohlížeče.</p></div>`;$('#save-state').textContent='Úložiště není dostupné';}
+})();
+</script></body>
+</html>

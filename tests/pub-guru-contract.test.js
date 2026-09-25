@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const appDir = path.join(root, 'pub_guru');
@@ -104,9 +105,26 @@ test('counted stock semantics survive the browser-to-database round trip', () =>
   assert.match(invoice, /signedQuantity\(row\.qty, row\.unitPrice\)/);
 });
 
-test('pull requests run tests but only non-PR workflows deploy', () => {
+test('Pages deploys only main pushes or manual main runs after tests', () => {
   const workflow = read('.github/workflows/pub-guru-pages.yml');
   assert.match(workflow, /pull_request:\s*\n\s+branches:\s*\[main\]/);
   assert.match(workflow, /node --test tests\/\*\.test\.js/);
-  assert.match(workflow, /if:\s*github\.event_name != 'pull_request'/);
+  assert.match(workflow, /workflow_dispatch:/);
+  const deploy = workflow.split(/^  deploy:\s*$/m)[1];
+  assert.ok(deploy, 'Pages deployment job must exist');
+  assert.match(deploy, /^    needs: test\s*$/m);
+  const condition = deploy.match(/^    if: (.+)$/m)?.[1];
+  assert.ok(condition, 'Pages deployment must have an event and branch guard');
+  for (const [event_name, ref, expected] of [
+    ['push', 'refs/heads/main', true],
+    ['workflow_dispatch', 'refs/heads/main', true],
+    ['pull_request', 'refs/pull/2/merge', false],
+    ['pull_request', 'refs/heads/main', false],
+    ['push', 'refs/heads/feature', false],
+    ['workflow_dispatch', 'refs/heads/feature', false],
+    ['push', 'refs/tags/v1', false]
+  ]) {
+    const actual = vm.runInNewContext(condition, { github: { event_name, ref } }, { timeout: 100 });
+    assert.equal(actual, expected, `${event_name} on ${ref}`);
+  }
 });

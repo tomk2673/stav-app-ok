@@ -16,7 +16,7 @@ Pokladna, faktury, sklad, inventury a uzávěrky jsou ve stejném repozitáři `
 
 ## Nasazení jednoho balíčku na Vercel
 
-Použít **existující projekt pro `stav-app-ok`**, větev `main`, **Root Directory ponechat prázdné / kořen repozitáře**, Framework **Other**, bez buildu. Kořenový `vercel.json` zachovává vstup do PUB GURU a přidává `/pokladna` → `/pub_bizz_pos/index.html`. Nasazení pouze složky `pub_bizz_pos` by neobsahovalo obrazovky inventury a faktur.
+Použít **existující projekt pro `stav-app-ok`**, větev `main`, **Root Directory ponechat prázdné / kořen repozitáře**, Framework **Other**, bez buildu. Kořenový `vercel.json` zachovává vstup do PUB GURU a přidává `/pokladna` → `/pub_bizz_pos/index.html`. Nasazení pouze složky `pub_bizz_pos` by neobsahovalo obrazovky inventury a faktur. Původní GitHub Pages workflow publikuje pouze `pub_guru`; jeho staré adresy zůstávají funkční a odkaz na společnou pokladnu je v tomto samostatném režimu skrytý.
 
 Přímé vytvoření produkčního deploymentu v připojeném účtu Vercel dne 25. 9. 2026 vrátilo **403 — chybějící oprávnění**. To není potvrzení publikovaného webu. Zdrojové soubory jsou připravené pro standardní nasazení existujícího repozitáře.
 
@@ -54,3 +54,5 @@ npm test --prefix tests/pos-web
 `tests/pub-bizz-database.sql` ověřuje v transakci zakončené ROLLBACK atomický odpis, deduplikaci, konflikt revizí, chybějící recepturu, dodatečný odpis, fyzickou vratku, nedostatek kusových zásob, uzávěrku a izolaci cizího uživatele. Testovací tržby ani zásoby v databázi nezůstávají.
 
 UI testy používají DOM a simulovaný transport k otestování ztracené odpovědi po úspěšném commitu, opakování stejného UUID, platební rezervace a zachování rozpracované inventury. Nejsou testem přihlášení konkrétního uživatele ani reálného telefonu/tiskárny. U nasazené Edge Function je ověřený preflight 204 a odmítnutí nepřihlášeného požadavku 401.
+
+Kontrola celého repozitáře lokálně: 33 unit/contract testů prošlo; další 4 DOM testy online pokladny a inventury prošly. GitHub Actions pro commit `9452160` skončilo stavem failure i po jednom opakování, bez dostupného logu nebo kroků jobu. Automatický Pages deploy byl přeskočen; kontroly nebyly vypnuty ani obejity.

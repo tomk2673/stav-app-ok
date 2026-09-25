@@ -1162,6 +1162,10 @@ function setupEvents() {
 }
 
 function init() {
+  // Legacy Pages hosts only this folder. The POS link belongs to the complete
+  // repository deployment, where /pub_guru and /pub_bizz_pos are siblings.
+  const posLink = document.getElementById('shared-pos-link');
+  if (posLink && !location.pathname.includes('/pub_guru/')) posLink.style.display = 'none';
   ensureCurrentInventory();
   if (!localStorage.getItem(STORAGE_KEY)) saveState(false);
   document.getElementById('invoiceDate').value = today();

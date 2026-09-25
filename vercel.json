@@ -14,12 +14,26 @@
       "permanent": false
     },
     {
+      "source": "/index.html",
+      "destination": "/pub_bizz_pos/index.html",
+      "permanent": false
+    },
+    {
       "source": "/pub_bizz_pos",
       "destination": "/pub_bizz_pos/index.html",
       "permanent": false
     }
   ],
   "headers": [
+    {
+      "source": "/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    },
     {
       "source": "/pub_guru/(.*)",
       "headers": [

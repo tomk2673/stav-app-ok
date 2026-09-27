@@ -9,6 +9,7 @@ Pokladna, faktury, sklad, inventury a uzávěrky jsou ve stejném repozitáři `
 3. V **Nastavení** doplnit provozovatele a skutečný režim DPH. Sazby DPH nejsou odhadnuté. U plátce je sazba povinná před markováním položky.
 4. V části **Sklad** přiřadit každé prodávané položce skutečné suroviny a množství na jednu porci: například 40 ml destilátu; koktejl může mít více surovin. Žádná receptura není bez potvrzení uživatele předvyplněná do produkčních dat. K dispozici je 68 stávajících skladových položek. Službu lze výslovně označit „bez odpisu“ s důvodem.
 5. Otevřít směnu, markovat na rychlý nebo pojmenovaný účet. Účty se obnovují každé 3 sekundy. Na telefonu je dole rychlé tlačítko k aktuálnímu účtu.
+   - **Spojit účty** pod názvem účtu přesune všechny jeho položky na vybraný stůl nebo zákazníka. Dialog ukáže oba účty a společnou částku; po potvrzení se otevře cílový účet. Původní účet zůstane prázdný pro další použití. Shodné položky se sčítají, různé ceny, sazby DPH a skladové vazby zůstávají zachované. Rozpracovaná platba nebo změna kteréhokoli účtu během potvrzování spojení zablokuje. Spojení samo nevytváří tržbu ani skladový odpis a zapisuje se do auditu.
 6. Otevření platby rezervuje účet. Kartu zpracovat na samostatném terminálu a potom potvrdit. Po zavření dialogu zůstane rezervace, dokud obsluha zkontroluje stav platby a dokončí ji nebo účet uvolní. Terminál ani tiskárna nejsou přímo ovládané z webu.
 7. Prodej bez receptury zůstává v seznamu chybějících odpisů. Po nastavení receptury lze jednou provést odpis k původnímu prodeji. Inventura vidí počet čekajících odpisů.
 8. Vratka peněz automaticky nevrací spotřebované nápoje na sklad. Fyzicky vrácené zboží vyžaduje zaškrtnutí volby. Vrací se pouze skutečně odepsané množství, včetně kusových položek s nedostatkem zásob.
@@ -46,10 +47,12 @@ Při změně doménového kódu spustit z kořene `python3 pub_bizz_pos/sync-edg
 ## Ověření
 
 ```sh
-node --test tests/pub-bizz-pos.test.js tests/pub-bizz-server.test.js
+node --test tests/pub-bizz-pos.test.js tests/pub-bizz-server.test.js tests/pub-bizz-merge.test.js
 npm ci --prefix tests/pos-web
 npm test --prefix tests/pos-web
 ```
+
+`supabase/tests/pos_merge_orders.sql` ověřuje atomické spojení pro obsluhu, deduplikaci, konflikt revizí, audit a zachování tržeb/skladu v oddělené testovací provozovně. Všechny testovací zápisy končí ROLLBACK. Nasazená migrace: `20260927030252_pub_bizz_merge_orders`; Edge Function zachovává zapnuté `verify_jwt`.
 
 `tests/pub-bizz-database.sql` ověřuje v transakci zakončené ROLLBACK atomický odpis, deduplikaci, konflikt revizí, chybějící recepturu, dodatečný odpis, fyzickou vratku, nedostatek kusových zásob, uzávěrku a izolaci cizího uživatele. Testovací tržby ani zásoby v databázi nezůstávají.
 

@@ -3,7 +3,7 @@
   'use strict';
   const C = typeof module !== 'undefined' ? require('./core.js') : root.POSCore;
   const manager = new Set(['owner', 'manager']);
-  const staffCommands = new Set(['openShift', 'newOrder', 'deleteOrder', 'addLine', 'removeLine', 'beginPayment', 'cancelPayment', 'checkout', 'backup']);
+  const staffCommands = new Set(['openShift', 'newOrder', 'deleteOrder', 'mergeOrders', 'addLine', 'removeLine', 'beginPayment', 'cancelPayment', 'checkout', 'backup']);
   const managerCommands = new Set(['product', 'archiveProduct', 'importProducts', 'refund', 'cashMovement', 'closeShift', 'settings', 'recipe', 'resolveStock']);
   const check = (ok, message) => { if (!ok) throw new Error(message); };
   function run(state, type, payload, actor, stock, now = new Date().toISOString()) {

@@ -35,7 +35,7 @@ async function harness(){
  await until(()=>w.document.querySelector('.product'),'register open');
  const click=selector=>{const el=w.document.querySelector(selector);assert.ok(el,'Missing '+selector);el.click();};
  const submit=()=>w.document.querySelector('#dialog-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
- return {dom,w,click,submit,get server(){return server;},calls,drop(){dropNext=true;}};
+ return {dom,w,click,submit,get server(){return server;},calls,drop(){dropNext=true;},external(type,payload){server=D.run(server,type,payload,{id:user.id,role:'owner'},[]).state;}};
 }
 test('online UI survives a lost response without adding an item twice and completes a reserved payment',async()=>{
  const h=await harness();try {
@@ -86,5 +86,61 @@ test('two pending tab operations keep separate durable IDs and can both be recov
   assert.equal(h.server.orders[0].lines[0].quantity,1);
   await h.w.POSCloud.retry();assert.equal(h.w.POSCloud.pending,null);
   assert.equal(h.server.orders[0].lines[0].quantity,2);
+ }finally{h.dom.window.close();}
+});
+
+async function accountsForMerge(h){
+ h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();
+ await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift');
+ const ids=[];
+ for(const name of ['Stůl 1','Petr']){
+  h.click('[data-action="newOrder"]');h.w.document.querySelector('[name="name"]').value=name;h.submit();
+  await until(()=>h.w.document.querySelector('.receipt-head h2')?.textContent===name&&!h.w.document.querySelector('#dialog').open,'account '+name);
+  const id=h.server.orders.find(o=>o.name===name).id;ids.push(id);
+  h.click('.product[data-action="add"]');await until(()=>h.w.document.querySelector('.quantity span')?.textContent==='1','item '+name);
+ }
+ h.click(`[data-action="account"][data-id="${ids[0]}"]`);
+ h.click('[data-action="mergeOrders"]');
+ assert.equal(h.w.document.querySelector('#dialog-submit').disabled,true);
+ const select=h.w.document.querySelector('[name="targetOrderId"]');select.value=ids[1];select.dispatchEvent(new h.w.Event('change'));
+ return {source:ids[0],target:ids[1]};
+}
+test('merge UI previews the chosen total, conserves items and selects the combined customer account',async()=>{
+ const h=await harness();try{
+  const {source,target}=await accountsForMerge(h);
+  const total=h.server.orders.reduce((n,o)=>n+C.sum(o.lines),0);
+  const formatted=new Intl.NumberFormat('cs-CZ',{style:'currency',currency:'CZK',maximumFractionDigits:0}).format(total/100);
+  assert.equal(h.w.document.querySelector('#merge-summary .total strong').textContent,formatted);
+  assert.match(h.w.document.querySelector('#merge-summary p').textContent,/Petr/);
+  h.submit();await until(()=>h.w.document.querySelector('.receipt-head h2')?.textContent==='Petr'&&!h.w.document.querySelector('#dialog').open,'combined account selected');
+  assert.equal(h.server.orders.find(o=>o.id===source).lines.length,0);
+  assert.equal(C.sum(h.server.orders.find(o=>o.id===target).lines),total);
+  assert.equal(h.w.document.querySelector('.quantity span').textContent,'2');
+  assert.equal(h.server.receipts.length,0);
+ }finally{h.dom.window.close();}
+});
+test('merge UI rejects a stale preview when another device changes the chosen account',async()=>{
+ const h=await harness();try{
+  const {source,target}=await accountsForMerge(h);
+  h.external('addLine',{orderId:target,productId:h.server.orders.find(o=>o.id===target).lines[0].productId});
+  await h.w.POSCloud.refresh();
+  h.submit();await until(()=>/změnil/.test(h.w.document.querySelector('#dialog-error').textContent),'stale merge rejected');
+  assert.equal(h.server.orders.find(o=>o.id===source).lines[0].quantity,1);
+  assert.equal(h.server.orders.find(o=>o.id===target).lines[0].quantity,2);
+  assert.equal(h.server.audit.filter(a=>a.type==='mergeOrders').length,0);
+ }finally{h.dom.window.close();}
+});
+test('lost merge response retries the same request without moving items added later to the old table',async()=>{
+ const h=await harness();try{
+  const {source,target}=await accountsForMerge(h);
+  h.drop();h.submit();await until(()=>h.w.POSCloud.pending?.type==='mergeOrders'&&!h.w.POSCloud.busy&&!h.w.document.querySelector('#dialog-submit').disabled,'merge awaiting recovery');
+  assert.equal(h.server.orders.find(o=>o.id===source).lines.length,0);
+  h.external('addLine',{orderId:source,productId:h.server.orders.find(o=>o.id===target).lines[0].productId});
+  h.click('.close-dialog');h.click('[data-action="retryPending"]');
+  await until(()=>!h.w.POSCloud.pending&&h.w.document.querySelector('.receipt-head h2')?.textContent==='Petr','merge recovered');
+  assert.equal(h.server.orders.find(o=>o.id===source).lines[0].quantity,1);
+  assert.equal(h.server.orders.find(o=>o.id===target).lines[0].quantity,2);
+  assert.equal(h.server.audit.filter(a=>a.type==='mergeOrders').length,1);
+  const calls=h.calls.filter(c=>c.type==='mergeOrders');assert.equal(calls.length,2);assert.equal(calls[0].requestId,calls[1].requestId);
  }finally{h.dom.window.close();}
 });

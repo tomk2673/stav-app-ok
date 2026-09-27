@@ -63,6 +63,27 @@
       result = { id: uid(), name: clean(p.name), lines: [], revision: 0 }; s.orders.push(result);
     } else if (type === 'deleteOrder') {
       const o = order(); check(o.id !== 'bar' && !o.lines.length, 'Smazat lze pouze prázdný pojmenovaný účet.'); s.orders = s.orders.filter(x => x.id !== o.id);
+    } else if (type === 'mergeOrders') {
+      needShift();
+      const source = order(), target = s.orders.find(x => x.id === p.targetOrderId);
+      check(target, 'Cílový účet už neexistuje. Znovu otevři spojení účtů.');
+      check(source.id !== target.id, 'Vyber jiný účet pro spojení.');
+      check(!source.paymentLock && !target.paymentLock, 'Na jednom z účtů právě probíhá platba. Nejdřív ji dokonči nebo zkontroluj rezervaci.');
+      check(source.revision === p.revision && target.revision === p.targetRevision, 'Jeden z účtů se změnil. Znovu otevři spojení účtů a zkontroluj částku.');
+      check(source.lines.length > 0, 'Tento účet je prázdný.');
+      const sourceTotal = sum(source.lines), total = sourceTotal + sum(target.lines);
+      check(integer(total) && total > 0, 'Spojený účet překračuje limit.');
+      const merged = structuredClone(target.lines);
+      const fields = ['productId', 'sourceCode', 'stockProductId', 'name', 'serving', 'price', 'vatRate'];
+      for (const line of source.lines) {
+        const same = merged.find(x => fields.every(k => x[k] === line[k]) && x.quantity + line.quantity <= 999);
+        if (same) same.quantity += line.quantity;
+        else merged.push({ ...structuredClone(line), id: merged.some(x => x.id === line.id) ? uid() : line.id });
+      }
+      result = { type, orderId: target.id, name: target.name, sourceOrderId: source.id, sourceName: source.name,
+        movedQuantity: source.lines.reduce((n, l) => n + l.quantity, 0), sourceTotal, total };
+      target.lines = merged; target.revision++;
+      source.lines = []; source.revision++;
     } else if (type === 'loadCatalog') {
       if (s.catalogVersion === catalog.version) return null;
       for (const item of catalog.products) {
@@ -132,7 +153,7 @@
     } else if (type === 'backup') s.lastBackup = now;
     else throw new Error('Neznámá operace.');
     s.revision++;
-    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : null, detail: structuredClone(p) });
+    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : null, detail: structuredClone(p), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}) });
     return result;
   }
   function validate(s) {

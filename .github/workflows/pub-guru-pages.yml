@@ -1,4 +1,4 @@
-name: PUB GURU V1
+name: PUB POS + PUB INVOICES
 
 on:
   push:
@@ -20,21 +20,34 @@ jobs:
           node-version: 22
       - name: JavaScript syntax check
         run: |
-          set -e
-          for f in pub_guru/*.js; do
+          set -euxo pipefail
+          for f in pub_guru/*.js pub_bizz_pos/*.js; do
             echo "checking $f"
             node --check "$f"
           done
-      - name: Required V1 files
+      - name: Required application files
         run: |
+          set -euxo pipefail
           test -f pub_guru/start.html
           test -f pub_guru/index.html
           test -f pub_guru/invoice-review.html
           test -f pub_guru/closings.html
           test -f pub_guru/app-config.js
           test -f pub_guru/backend.js
+          test -f pub_bizz_pos/index.html
+          test -f pub_bizz_pos/app.js
+          test -f pub_bizz_pos/core.js
+          test -f pub_bizz_pos/cloud.js
+          test -f pub_bizz_pos/manifest.webmanifest
       - name: Unit and contract tests
-        run: node --test tests/*.test.js
+        run: |
+          set -euxo pipefail
+          node --test tests/*.test.js
+      - name: PUB POS browser tests
+        run: |
+          set -euxo pipefail
+          npm ci --prefix tests/pos-web
+          npm test --prefix tests/pos-web
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -53,9 +66,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Build combined Pages artifact
+        run: |
+          set -euxo pipefail
+          mkdir -p _site
+          cp -R pub_guru _site/pub_guru
+          cp -R pub_bizz_pos _site/pub_bizz_pos
+          cp index.html sw.js _site/
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: ./pub_guru
+          path: ./_site
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

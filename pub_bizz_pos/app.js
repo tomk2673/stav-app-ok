@@ -189,7 +189,7 @@ const actions={
   recipe:id=>POSStockUI.edit(state,id,showDialog,command,toast),
   resolveStock:id=>{const [receiptId,lineId]=id.split(':');showDialog('Doplnit skladový odpis','<p class="help">Provede se odpis podle nyní nastavené receptury k původnímu prodeji. U stejného řádku ho nelze provést dvakrát.</p>',()=>command('resolveStock',{receiptId,lineId}),'Provést odpis',()=>toast('Odpis byl zpracovaný.'));},
   retryPending:async()=>{const r=await POSCloud.retry();state=r.state;render();if(r.result?.kind)receiptDialog(r.result);else if(r.result?.type==='mergeOrders')finishMerge(r.result);else toast('Operace ověřená.');},
-  invoiceUpload:()=>{ location.href='../pub_guru/index.html#invoice-upload'; },
+  invoiceUpload:()=>{ location.href='../pub_guru/invoice-capture.html'; },
   logout:()=>POSCloud.logout(),
   showBill:()=>$('.receipt')?.scrollIntoView({behavior:'smooth',block:'start'}),
   localBackup:async()=>{const local=await POSCloud.localBackup();await downloadBackup(local,'PUB-BIZZ-stara-mistni-data');toast('Místní data připravená ke stažení.');},

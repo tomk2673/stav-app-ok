@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "purpose": "Confirmed supplier mappings for PUB INVOICES. Never infer an unknown product from price alone.",
+  "suppliers": {
+    "ROJAL": {
+      "match": {"ico": "16361296"},
+      "product_codes": {
+        "101-163": {"name": "Radegast Rázná výčepní světlé 10", "purchase_unit": "KEG 50 l", "stock_kind": "inventory"},
+        "950-16": {"name": "Finlandia Vodka", "volume_l": 1, "abv_pct": 40, "stock_kind": "inventory"},
+        "600-890": {"name": "Havana Club 3 Años", "volume_l": 1, "abv_pct": 37.5, "stock_kind": "inventory"},
+        "600-406": {"name": "Jack Daniel's Tennessee Whiskey", "volume_l": 1, "abv_pct": 40, "stock_kind": "inventory"},
+        "217-178": {"name": "Prosecco Maschio dei Cavalieri", "volume_l": 0.7, "stock_kind": "inventory"},
+        "550-149": {"name": "Božkov Peprmint", "volume_l": 1, "abv_pct": 19, "stock_kind": "inventory"},
+        "969-1": {"name": "Beefeater Gin", "volume_l": 1, "abv_pct": 40, "stock_kind": "inventory"},
+        "600-724": {"name": "Jameson Whiskey", "volume_l": 1, "abv_pct": 40, "stock_kind": "inventory"},
+        "000-57": {"name": "KEG záloha", "stock_kind": "returnable_packaging"},
+        "P00-057": {"name": "Prázdný KEG vratka", "stock_kind": "returnable_packaging_return"}
+      }
+    },
+    "PIVO_KROMERIZ_PAVEL_NECA": {
+      "match": {"ico": "63457946"},
+      "product_codes": {
+        "0092": {"name": "Finlandia Vodka", "volume_l": 1, "abv_pct": 40, "stock_kind": "inventory"},
+        "0099": {"name": "Beefeater Gin London Dry", "volume_l": 1, "abv_pct": 40, "stock_kind": "inventory"},
+        "1071": {"name": "Beefeater Gin Pink", "volume_l": 1, "abv_pct": 37.5, "stock_kind": "inventory"},
+        "0122": {"name": "Captain Morgan Spiced", "volume_l": 1, "abv_pct": 35, "stock_kind": "inventory"},
+        "0148": {"name": "Jack Daniel's Tennessee Whiskey", "volume_l": 1, "abv_pct": 40, "stock_kind": "inventory"}
+      }
+    },
+    "TEDI": {
+      "match": {"ico": "08306095"},
+      "rules": [
+        {"raw_name": "Skleněné zboží", "unit_price_czk": 20, "confirmed_name": "Panáková sklenice", "stock_kind": "operating_equipment"},
+        {"raw_name": "Skleněné zboží", "unit_price_czk": 30, "confirmed_name": "Longdrinková sklenice", "stock_kind": "operating_equipment"}
+      ],
+      "warning": "Price is a confirmed discriminator for these historical TEDi receipts, not a permanent global product identity. If price differs, create an exception."
+    }
+  }
+}

@@ -1,6 +1,6 @@
 {
-  "name": "PUB GURU",
-  "short_name": "PUB GURU",
+  "name": "PUB INVOICES",
+  "short_name": "PUB INVOICES",
   "start_url": "./start.html",
   "display": "standalone",
   "background_color": "#0b0d10",

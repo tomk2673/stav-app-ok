@@ -1,4 +1,4 @@
-# PUB GURU v1
+# PUB INVOICES v1
 
 Mobilní PWA pro:
 

@@ -5,7 +5,7 @@
   "display": "standalone",
   "background_color": "#0b0d10",
   "theme_color": "#0b0d10",
-  "description": "Provozní systém pro gastro: faktury, sklad, inventury, uzávěrky, audit a provozní kontroly.",
+  "description": "Faktury, dodavatelé, příjem zboží, uzávěrky a audit pro gastro provoz.",
   "icons": [
     {"src":"icon-192.png","sizes":"192x192","type":"image/png"},
     {"src":"icon-512.png","sizes":"512x512","type":"image/png"}

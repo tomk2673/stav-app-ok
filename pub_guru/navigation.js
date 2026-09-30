@@ -24,6 +24,7 @@
       link.textContent = 'Faktury ke schválení';
       const invoiceButton = nav.querySelector('.nav-btn[data-view="invoices"]');
       invoiceButton?.insertAdjacentElement('afterend', link);
+      const recon = document.createElement('a'); recon.className='pub-link'; recon.href='inventory-reconciliation.html'; recon.textContent='AI kontrola inventury'; link.insertAdjacentElement('afterend', recon);
     } catch (error) { console.error('Navigation role load failed', error); }
   }
 

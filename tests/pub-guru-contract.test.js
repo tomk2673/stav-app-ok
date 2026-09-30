@@ -95,7 +95,7 @@ test('counted stock semantics survive the browser-to-database round trip', () =>
     assert.match(sql, new RegExp(`\\b${field}\\b`));
   }
   // Blind inventory deliberately keeps expected/difference values off the staff client.
-  assert.match(invoice, /measured_units:\\s*counted/);
+  assert.match(invoice, /measured_units:\s*counted/);
   assert.doesNotMatch(invoice, /\\bexpected_units\\b/);
   assert.doesNotMatch(invoice, /\\bdifference_units\\b/);
   for (const field of ['expected_units', 'measured_units', 'difference_units']) {

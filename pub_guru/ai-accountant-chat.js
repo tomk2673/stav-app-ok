@@ -4,16 +4,20 @@
  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const norm=s=>String(s||'').toLocaleLowerCase('cs').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
  const fmt=n=>new Intl.NumberFormat('cs-CZ',{maximumFractionDigits:2}).format(Number(n)||0);
- let ctx,snapshot=null;
+ let ctx,snapshot=null,accountantContext=null;
  try{ctx=await PubGuruBackend.loadContext();if(!['owner','manager'].includes(ctx?.role)){location.replace('start.html');return;}
   const {data:sessions,error}=await PubGuruBackend.client.from('inventory_sessions').select('id,closed_at').eq('organization_id',ctx.organization.id).eq('venue_id',ctx.venue.id).neq('status','open').order('closed_at',{ascending:false}).limit(1);if(error)throw error;
   if(sessions?.[0]){const r=await PubGuruBackend.client.rpc('inventory_reconciliation',{p_session:sessions[0].id});if(r.error)throw r.error;snapshot=r.data;}
+  const gateway=await PubGuruBackend.client.rpc('ai_accountant_context',{p_venue:ctx.venue.id});if(gateway.error)throw gateway.error;accountantContext=gateway.data;
   chat.innerHTML='<div class="panel"><strong>Připraveno.</strong> Můžu vysvětlit poslední uzavřenou inventuru podle ledgeru, POS a fyzického měření.</div>';
  }catch(e){chat.textContent='AI účetní nemůže načíst podklady: '+e.message;form.hidden=true;return;}
  form.onsubmit=e=>{e.preventDefault();const question=q.value.trim();if(!question)return;answer(question);};
  function answer(question){
   const items=snapshot?.items||[],needle=norm(question),named=items.filter(i=>needle.includes(norm(i.name))||norm(i.name).split(/\s+/).some(w=>w.length>4&&needle.includes(w)));
   let pool=named.length?named:items.filter(i=>Math.abs(Number(i.varianceMl||i.varianceUnits||0))>0);
+  if(/faktur|doklad|ocr/.test(needle)){const x=accountantContext?.invoices||{};render(question,'Faktury: ke kontrole '+(x.review||0)+', schválené '+(x.approved||0)+', zaúčtované '+(x.posted||0)+'. OCR/fronta: '+(accountantContext?.captureQueue||0)+'.');return;}
+  if(/pos|receptur|odpis/.test(needle)){const x=accountantContext?.pos||{};render(question,'POS výjimky: chybějící receptura '+(x.missingRecipe||0)+', nedostatek skladu '+(x.shortage||0)+'.');return;}
+  if(/uzáv|kasa|hotov|kart/.test(needle)){const x=accountantContext?.closings||{};render(question,'Uzávěrky: ke kontrole '+(x.review||0)+', finalizované '+(x.finalized||0)+'. Pro přesné vysvětlení peněžního rozdílu potřebuji konkrétní uzávěrku.');return;}
   if(!snapshot){render(question,'Nemám ještě uzavřenou slepou inventuru, takže bych odpověď musel hádat.');return;}
   if(!pool.length){render(question,'V poslední inventuře jsem nenašel odpovídající rozdíl. Nechci si příčinu domýšlet.');return;}
   const lines=pool.slice(0,8).map(i=>{const counted=i.unitMode==='counted',v=counted?i.varianceUnits:i.varianceMl,u=counted?' ks':' ml';const evidence=[];if(i.pendingPosLines)evidence.push(i.pendingPosLines+' čekajících POS odpisů');if(!i.movementCount)evidence.push('žádný skladový pohyb');if(i.periodReceiptMl)evidence.push('příjem '+fmt(i.periodReceiptMl)+' ml');if(i.periodSaleMl)evidence.push('prodejní odpis '+fmt(i.periodSaleMl)+' ml');return i.name+': variance '+(Number(v)>0?'+':'')+fmt(v)+u+'. '+(evidence.length?'Důkazy: '+evidence.join(', ')+'.':'Příčina zatím není doložená.');});

@@ -128,3 +128,12 @@ test('Pages deploys only main pushes or manual main runs after tests', () => {
     assert.equal(actual, expected, `${event_name} on ${ref}`);
   }
 });
+
+
+test('invoice review blocks unsafe liquid stock posting and preserves counted stock mode', () => {
+  const review = read('pub_guru/invoice-review-v1.js');
+  assert.match(review, /unit_mode,count_unit/);
+  assert.match(review, /product\?\.unit_mode==='counted'/);
+  assert.match(review, /r\.vol<=0/);
+  assert.match(review, /Bez něj nelze bezpečně naskladnit/);
+});

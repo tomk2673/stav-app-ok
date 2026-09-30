@@ -150,3 +150,11 @@ test('blind inventory sends measurements only and delegates variance to server',
   assert.match(backend, /source:\s*'blind_inventory'/);
   assert.match(backend, /sklad nebyl dorovnán/);
 });
+
+
+test('owner reconciliation distinguishes evidence from unexplained variance', () => {
+  const view = read('pub_guru/inventory-reconciliation.js');
+  assert.match(view, /DŮKAZ:/);
+  assert.match(view, /NEVYSVĚTLENO:/);
+  assert.doesNotMatch(view, /automaticky.*dorov/i);
+});

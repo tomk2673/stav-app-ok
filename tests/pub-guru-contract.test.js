@@ -158,3 +158,12 @@ test('owner reconciliation distinguishes evidence from unexplained variance', ()
   assert.match(view, /NEVYSVĚTLENO:/);
   assert.doesNotMatch(view, /automaticky.*dorov/i);
 });
+
+
+test('variance explanation UI records evidence without a stock correction action', () => {
+  const view = read('pub_guru/inventory-reconciliation.js');
+  assert.match(view, /confirm_inventory_variance_explanation/);
+  assert.match(view, /source:'owner_reconciliation'/);
+  assert.match(view, /sklad beze změny/);
+  assert.doesNotMatch(view, /stock_movements.*insert|manual_correction/i);
+});

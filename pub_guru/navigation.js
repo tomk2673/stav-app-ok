@@ -25,6 +25,7 @@
       const invoiceButton = nav.querySelector('.nav-btn[data-view="invoices"]');
       invoiceButton?.insertAdjacentElement('afterend', link);
       const recon = document.createElement('a'); recon.className='pub-link'; recon.href='inventory-reconciliation.html'; recon.textContent='AI kontrola inventury'; link.insertAdjacentElement('afterend', recon);
+      const ai=document.createElement('a'); ai.className='pub-link'; ai.href='ai-accountant-chat.html'; ai.textContent='AI účetní'; recon.insertAdjacentElement('afterend',ai);
     } catch (error) { console.error('Navigation role load failed', error); }
   }
 

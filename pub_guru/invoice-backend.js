@@ -236,66 +236,45 @@
       organization_id: ctx.organization.id,
       venue_id: ctx.venue.id,
       status: 'open',
-      started_at: inv.startedAt || new Date(`${inv.date || new Date().toISOString().slice(0,10)}T00:00:00`).toISOString(),
+      started_at: inv.startedAt || new Date().toISOString(),
       created_by: ctx.user.id
     }).select('id').single();
     if (sessionError) throw sessionError;
 
-    let issueCount = 0;
-    let purchaseImpact = 0;
-    let saleImpact = 0;
     for (const line of lines) {
       const p = state.products?.find(x => x.id === line.productId);
       const product = await ensureProduct(line.productId, p?.name || 'Produkt');
       const counted = product.unit_mode === 'counted';
-      if (line.status === 'issue') issueCount += 1;
-      purchaseImpact += n(line.costDifference ?? line.purchaseValueDifference);
-      saleImpact += n(line.saleDifference ?? line.saleValueDifference);
       const insert = await client().from('inventory_lines').insert({
         inventory_session_id: session.id,
         organization_id: ctx.organization.id,
         product_id: product.id,
-        expected_ml: counted ? null : n(line.expectedMl),
         measured_ml: counted ? null : n(line.actualMl ?? line.measuredMl),
-        difference_ml: counted ? null : n(line.diffMl ?? line.differenceMl),
-        expected_units: counted ? n(line.expectedUnits) : null,
         measured_units: counted ? n(line.actualUnits ?? line.measuredUnits) : null,
-        difference_units: counted ? n(line.diffUnits ?? line.differenceUnits) : null,
         gross_weight_g: counted ? null : n(line.grossWeightG),
         sealed_count: counted ? null : n(line.sealedCount),
         temperature_c: counted ? null : n(line.tempC),
-        purchase_value_difference: n(line.costDifference ?? line.purchaseValueDifference),
-        sale_value_difference: n(line.saleDifference ?? line.saleValueDifference),
         note: line.note || null,
         measured_at: line.measuredAt || new Date().toISOString(),
         measured_by: ctx.user.id,
-        original_measurement: line
+        original_measurement: {
+          gross_weight_g: line.grossWeightG ?? null,
+          sealed_count: line.sealedCount ?? null,
+          temperature_c: line.tempC ?? null,
+          source: 'blind_inventory'
+        }
       });
       if (insert.error) throw insert.error;
     }
 
-    const finalizedAt = new Date().toISOString();
-    const closeSession = await client().from('inventory_sessions')
-      .update({ status: 'closed', closed_at: finalizedAt })
-      .eq('id', session.id).eq('status', 'open');
-    if (closeSession.error) throw closeSession.error;
-
-    const audit = await client().from('audit_events').insert({
-      organization_id: ctx.organization.id,
-      venue_id: ctx.venue.id,
-      actor_user_id: ctx.user.id,
-      event_type: 'inventory.closed_without_adjustment',
-      entity_type: 'inventory_session',
-      entity_id: session.id,
-      after_data: { line_count: lines.length, issue_count: issueCount, purchase_value_difference: purchaseImpact, sale_value_difference: saleImpact }
-    });
-    if (audit.error) throw audit.error;
+    const closed = await client().rpc('close_blind_inventory', { p_session: session.id });
+    if (closed.error) throw closed.error;
 
     state.inventorySessions = Array.isArray(state.inventorySessions) ? state.inventorySessions : [];
-    state.inventorySessions.push({ ...inv, backendId: session.id, closedAt: finalizedAt, adjustmentApplied: false });
+    state.inventorySessions.push({ id: inv.id, backendId: session.id, closedAt: new Date().toISOString(), blind: true });
     state.currentInventory = { id: `inv_${Date.now().toString(36)}`, date: new Date().toISOString().slice(0,10), zoneId: inv.zoneId || 'shelf', tempC: inv.tempC ?? 20, lines: [] };
     saveLocalState(state);
-    window.toast?.(`Inventura uzavřena: ${lines.length} položek. Sklad nebyl automaticky přepsán.`, 5500);
+    window.toast?.(`Slepá inventura uzavřena: ${lines.length} položek. Rozdíly byly spočítány na serveru a sklad nebyl dorovnán.`, 6500);
     setTimeout(() => location.reload(), 900);
   }
 

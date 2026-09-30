@@ -137,3 +137,13 @@ test('invoice review blocks unsafe liquid stock posting and preserves counted st
   assert.match(review, /r\.vol<=0/);
   assert.match(review, /Bez něj nelze bezpečně naskladnit/);
 });
+
+
+test('blind inventory sends measurements only and delegates variance to server', () => {
+  const backend = read('pub_guru/invoice-backend.js');
+  assert.match(backend, /close_blind_inventory/);
+  assert.doesNotMatch(backend, /expected_ml:\s*counted/);
+  assert.doesNotMatch(backend, /difference_ml:\s*counted/);
+  assert.match(backend, /source:\s*'blind_inventory'/);
+  assert.match(backend, /sklad nebyl dorovnán/);
+});

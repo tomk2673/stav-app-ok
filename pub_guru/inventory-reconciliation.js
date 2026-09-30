@@ -15,11 +15,15 @@
    const {data,error}=await window.PubGuruBackend.client.rpc('inventory_reconciliation',{p_session:document.querySelector('#session').value});
    if(error)throw error;
    const items=data?.items||[];
-   content.innerHTML='<section class="panel"><h2>Skrytá variance</h2><p>Expected je ledger. Measured je slepé měření. Rozdíl se nepřičítá do skladu.</p><div class="table-wrap"><table><thead><tr><th>Produkt</th><th>Teorie</th><th>Fyzicky</th><th>Variance</th><th>Kontrola</th></tr></thead><tbody>'+items.map(i=>{
+   const period=data?.periodStart?('Od poslední inventury '+new Date(data.periodStart).toLocaleString('cs-CZ')+' do '+new Date(data.periodEnd).toLocaleString('cs-CZ')):'První inventura bez předchozího fyzického snapshotu';
+   content.innerHTML='<section class="panel"><h2>Skrytá variance</h2><p>'+esc(period)+'. Expected je ledger. Measured je slepé měření. Rozdíl se nepřičítá do skladu.</p><div class="table-wrap"><table><thead><tr><th>Produkt</th><th>Teorie</th><th>Fyzicky</th><th>Variance</th><th>Kontrola</th></tr></thead><tbody>'+items.map(i=>{
     const counted=i.unitMode==='counted',e=counted?i.expectedUnits:i.expectedMl,m=counted?i.measuredUnits:i.measuredMl,v=counted?i.varianceUnits:i.varianceMl,u=counted?' ks':' ml';
     const hints=[];
     if(i.pendingPosLines) hints.push('DŮKAZ: '+i.pendingPosLines+' čekajících POS odpisů obsahuje tuto skladovou položku');
     if(!i.movementCount) hints.push('DŮKAZ: produkt nemá žádný zaúčtovaný skladový pohyb');
+    if(i.periodReceiptMl) hints.push('OBDOBÍ: příjem '+fmt(i.periodReceiptMl)+' ml');
+    if(i.periodSaleMl) hints.push('OBDOBÍ: prodejní odpis '+fmt(i.periodSaleMl)+' ml');
+    if(i.periodOtherMl) hints.push('OBDOBÍ: ostatní pohyby '+fmt(i.periodOtherMl)+' ml');
     if(i.movementCount && !i.pendingPosLines) hints.push('NEVYSVĚTLENO: ledger neukazuje zjevnou systémovou chybu');
     const verdict=i.pendingPosLines||!i.movementCount?'Vyžaduje kontrolu':'Nevysvětleno';
     return '<tr><td><strong>'+esc(i.name)+'</strong><br><small>'+esc(verdict)+'</small></td><td>'+fmt(e)+u+'</td><td>'+fmt(m)+u+'</td><td><strong>'+((Number(v)||0)>0?'+':'')+fmt(v)+u+'</strong></td><td>'+esc(hints.join(' · '))+'</td></tr>';

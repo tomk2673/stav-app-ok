@@ -26,8 +26,23 @@
     if(i.periodOtherMl) hints.push('OBDOBÍ: ostatní pohyby '+fmt(i.periodOtherMl)+' ml');
     if(i.movementCount && !i.pendingPosLines) hints.push('NEVYSVĚTLENO: ledger neukazuje zjevnou systémovou chybu');
     const verdict=i.pendingPosLines||!i.movementCount?'Vyžaduje kontrolu':'Nevysvětleno';
-    return '<tr><td><strong>'+esc(i.name)+'</strong><br><small>'+esc(verdict)+'</small></td><td>'+fmt(e)+u+'</td><td>'+fmt(m)+u+'</td><td><strong>'+((Number(v)||0)>0?'+':'')+fmt(v)+u+'</strong></td><td>'+esc(hints.join(' · '))+'</td></tr>';
+    return '<tr><td><strong>'+esc(i.name)+'</strong><br><small>'+esc(verdict)+'</small></td><td>'+fmt(e)+u+'</td><td>'+fmt(m)+u+'</td><td><strong>'+((Number(v)||0)>0?'+':'')+fmt(v)+u+'</strong></td><td>'+esc(hints.join(' · '))+'<br><button class="secondary explain-variance" data-product="'+esc(i.productId)+'" data-name="'+esc(i.name)+'">Vysvětlit rozdíl</button></td></tr>';
    }).join('')+'</tbody></table></div></section>';
+   document.querySelectorAll('.explain-variance').forEach(btn=>btn.onclick=async()=>{
+     const type=prompt('Typ: pos_mapping / invoice_missing / measurement_error / waste / transfer / yield / other','other');
+     if(!type)return;
+     const explanation=prompt('Popiš doloženou příčinu rozdílu u '+btn.dataset.name+'. Nehádej.');
+     if(!explanation)return;
+     btn.disabled=true;
+     try{
+       const {error}=await window.PubGuruBackend.client.rpc('confirm_inventory_variance_explanation',{
+         p_session:document.querySelector('#session').value,p_product:btn.dataset.product,p_type:type,p_explanation:explanation,
+         p_evidence:{source:'owner_reconciliation',confirmed_from_ui:true}
+       });
+       if(error)throw error;
+       btn.textContent='Vysvětlení uloženo · sklad beze změny';btn.disabled=true;
+     }catch(e){btn.disabled=false;alert('Uložení selhalo: '+e.message);}
+   });
   };
   document.querySelector('#session').onchange=()=>load().catch(show); await load();
  }catch(e){show(e);}

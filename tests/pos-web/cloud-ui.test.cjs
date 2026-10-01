@@ -115,7 +115,7 @@ test('merge UI previews the chosen total, conserves items and selects the combin
    h.submit();await until(()=>h.w.document.querySelector('.receipt-head h2')?.textContent==='Petr'&&!h.w.document.querySelector('#dialog').open,'combined account selected');
    assert.equal(h.server.orders.find(o=>o.id===source).lines.length,0);
    assert.equal(C.sum(h.server.orders.find(o=>o.id===target).lines),total);
-   assert.equal(h.w.document.querySelector('.quantity-select').textContent,'2');
+   assert.equal(h.w.document.querySelector('.quantity-select').value,'2');
    assert.equal(h.server.receipts.length,0);
   }finally{h.dom.window.close();}
 });

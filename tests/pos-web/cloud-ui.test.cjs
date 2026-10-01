@@ -145,3 +145,18 @@ test('lost merge response retries the same request without moving items added la
   }finally{h.dom.window.close();}
 });
 
+
+test('fast register keeps product grid node stable while adding and correcting an unpaid item',{concurrency:false},async()=>{
+ const h=await harness();try{
+  h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();
+  await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift');
+  const grid=h.w.document.querySelector('#products');
+  h.click('.product[data-action="add"]');await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent==='1×','line added');
+  assert.equal(h.w.document.querySelector('#products'),grid);
+  h.click('[data-action="add"]');await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent==='2×','line incremented');
+  assert.equal(h.w.document.querySelector('#products'),grid);
+  h.click('[data-action="minus"]');await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent==='1×','line corrected');
+  assert.equal(h.w.document.querySelector('#dialog').open,false);
+  assert.equal(h.w.document.querySelector('#products'),grid);
+ }finally{h.dom.window.close();}
+});

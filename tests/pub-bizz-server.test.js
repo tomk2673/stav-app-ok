@@ -45,3 +45,15 @@ test('financial refund does not restock unless explicitly selected',()=>{
  assert.equal(refund.result.restock,false);assert.equal(refund.state.receipts[0].kind,'sale');
  assert.equal(D.run(s,'refund',{receiptId:s.receipts[0].id,reason:'Zboží vráceno',restock:true},owner,stock).result.restock,true);
 });
+
+test('mistaken payment can be restored to its original table with financial reversal',()=>{
+ let s=setup();
+ s=D.run(s,'addLine',{orderId:'bar',productId:'agnis-2810',quantity:4},staff,stock).state;
+ const before=s.orders[0].lines[0].quantity;
+ const reserved=reserve(s); const paid=payment(reserved.state,reserved.result); s=paid.state;
+ const sale=paid.result; assert.equal(s.orders[0].lines.length,0);
+ const restored=D.run(s,'restoreReceipt',{receiptId:sale.id},staff,stock);
+ assert.equal(restored.state.orders[0].lines[0].quantity,before);
+ assert.equal(restored.result.total,-sale.total); assert.equal(restored.result.restoreOf,sale.id); assert.equal(restored.result.restock,true);
+ assert.throws(()=>D.run(restored.state,'restoreReceipt',{receiptId:sale.id},staff,stock),/už byl vrácen/);
+});

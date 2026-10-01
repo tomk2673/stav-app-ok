@@ -148,7 +148,7 @@
         else target.lines.push({ ...line, id: target.lines.some(x => x.id === line.id) ? uid() : line.id });
       }
       target.revision++; s.sequence++;
-      result = { ...sale, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, restoreOf: sale.id, reason: 'Chybně evidovaná platba – vráceno na původní stůl', total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0, restock: false };
+      result = { ...sale, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, restoreOf: sale.id, reason: 'Chybně evidovaná platba – vráceno na původní stůl', total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0, restock: true };
       s.receipts.push(result);
     } else if (type === 'refund') {
       needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');

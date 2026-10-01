@@ -88,7 +88,7 @@ function quantityPad(lineId){
  const o=getOrder(),l=o.lines.find(x=>x.id===lineId);if(!l)return;
  const choices=Array.from({length:10},(_,i)=>i+1).map(n=>`<button type="button" class="qty-choice ${n===l.quantity?'active':''}" data-qty="${n}">${n}</button>`).join('');
  showDialog('Kolik kusů?',`<div class="qty-product"><strong>${E(l.name)}</strong><span>${l.quantity}× · ${fmt(l.price*l.quantity)}</span></div><div class="qty-pad">${choices}</div>`,null);
- $('#dialog-body').querySelectorAll('[data-qty]').forEach(b=>b.onclick=async()=>{try{await command('setLineQuantity',{orderId:o.id,lineId:l.id,quantity:Number(b.dataset.qty)},true);$('#dialog').close();}catch(err){toast(err.message||'Množství se nepodařilo změnit.',true);}});
+ $('#dialog-body').querySelectorAll('[data-qty]').forEach(b=>b.onclick=async()=>{const quantity=Number(b.dataset.qty);$('#dialog').close();try{await command('setLineQuantity',{orderId:o.id,lineId:l.id,quantity},true);}catch(err){toast(err.message||'Množství se nepodařilo změnit.',true);}});
 }
 function renderProducts() {
   const norm = s => s.toLocaleLowerCase('cs').normalize('NFD').replace(/[\u0300-\u036f]/g, '');

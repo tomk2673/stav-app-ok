@@ -98,6 +98,19 @@
       try{return await sendSaved(request);}finally{busy=false;emit();}
     });queue=task.catch(()=>{});return task;
   }
+  async function cancelPending() {
+    if(busy) throw new Error('Operace se právě ověřuje.');
+    const request=pending(); if(!request){await refresh();return {cancelled:true,state:cache};}
+    busy=true;emit();
+    try {
+      const {data:{session}}=await client.auth.getSession();
+      if(!session) throw new Error('Přihlášení vypršelo. Přihlas se znovu.');
+      const response=await fetch(endpoint+'?venueId='+encodeURIComponent(venue.id)+'&requestId='+encodeURIComponent(request.requestId),{headers:{Authorization:'Bearer '+session.access_token,apikey:cfg.publishableKey},cache:'no-store'});
+      const data=await response.json(); if(!response.ok) throw new Error(data.error||'Stav operace se nepodařilo ověřit.');
+      if(data.committed) throw new Error('Operace už byla serverem zapsaná. Nejde ji jen zahodit; použij odpovídající opravu v pokladně.');
+      localStorage.removeItem(key(request.requestId)); await refresh(); emit(); return {cancelled:true,state:cache};
+    } finally {busy=false;emit();}
+  }
   async function retry() {
     if(busy) throw new Error('Operace se právě ověřuje.');
     const request=pending();if(!request){await refresh();return {state:cache,result:null};}
@@ -105,7 +118,7 @@
   }
   root.POSCloud={
     get meta(){return meta;},get user(){return user;},get venue(){return venue;},get pending(){return pending();},get busy(){return busy;},
-    get connected(){return navigator.onLine && Date.now()-lastConfirmed<12000;},refresh,retry,
+    get connected(){return navigator.onLine && Date.now()-lastConfirmed<12000;},refresh,retry,cancelPending,
     async logout(){if(busy)throw new Error('Počkej na dokončení operace.');await client.auth.signOut({scope:'local'});location.reload();},
     async localBackup(){await local.open(()=>{});return local.read();}
   };

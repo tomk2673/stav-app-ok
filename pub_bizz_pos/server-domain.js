@@ -3,7 +3,7 @@
   'use strict';
   const C = typeof module !== 'undefined' ? require('./core.js') : root.POSCore;
   const manager = new Set(['owner', 'manager']);
-  const staffCommands = new Set(['openShift', 'newOrder', 'deleteOrder', 'mergeOrders', 'addLine', 'removeLine', 'beginPayment', 'cancelPayment', 'checkout', 'backup']);
+  const staffCommands = new Set(['openShift', 'newOrder', 'deleteOrder', 'mergeOrders', 'addLine', 'removeLine', 'setLineQuantity', 'beginPayment', 'cancelPayment', 'checkout', 'restoreReceipt', 'backup']);
   const managerCommands = new Set(['product', 'archiveProduct', 'importProducts', 'refund', 'cashMovement', 'closeShift', 'settings', 'recipe', 'resolveStock']);
   const check = (ok, message) => { if (!ok) throw new Error(message); };
   function run(state, type, payload, actor, stock, now = new Date().toISOString()) {
@@ -13,7 +13,7 @@
     s.recipes ||= {};
     let result;
     const order = s.orders.find(o=>o.id===p.orderId);
-    if (['addLine','removeLine','deleteOrder'].includes(type)) check(!order?.paymentLock, 'Na tomto účtu právě probíhá platba. Nejdřív ji dokonči nebo zkontroluj rezervaci.');
+    if (['addLine','removeLine','setLineQuantity','deleteOrder'].includes(type)) check(!order?.paymentLock, 'Na tomto účtu právě probíhá platba. Nejdřív ji dokonči nebo zkontroluj rezervaci.');
     if (type === 'checkout') {
       check(order?.paymentLock && order.paymentLock.token===p.paymentToken, 'Účet není rezervovaný pro tuto platbu. Otevři platbu znovu.');
       check(order.paymentLock.actorId===actor.id || manager.has(actor.role), 'Platbu dokončuje jiná obsluha.');
@@ -62,6 +62,10 @@
       if (type === 'refund' && result) {
         result.actorId = actor.id;
         result.restock = p.restock === true;
+      }
+      if (type === 'restoreReceipt' && result) {
+        result.actorId = actor.id;
+        result.restock = true;
       }
     }
     if (['recipe','resolveStock','beginPayment','cancelPayment'].includes(type)) {

@@ -12,3 +12,5 @@
 @media print{.mobile-bill{display:none!important}body{padding-bottom:0}}
 
 .receipt-tools{padding:12px 21px 0}.merge-account{width:100%;min-height:48px;padding:12px 16px;border:1px solid #cdd5c8;border-radius:10px;background:#e6ebdf;color:#354c2d;font-weight:650}.merge-summary .summary-row>span{min-width:0;overflow-wrap:anywhere}.merge-summary .summary-row>strong{white-space:nowrap}.merge-summary p{overflow-wrap:anywhere;line-height:1.5}
+
+.quantity-select{width:64px;height:56px;border:1px solid #d4ddce;border-radius:10px;background:#e6ebdf;color:#263222;text-align:center;font-size:1.15rem;font-weight:750}.selected-line select{width:82px;min-height:48px;padding:8px;border:1px solid #40503c;border-radius:8px;background:#111812;color:var(--text);font-weight:700;text-align:center}

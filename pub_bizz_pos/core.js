@@ -121,6 +121,10 @@
     } else if (type === 'removeLine') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.'); check(clean(p.reason), 'Doplň důvod opravy.');
       l.quantity--; o.lines = o.lines.filter(x => x.quantity > 0); o.revision++;
+    } else if (type === 'setLineQuantity') {
+      needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.');
+      check(integer(p.quantity, 999) && p.quantity > 0, 'Vyber množství 1 až 999.');
+      l.quantity = p.quantity; check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
     } else if (type === 'checkout') {
       check(typeof p.operationId === 'string' && p.operationId.length > 10, 'Chybí identifikátor platby.');
       const duplicate = s.receipts.find(x => x.operationId === p.operationId); if (duplicate) return duplicate;
@@ -139,6 +143,20 @@
       check(!s.receipts.some(x => x.refundOf === sale.id), 'Tento doklad už má vratku.'); check(clean(p.reason), 'Doplň důvod vratky.');
       check(!sale.card || p.cardConfirmed, 'Potvrď vrácení karetní platby na terminálu.');
       s.sequence++; result = { ...sale, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0 };
+      s.receipts.push(result);
+    } else if (type === 'restoreReceipt') {
+      needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
+      check(sale && sale.shiftId === sh.id, 'Na stůl lze vrátit pouze doklad z právě otevřené směny.');
+      check(!s.receipts.some(x => x.refundOf === sale.id), 'Tento doklad už byl stornovaný nebo vrácený.');
+      const target = s.orders.find(x => x.id === sale.orderId); check(target, 'Původní stůl už neexistuje.');
+      check(!target.paymentLock, 'Na původním stole právě probíhá platba.');
+      for (const item of sale.lines) {
+        const line = target.lines.find(x => x.productId === item.productId && x.price === item.price && x.vatRate === item.vatRate && x.name === item.name && x.serving === item.serving);
+        if (line) { check(line.quantity + item.quantity <= 999, 'Po vrácení by množství položky překročilo limit.'); line.quantity += item.quantity; }
+        else target.lines.push({ ...structuredClone(item), id: uid() });
+      }
+      check(sum(target.lines) <= 100000000, 'Po vrácení by účet překročil limit.'); target.revision++;
+      s.sequence++; result = { ...sale, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: 'Chybně evidovaná platba – vráceno na stůl', total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0, restoredToOrderId: target.id };
       s.receipts.push(result);
     } else if (type === 'cashMovement') {
       needShift(); check(Number.isSafeInteger(p.amount) && Math.abs(p.amount) <= 100000000 && p.amount !== 0, 'Neplatná částka.'); check(clean(p.reason), 'Doplň důvod pohybu hotovosti.');

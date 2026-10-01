@@ -2842,9 +2842,9 @@ function connection() {
   if(!cloud)return;
   const pending=cloud.pending, warning=$('#sync-warning');
   warning.hidden=!state||(!pending&&online);
-  warning.innerHTML=pending?`<span><strong>Ověřujeme uloženou operaci.</strong> Platbu na terminálu neopakuj.</span>${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}`:'<span>Server není dostupný. Zobrazená data mohou být starší; placení vyžaduje spojení.</span>';
+  warning.innerHTML=pending?`<span><strong>Uložená operace čeká na vyřešení.</strong> Pokud ji nepotřebuješ, můžeš ji bezpečně zrušit.</span><div class="actions">${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}${btn('Zrušit operaci','cancelPending','secondary',cloud.busy?'disabled':'')}</div>`:'<span>Server není dostupný. Zobrazená data mohou být starší; placení vyžaduje spojení.</span>';
   if(state){$('#save-state').textContent=cloud.busy?'Ukládám na server…':pending?'Čeká na ověření':online?'Potvrzeno serverem':'Spojení přerušeno';$('#save-state').classList.toggle('error',!!pending||!online);}
-  const writeActions=['add','minus','newOrder','deleteOrder','mergeOrders','openShift','payCash','payCard','paySplit','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
+  const writeActions=['add','minus','newOrder','deleteOrder','mergeOrders','openShift','payCash','payCard','paySplit','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock','cancelPending'];
   document.querySelectorAll('[data-action]').forEach(b=>{if(writeActions.includes(b.dataset.action)){const lock=!!pending&&!cloud.busy||!online;if(lock&&!b.disabled){b.disabled=true;b.dataset.connectionDisabled='true';}else if(!lock&&b.dataset.connectionDisabled){b.disabled=false;delete b.dataset.connectionDisabled;}}});
 }
 function render() {
@@ -2992,6 +2992,7 @@ const actions={
   recipe:id=>POSStockUI.edit(state,id,showDialog,command,toast),
   resolveStock:id=>{const [receiptId,lineId]=id.split(':');showDialog('Doplnit skladový odpis','<p class="help">Provede se odpis podle nyní nastavené receptury k původnímu prodeji. U stejného řádku ho nelze provést dvakrát.</p>',()=>command('resolveStock',{receiptId,lineId}),'Provést odpis',()=>toast('Odpis byl zpracovaný.'));},
   retryPending:async()=>{const r=await POSCloud.retry();state=r.state;render();if(r.result?.kind)receiptDialog(r.result);else if(r.result?.type==='mergeOrders')finishMerge(r.result);else toast('Operace ověřená.');},
+  cancelPending:async()=>{const r=await POSCloud.cancelPending();state=r.state||state;render();toast('Operace zrušená. Pokladna je odblokovaná.');},
   logout:()=>POSCloud.logout(),
   showBill:()=>$('.receipt')?.scrollIntoView({behavior:'smooth',block:'start'}),
   localBackup:async()=>{const local=await POSCloud.localBackup();await downloadBackup(local,'PUB-BIZZ-stara-mistni-data');toast('Místní data připravená ke stažení.');},

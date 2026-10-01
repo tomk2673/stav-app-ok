@@ -12,10 +12,22 @@ let state, view = 'pos', current = 'bar', category = 'Pivo', query = '', toastTi
 const getOrder = () => state.orders.find(x => x.id === current) || state.orders[0];
 const btn = (label, action, cls = 'secondary', attrs = '') => `<button type="button" class="${cls}" data-action="${action}" ${attrs}>${label}</button>`;
 function toast(message, bad = false) { const t = $('#toast'); t.textContent = message; t.className = `toast visible${bad ? ' bad' : ''}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = 'toast', 4200); }
-async function command(type, payload) {
+async function command(type, payload, fast = false) {
   $('#save-state').textContent = 'Ukládám…';
-  try { const response = await Store.command(type, payload); state = response.state; render(); return response.result; }
+  try { const response = await Store.command(type, payload); state = response.state; fast && view === 'pos' ? renderPOSFast() : render(); return response.result; }
   catch (e) { $('#save-state').textContent = window.POSCloud?.pending ? 'Výsledek zatím nepotvrzený' : 'Změna nebyla uložena'; $('#save-state').classList.add('error'); throw e; }
+}
+function renderPOSFast(){
+  if(view!=='pos'||!state)return render();
+  const shell=document.createElement('div');shell.innerHTML=renderPOS();
+  const fresh=shell.firstElementChild, live=$('.pos-layout');
+  if(!fresh||!live)return render();
+  const nextAccounts=fresh.querySelector('.accounts'),nextReceipt=fresh.querySelector('.receipt');
+  const accounts=live.querySelector('.accounts'),receipt=live.querySelector('.receipt');
+  if(accounts&&nextAccounts)accounts.replaceWith(nextAccounts);
+  if(receipt&&nextReceipt)receipt.replaceWith(nextReceipt);
+  const bill=$('#mobile-bill');if(bill)bill.innerHTML=`<span>${E(getOrder().name)} · ${getOrder().lines.reduce((n,l)=>n+l.quantity,0)} ks</span><strong>${fmt(C.sum(getOrder().lines))} →</strong>`;
+  $('#save-state').textContent=window.POSCloud?'Potvrzeno serverem':'Uloženo v tomto zařízení';$('#save-state').classList.remove('error');connection();
 }
 function field(label, name, value = '', extra = '', full = false) { return `<label class="field${full ? ' full' : ''}">${label}<input name="${name}" value="${E(value)}" ${extra}></label>`; }
 function showDialog(title, body, submit, label = 'Uložit', onDone) {
@@ -76,7 +88,7 @@ function quantityPad(lineId){
  const o=getOrder(),l=o.lines.find(x=>x.id===lineId);if(!l)return;
  const choices=Array.from({length:10},(_,i)=>i+1).map(n=>`<button type="button" class="qty-choice ${n===l.quantity?'active':''}" data-qty="${n}">${n}</button>`).join('');
  showDialog('Kolik kusů?',`<div class="qty-product"><strong>${E(l.name)}</strong><span>${l.quantity}× · ${fmt(l.price*l.quantity)}</span></div><div class="qty-pad">${choices}</div>`,null);
- $('#dialog-body').querySelectorAll('[data-qty]').forEach(b=>b.onclick=async()=>{try{await command('setLineQuantity',{orderId:o.id,lineId:l.id,quantity:Number(b.dataset.qty)});$('#dialog').close();}catch(err){toast(err.message||'Množství se nepodařilo změnit.',true);}});
+ $('#dialog-body').querySelectorAll('[data-qty]').forEach(b=>b.onclick=async()=>{try{await command('setLineQuantity',{orderId:o.id,lineId:l.id,quantity:Number(b.dataset.qty)},true);$('#dialog').close();}catch(err){toast(err.message||'Množství se nepodařilo změnit.',true);}});
 }
 function renderProducts() {
   const norm = s => s.toLocaleLowerCase('cs').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -185,8 +197,8 @@ const actions={
   account:async id=>{current=id;render();},category:async id=>{category=id;query='';render();},openShift,mergeOrders,
   newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta','name','','required maxlength="120" placeholder="např. Stůl 1 / Petr"'),f=>command('newOrder',{name:f.get('name')}),'Vytvořit účet',r=>{current=r.id;render();}),
   deleteOrder:async()=>{await command('deleteOrder',{orderId:current});current='bar';render();},
-  add:async id=>{const p=state.products.find(x=>x.id===id);if(!p)return;if(p.price===null){editProduct(id,true);return;}if(!C.activeShift(state)){openShift();return;}await command('addLine',{orderId:current,productId:id});},
-  minus:id=>showDialog('Odebrat jeden kus',field('Důvod opravy','reason','Oprava namarkování','required maxlength="120"'),f=>command('removeLine',{orderId:current,lineId:id,reason:f.get('reason')}),'Odebrat kus'),
+  add:async id=>{const p=state.products.find(x=>x.id===id);if(!p)return;if(p.price===null){editProduct(id,true);return;}if(!C.activeShift(state)){openShift();return;}await command('addLine',{orderId:current,productId:id},true);},
+  minus:async id=>{await command('removeLine',{orderId:current,lineId:id,reason:'Oprava namarkování'},true);},
   newProduct:()=>editProduct(),editProduct:id=>editProduct(id),archiveProduct:id=>showDialog('Skrýt položku',`<p class="help">${E(state.products.find(x=>x.id===id)?.name)} zmizí z nabídky. Existující účty a doklady zůstanou.</p>`,()=>command('archiveProduct',{id}),'Skrýt'),
   checkPayment:()=>{const o=structuredClone(getOrder());showDialog('Rozpracovaná platba','<p class="help">Ověř u obsluhy a na terminálu, zda už host platil. Pokud už platba proběhla, pokračuj jejím zapsáním a na terminálu ji neopakuj. Rezervace po zavření okna zůstává.</p><label class="field">Co provést<select name="operation"><option value="cash">Pokračovat v hotovostní platbě</option><option value="card">Pokračovat v karetní platbě</option><option value="split">Pokračovat v kombinované platbě</option><option value="cancel">Host nezaplatil — uvolnit účet</option></select></label><label class="inline-check"><input type="checkbox" name="checked" required>Stav platby jsem zkontroloval/a.</label>',async f=>{if(f.get('operation')==='cancel')await command('cancelPayment',{orderId:o.id,paymentToken:o.paymentLock.token,terminalChecked:f.has('checked'),reason:'Obsluha ověřila, že host nezaplatil'});return f.get('operation');},'Pokračovat',operation=>{if(operation!=='cancel')return pay(operation,true);});},
   payCash:()=>pay('cash'),payCard:()=>pay('card'),paySplit:()=>pay('split'),

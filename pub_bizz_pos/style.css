@@ -76,3 +76,85 @@
   .payment-buttons button{min-height:48px}
   .splitbutton{padding-top:8px}
 }
+
+
+/* Device-specific POS workspaces
+   Phone <=630px | Tablet 631-1024px | PC >=1025px */
+
+/* PC: full three-column cockpit. Accounts, catalog and live bill coexist. */
+@media (min-width:1025px){
+  .pos-layout{grid-template-columns:172px minmax(0,1fr) 355px;gap:22px}
+  .accounts{grid-column:auto;flex-direction:column;overflow:visible}
+  .account{width:100%;min-width:0}
+  .products{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .receipt{grid-column:auto}
+}
+@media (min-width:1500px){
+  .pos-layout{grid-template-columns:200px minmax(0,1fr) 400px;gap:30px}
+  .products{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+
+/* Tablet: accounts become a fast horizontal rail; catalog + bill stay side by side. */
+@media (min-width:631px) and (max-width:1024px){
+  main{padding:5px 14px 18px}
+  .contextbar{padding:12px 14px}
+  .pos-layout{grid-template-columns:minmax(0,1fr) minmax(285px,34vw);gap:12px}
+  .accounts{
+    grid-column:1/-1;
+    flex-direction:row;
+    overflow-x:auto;
+    overflow-y:hidden;
+    align-items:stretch;
+    gap:7px;
+    padding:0 0 4px;
+    scrollbar-width:thin;
+  }
+  .accounts .section-label,.accounts .sidebar-note{display:none}
+  .account{width:132px;min-width:132px;min-height:56px;padding:8px 10px}
+  .add-account{width:108px;min-width:108px;min-height:56px;margin:0}
+  .catalog-area{grid-column:1}
+  .receipt{grid-column:2;min-width:0}
+  .products{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .product{min-height:112px;padding:13px 11px 11px}
+  .product-cat{margin-bottom:8px}
+  .workspace-heading{margin-bottom:12px}
+  .search{margin-bottom:10px}
+  .categories{margin-bottom:12px;flex-wrap:nowrap;overflow-x:auto}
+  .category{white-space:nowrap}
+}
+
+/* Phone: one-handed catalog first. Accounts swipe horizontally and the bill
+   stays available through the fixed bottom summary; full receipt follows catalog. */
+@media (max-width:630px){
+  .pos-layout{display:flex;flex-direction:column;gap:10px}
+  .accounts{
+    order:1;
+    flex-direction:row;
+    overflow-x:auto;
+    overflow-y:hidden;
+    gap:7px;
+    padding:0 0 3px;
+    scroll-snap-type:x proximity;
+  }
+  .accounts .section-label,.accounts .sidebar-note{display:none}
+  .account{width:118px;min-width:118px;min-height:52px;padding:7px 9px;scroll-snap-align:start}
+  .add-account{width:104px;min-width:104px;min-height:52px;margin:0}
+  .catalog-area{order:2}
+  .receipt{order:3;min-height:260px}
+  .products{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+  .product{min-height:104px;padding:11px 10px 9px}
+  .product-cat{margin-bottom:7px}
+  .product-price{padding-top:8px}
+  .workspace-heading{margin-bottom:10px}
+  .workspace-heading p{display:none}
+  .search{margin-bottom:9px}
+  .search input{min-height:46px;padding-top:11px;padding-bottom:11px}
+  .categories{margin-bottom:10px;flex-wrap:nowrap;overflow-x:auto}
+  .category{white-space:nowrap;min-height:39px;padding:8px 11px}
+  .receipt-head{padding:13px 14px 10px}
+  .receipt-tools{padding:7px 14px 0}
+  .receipt-items{padding:3px 14px}
+  .line{padding:7px 0}
+  .line-bottom{margin-top:5px}
+  .receipt-bottom{padding:11px 14px 14px}
+}

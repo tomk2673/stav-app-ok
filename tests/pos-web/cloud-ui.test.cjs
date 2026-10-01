@@ -64,7 +64,7 @@ test('online UI survives a lost response without adding an item twice and comple
 test('closing payment dialog preserves reservation for explicit recovery; stock and settings screens work',{concurrency:false},async()=>{
   const h=await harness();try{
    h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
-   h.click('.product[data-action="add"]');await until(()=>h.w.document.querySelector('.quantity-select'),'line');h.click('[data-action="payCard"]');await until(()=>h.w.document.querySelector('[name="cardConfirmed"]'),'payment dialog');
+   h.click('.product[data-action="add"]');await until(()=>h.w.document.querySelector('.quantity-tap'),'line');h.click('[data-action="payCard"]');await until(()=>h.w.document.querySelector('[name="cardConfirmed"]'),'payment dialog');
    h.click('.close-dialog');assert.ok(h.server.orders[0].paymentLock);
    h.click('[data-action="checkPayment"]');const form=h.w.document.querySelector('#dialog-form');form.elements.operation.value='cancel';form.elements.checked.checked=true;h.submit();await until(()=>!h.server.orders[0].paymentLock,'payment reservation cleared');
    h.click('[data-view="stock"]');assert.ok(h.w.document.querySelector('#recipe-search'));

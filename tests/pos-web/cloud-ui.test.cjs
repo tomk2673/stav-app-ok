@@ -26,7 +26,7 @@ async function harness(){
    else {
     const r=JSON.parse(init.body);calls.push(r);
     if(requests.has(r.requestId))data=envelope(requests.get(r.requestId));
-    else {try {const p={...r.payload};if(r.type==='checkout')p.operationId=r.requestId;const next=D.run(server,r.type,p,{id:user.id,role:'owner'},[]);server=next.state;requests.set(r.requestId,next.result);} catch(e) {status=500;data={error:e.message};} }
+    else {try {const p={...r.payload};if(r.type==='checkout')p.operationId=r.requestId;const next=D.run(server,r.type,p,{id:user.id,role:'owner'},[]);server=next.state;requests.set(r.requestId,next.result);data=envelope(next.result);} catch(e) {status=422;data={error:e.message,definitive:true};} }
     if(dropNext){dropNext=false;throw new TypeError('Simulated lost response after successful commit');}
    }
    return {ok:status===200,status,json:async()=>data};

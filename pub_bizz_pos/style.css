@@ -52,3 +52,27 @@
     box-shadow:0 -10px 24px rgba(32,41,31,.08);
   }
 }
+
+
+/* Compact live bill: maximize visible table history without hiding total/payment. */
+@media (min-width:631px){
+  .receipt-head{padding:13px 16px 11px}
+  .receipt-head p{margin-top:2px}
+  .receipt-tools{padding:7px 14px 0}
+  .merge-account{min-height:38px;padding:8px 12px}
+  .receipt-items{padding:3px 14px}
+  .line{padding:7px 0}
+  .line-top{gap:8px;font-size:.84rem;line-height:1.2}
+  .line-top .small{font-size:.68rem}
+  .line-bottom{margin-top:4px;gap:6px;font-size:.72rem}
+  .quantity{gap:5px;font-size:.86rem}
+  .quantity button{width:38px;height:38px;min-width:38px;min-height:38px;font-size:1.25rem;border-radius:8px}
+  .quantity-tap{height:38px;min-width:42px;font-size:.9rem;border-radius:8px}
+  .receipt-bottom{padding:10px 14px 12px}
+  .receipt-meta{margin-bottom:7px;font-size:.72rem}
+  .receipt-total{margin-bottom:9px}
+  .receipt-total strong{font-size:1.65rem}
+  .payment-buttons{gap:7px}
+  .payment-buttons button{min-height:48px}
+  .splitbutton{padding-top:8px}
+}

@@ -54,7 +54,16 @@ Deno.serve(async (req: Request) => {
     const venue=venues.find((v:any)=>v.id===venueId);
     if(!venue) return reply({error:'K této provozovně nemáš přístup.'},403);
     if(venue.currency!=='CZK') return reply({error:'Tato pokladna pracuje v Kč. Provozovna má jinou měnu.'},400);
-    if(req.method==='GET') return reply(await snapshot(venue));
+    if(req.method==='GET') {
+      const requestId=query.get('requestId');
+      if(requestId) {
+        if(!uuid(requestId)) return reply({error:'Neplatný identifikátor operace.'},400);
+        const previous:any=await checked(db.from('pos_requests').select('actor_id,result').eq('venue_id',venue.id).eq('request_id',requestId).maybeSingle());
+        if(previous && previous.actor_id!==user.id) return reply({error:'Operace patří jiné obsluze.'},403);
+        return reply({committed:!!previous,result:previous?.result||null});
+      }
+      return reply(await snapshot(venue));
+    }
     if(!uuid(body.requestId)||typeof body.type!=='string'||!body.payload||typeof body.payload!=='object'||Array.isArray(body.payload)) return reply({error:'Neplatná operace.'},400);
     const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({type:body.type,payload:body.payload}))))).map(x=>x.toString(16).padStart(2,'0')).join('');
     const previous:any=await checked(db.from('pos_requests').select('request_hash,actor_id,result').eq('venue_id',venue.id).eq('request_id',body.requestId).maybeSingle());

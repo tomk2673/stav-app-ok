@@ -115,8 +115,10 @@
       check(pr && integer(pr.price) && pr.price > 0, 'Nejdřív nastav cenu položky.');
       check(s.settings.vat !== 'payer' || pr.vatRate !== null, 'U této položky nejdřív nastav sazbu DPH v ceníku.');
       const line = o.lines.find(x => x.productId === pr.id && x.price === pr.price && x.vatRate === pr.vatRate && x.name === pr.name && x.serving === pr.serving);
-      if (line) { check(line.quantity < 999, 'Limit množství je 999.'); line.quantity++; }
-      else o.lines.push({ id: uid(), productId: pr.id, sourceCode: pr.sourceCode || '', stockProductId: pr.stockProductId, name: pr.name, serving: pr.serving, price: pr.price, vatRate: pr.vatRate, quantity: 1 });
+      const qty = p.quantity == null ? 1 : p.quantity;
+      check(integer(qty, 999) && qty > 0, 'Neplatné množství.');
+      if (line) { check(line.quantity + qty <= 999, 'Limit množství je 999.'); line.quantity += qty; }
+      else o.lines.push({ id: uid(), productId: pr.id, sourceCode: pr.sourceCode || '', stockProductId: pr.stockProductId, name: pr.name, serving: pr.serving, price: pr.price, vatRate: pr.vatRate, quantity: qty });
       check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
     } else if (type === 'removeLine') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.'); check(clean(p.reason), 'Doplň důvod opravy.');
@@ -133,6 +135,21 @@
       s.receipts.push(result);
       for (const line of lines) o.lines.find(x => x.id === line.id).quantity -= line.quantity;
       o.lines = o.lines.filter(x => x.quantity > 0); o.revision++;
+    } else if (type === 'restoreReceipt') {
+      needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
+      check(sale && sale.shiftId === sh.id, 'Na stůl lze vrátit pouze prodej z právě otevřené směny.');
+      check(!s.receipts.some(x => x.restoreOf === sale.id), 'Tento doklad už byl vrácen na stůl.');
+      const target = s.orders.find(x => x.id === sale.orderId); check(target, 'Původní stůl už neexistuje.');
+      check(!target.paymentLock, 'Na původním stole právě probíhá platba.');
+      const restored = structuredClone(sale.lines);
+      for (const line of restored) {
+        const same = target.lines.find(x => x.productId === line.productId && x.price === line.price && x.vatRate === line.vatRate && x.name === line.name && x.serving === line.serving);
+        if (same) { check(same.quantity + line.quantity <= 999, 'Po vrácení by množství překročilo limit.'); same.quantity += line.quantity; }
+        else target.lines.push({ ...line, id: target.lines.some(x => x.id === line.id) ? uid() : line.id });
+      }
+      target.revision++; s.sequence++;
+      result = { ...sale, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, restoreOf: sale.id, reason: 'Chybně evidovaná platba – vráceno na původní stůl', total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0, restock: false };
+      s.receipts.push(result);
     } else if (type === 'refund') {
       needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
       check(sale && sale.shiftId === sh.id, 'Vratku lze provést pouze k prodeji v právě otevřené směně.');

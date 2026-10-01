@@ -144,3 +144,4 @@ test('lost merge response retries the same request without moving items added la
    const calls=h.calls.filter(c=>c.type==='mergeOrders');assert.equal(calls.length,2);assert.equal(calls[0].requestId,calls[1].requestId);
   }finally{h.dom.window.close();}
 });
+

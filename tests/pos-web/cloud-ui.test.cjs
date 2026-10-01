@@ -43,13 +43,13 @@ test('online UI survives a lost response without adding an item twice and comple
    h.w.document.querySelector('[name="opening"]').value='0';h.submit();
    await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
    h.click('.product[data-action="add"]');
-   await until(()=>h.w.document.querySelector('.quantity-select')?.value==='1','first line');
+   await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent.replace('×','')==='1','first line');
    h.drop();h.click('.product[data-action="add"]');
    await until(()=>h.w.POSCloud.pending&&!h.w.POSCloud.busy,'uncertain operation retained');
    assert.equal(h.server.orders[0].lines[0].quantity,2);
    assert.equal(h.w.document.querySelector('#sync-warning').hidden,false);
    h.click('[data-action="retryPending"]');
-   await until(()=>!h.w.POSCloud.pending&&h.w.document.querySelector('.quantity-select')?.value==='2','same operation recovered');
+   await until(()=>!h.w.POSCloud.pending&&h.w.document.querySelector('.quantity-tap')?.textContent.replace('×','')==='2','same operation recovered');
    assert.equal(h.server.orders[0].lines[0].quantity,2);
    const additions=h.calls.filter(x=>x.type==='addLine');assert.equal(additions[1].requestId,additions[2].requestId);
    h.click('[data-action="payCash"]');
@@ -97,7 +97,7 @@ async function accountsForMerge(h){
    h.click('[data-action="newOrder"]');h.w.document.querySelector('[name="name"]').value=name;h.submit();
    await until(()=>h.w.document.querySelector('.receipt-head h2')?.textContent===name&&!h.w.document.querySelector('#dialog').open,'account '+name);
    const id=h.server.orders.find(o=>o.name===name).id;ids.push(id);
-   h.click('.product[data-action="add"]');await until(()=>h.w.document.querySelector('.quantity-select')?.value==='1','item '+name);
+   h.click('.product[data-action="add"]');await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent.replace('×','')==='1','item '+name);
   }
   h.click(`[data-action="account"][data-id="${ids[0]}"]`);
   h.click('[data-action="mergeOrders"]');
@@ -115,7 +115,7 @@ test('merge UI previews the chosen total, conserves items and selects the combin
    h.submit();await until(()=>h.w.document.querySelector('.receipt-head h2')?.textContent==='Petr'&&!h.w.document.querySelector('#dialog').open,'combined account selected');
    assert.equal(h.server.orders.find(o=>o.id===source).lines.length,0);
    assert.equal(C.sum(h.server.orders.find(o=>o.id===target).lines),total);
-   assert.equal(h.w.document.querySelector('.quantity-select').value,'2');
+   assert.equal(h.w.document.querySelector('.quantity-tap').textContent,'2×');
    assert.equal(h.server.receipts.length,0);
   }finally{h.dom.window.close();}
 });

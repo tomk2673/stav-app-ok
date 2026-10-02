@@ -16,7 +16,7 @@ module.exports=async function(req,res){
  if(req.method!=='POST')return res.status(405).json({error:'method_not_allowed'});
  const auth=req.headers.authorization||'';
  if(!auth.startsWith('Bearer '))return res.status(401).json({error:'login_required'});
- const verify=await fetch(SUPABASE_URL+'/auth/v1/user',{headers:{Authorization:auth,apikey:process.env.SUPABASE_PUBLISHABLE_KEY||''}});
+ const verify=await fetch(SUPABASE_URL+'/auth/v1/user',{headers:{Authorization:auth,apikey:'sb_publishable_ALfQJF8-kP_P4YyrN3yn3A_5iX7nMSY'}});
  if(!verify.ok)return res.status(401).json({error:'invalid_session'});
  if(!process.env.OPENAI_API_KEY)return res.status(503).json({error:'vision_not_configured'});
  const {data_url,file_data,file_name,mime_type,ocr_text}=req.body||{};

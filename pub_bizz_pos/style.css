@@ -195,3 +195,7 @@ button,.account,.product,.category,.category-tile,.quantity-tap,.qty-choice,.pay
  .payment-buttons{position:sticky;bottom:8px;z-index:4}
  .payment-buttons button{min-height:68px;font-size:1.02rem}
 }
+
+.app-switch{display:inline-flex;align-items:center;min-height:42px;padding:0 12px;border-radius:10px;color:var(--muted);text-decoration:none;font-weight:800;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+.app-switch:hover,.app-switch:focus-visible{background:var(--panel);color:var(--text)}
+@media(max-width:630px){.app-switch{min-height:44px;padding:0 10px;font-size:.82rem}}

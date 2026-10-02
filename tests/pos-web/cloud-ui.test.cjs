@@ -160,3 +160,27 @@ test('fast register keeps product grid node stable while adding and correcting a
   assert.equal(h.w.document.querySelector('#products'),grid);
  }finally{h.dom.window.close();}
 });
+
+
+test('fast touch flow opens a category, adds one product and returns to menu',{concurrency:false},async()=>{
+ const h=await harness();try{
+  h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();
+  await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift');
+  assert.ok(h.w.document.querySelector('.category-grid'));
+  h.click('.category-tile[data-action="category"]');
+  await until(()=>h.w.document.querySelector('.product[data-action="add"]'),'category products');
+  h.click('.product[data-action="add"]');
+  await until(()=>h.server.orders[0].lines.length===1,'line');
+  await until(()=>h.w.document.querySelector('.category-grid'),'back to menu');
+  assert.ok(h.w.document.querySelector('[data-action="payCash"]'));
+  assert.ok(h.w.document.querySelector('[data-action="payCard"]'));
+ }finally{h.dom.window.close();}
+});
+
+test('POS touch controls disable accidental text selection and columns are independently scrollable',()=>{
+ const css=fs.readFileSync(path.join(root,'style.css'),'utf8');
+ assert.match(css,/\.pos-scroll\{[^}]*overflow-y:auto/);
+ assert.match(css,/user-select:none/);
+ assert.match(css,/-webkit-touch-callout:none/);
+ assert.match(css,/touch-action:manipulation/);
+});

@@ -162,7 +162,35 @@ function editProduct(id, addAfter = false) {
     return pr;
   }, addAfter && C.activeShift(state) ? 'Uložit a přidat na účet' : 'Uložit položku', async pr => { if (addAfter && C.activeShift(state)) await command('addLine',{orderId:current,productId:pr.id}); toast('Položka uložená.'); });
 }
+function splitPaymentFlow(resume=false){
+  const o=structuredClone(getOrder()); if(!o.lines.length)return;
+  const picked=new Map(o.lines.map(l=>[l.id,0])); let reservation=null;
+  const operationId=crypto.randomUUID();
+  const selected=()=>o.lines.map(l=>({id:l.id,quantity:picked.get(l.id)||0})).filter(x=>x.quantity>0);
+  const total=()=>C.sum(C.selectedLines(o,selected()));
+  const picker=()=>{
+    $('#dialog-title').textContent='Rozdělit účet'; $('#dialog-submit').hidden=true;
+    $('#dialog-body').innerHTML='<div class="split-picker-head"><strong>Vyber položku a počet</strong><span>'+fmt(total())+'</span></div><div class="split-product-grid">'+o.lines.map(l=>{const q=picked.get(l.id)||0;return '<button type="button" class="split-product '+(q?'picked':'')+'" data-split-line="'+E(l.id)+'"><span class="split-picked">'+(q?q+'×':'+')+'</span><strong>'+E(l.name)+'</strong><small>'+l.quantity+'× na účtu · '+fmt(l.price)+'</small></button>';}).join('')+'</div><div class="split-paybar"><button type="button" class="paycash" data-split-pay="cash" '+(selected().length?'':'disabled')+'>💵 HOTOVĚ<br><strong>'+fmt(total())+'</strong></button><button type="button" class="paycard" data-split-pay="card" '+(selected().length?'':'disabled')+'>💳 KARTOU<br><strong>'+fmt(total())+'</strong></button></div>';
+    $('#dialog-body').querySelectorAll('[data-split-line]').forEach(b=>b.onclick=()=>qty(b.dataset.splitLine));
+    $('#dialog-body').querySelectorAll('[data-split-pay]').forEach(b=>b.onclick=()=>finish(b.dataset.splitPay));
+  };
+  const qty=id=>{const l=o.lines.find(x=>x.id===id);if(!l)return;const q=picked.get(id)||0;
+    $('#dialog-title').textContent=l.name;
+    $('#dialog-body').innerHTML='<div class="split-qty-title"><span>Kolik kusů?</span><strong>'+l.quantity+'× na účtu</strong></div><div class="split-qty-grid"><button type="button" data-split-qty="0">0</button>'+Array.from({length:l.quantity},(_,i)=>i+1).map(n=>'<button type="button" data-split-qty="'+n+'" class="'+(q===n?'active':'')+'">'+n+'</button>').join('')+'</div><button type="button" class="menu-back split-back">‹ ZPĚT NA POLOŽKY</button>';
+    $('#dialog-body').querySelectorAll('[data-split-qty]').forEach(b=>b.onclick=()=>{picked.set(id,Number(b.dataset.splitQty));picker();});
+    $('#dialog-body').querySelector('.split-back').onclick=picker;
+  };
+  const finish=async mode=>{if(!selected().length)return;try{
+    if(!reservation)reservation=window.POSCloud?(resume?o.paymentLock:await command('beginPayment',{orderId:o.id,revision:o.revision})):null;
+    if(mode==='cash'){const r=await command('checkout',{orderId:o.id,revision:o.revision,operationId,paymentToken:reservation?.token,selected:selected(),mode:'cash',received:Math.round(total()/100)*100,splitCash:0,cardConfirmed:false});$('#dialog').close();toast('Uloženo · '+r.number);receiptDialog(r);return;}
+    $('#dialog-title').textContent='Platba kartou';$('#dialog-submit').hidden=false;$('#dialog-submit').textContent='POTVRDIT KARTU';
+    $('#dialog-body').innerHTML='<div class="payment-summary"><div class="summary-row total"><span>Na terminálu</span><strong>'+fmt(total())+'</strong></div></div><label class="inline-check"><input type="checkbox" name="cardConfirmed" required>Platba na terminálu proběhla úspěšně.</label>';
+    $('#dialog-form').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);if(!fd.has('cardConfirmed'))return;try{const r=await command('checkout',{orderId:o.id,revision:o.revision,operationId,paymentToken:reservation?.token,selected:selected(),mode:'card',received:0,splitCash:0,cardConfirmed:true});$('#dialog').close();toast('Uloženo · '+r.number);receiptDialog(r);}catch(err){$('#dialog-error').textContent=err.message||'Platba selhala.';}};
+  }catch(err){toast(err.message||'Platba selhala.',true);}};
+  showDialog('Rozdělit účet','',null);picker();
+}
 async function pay(mode, resume=false) {
+  if(mode==='split')return splitPaymentFlow(resume);
   const o = structuredClone(getOrder()); if (!o.lines.length) return;
   const reservation=window.POSCloud ? (resume?o.paymentLock:await command('beginPayment',{orderId:o.id,revision:o.revision})) : null;
   const operationId = crypto.randomUUID(); const total = C.sum(o.lines); const startingCash = mode==='cash' ? Math.round(total/100)*100 : 0;

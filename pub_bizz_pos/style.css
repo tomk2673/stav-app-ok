@@ -158,3 +158,40 @@
   .line-bottom{margin-top:5px}
   .receipt-bottom{padding:11px 14px 14px}
 }
+
+
+/* Fast service cockpit: independent columns and touch-first controls */
+.pos-layout{height:calc(100dvh - 178px);min-height:520px;overflow:hidden}
+.pos-scroll{min-height:0;max-height:100%;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.accounts,.catalog-area,.receipt{min-height:0}
+button,.account,.product,.category,.category-tile,.quantity-tap,.qty-choice,.payment-buttons button,.splitbutton{
+ -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation
+}
+.category-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.category-tile{min-height:118px;border:1px solid var(--line);border-radius:18px;background:var(--panel);color:var(--text);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;font:inherit;cursor:pointer}
+.category-tile span{font-size:2rem;line-height:1}.category-tile strong{font-size:1.05rem}
+.category-selected{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.menu-back{min-height:50px;padding:0 18px;border:0;border-radius:14px;background:var(--accent);font-weight:900}
+.category-selected strong{font-size:1.1rem}
+.payment-buttons button{min-height:64px;font-size:1.05rem;font-weight:900}
+.splitbutton{min-height:52px}
+@media(min-width:1250px){.category-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:1024px){
+ .pos-layout{height:calc(100dvh - 160px)}
+}
+@media(max-width:630px){
+ main{padding:6px 8px 82px}
+ .pos-layout{height:auto;min-height:0;overflow:visible}
+ .accounts{max-height:none;overflow-x:auto;overflow-y:hidden}
+ .catalog-area{min-height:calc(100dvh - 235px);overflow:visible}
+ .receipt{max-height:none;overflow:visible}
+ .category-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ .category-tile{min-height:132px;border-radius:20px}
+ .category-tile span{font-size:2.35rem}.category-tile strong{font-size:1.12rem}
+ .products{grid-template-columns:1fr 1fr;gap:9px}
+ .product{min-height:128px;font-size:1rem}
+ .account{min-width:145px;min-height:62px}
+ .add-account{min-width:125px;min-height:62px}
+ .payment-buttons{position:sticky;bottom:8px;z-index:4}
+ .payment-buttons button{min-height:68px;font-size:1.02rem}
+}

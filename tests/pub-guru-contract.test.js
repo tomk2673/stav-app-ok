@@ -167,3 +167,19 @@ test('variance explanation UI records evidence without a stock correction action
   assert.match(view, /sklad beze změny/);
   assert.doesNotMatch(view, /stock_movements.*insert|manual_correction/i);
 });
+
+
+test('invoice capture reads the document with server-side vision before OCR fallback', () => {
+  const capture = read('pub_guru/invoice-capture-v3.js');
+  const api = read('api/invoice-vision.js');
+  assert.match(capture, /readWithVision\(file/);
+  assert.match(capture, /\/api\/invoice-vision/);
+  assert.match(capture, /AI čte přímo fakturu/);
+  assert.match(capture, /OCR fallback/);
+  assert.match(api, /input_image/);
+  assert.match(api, /input_file/);
+  assert.match(api, /json_schema/);
+  assert.match(api, /is_bonus/);
+  assert.match(api, /Nikdy nehádej/);
+  assert.doesNotMatch(capture, /OPENAI_API_KEY/);
+});

@@ -473,6 +473,51 @@
     return text;
   }
 
+  function fileDataUrl(file) {
+    return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(r.error||new Error('Soubor nelze načíst.'));r.readAsDataURL(file);});
+  }
+
+  async function readWithVision(file, ocrText='') {
+    const session=await db().auth.getSession();
+    const token=session.data?.session?.access_token;
+    if(!token) throw new Error('Pro AI čtení je nutné přihlášení.');
+    const dataUrl=await fileDataUrl(file);
+    const body={file_name:file.name||'invoice',mime_type:file.type||'image/jpeg',ocr_text:ocrText};
+    if(file.type==='application/pdf') body.file_data=dataUrl; else body.data_url=dataUrl;
+    const response=await fetch('/api/invoice-vision',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(body)});
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(payload.detail||payload.error||('AI čtení HTTP '+response.status));
+    return payload;
+  }
+
+  function applyVisionResult(payload) {
+    const v=payload?.invoice;
+    if(!v||!Array.isArray(v.lines)) throw new Error('AI nevrátila platnou strukturu faktury.');
+    if(v.supplier) $('supplier').value=v.supplier;
+    if(v.invoice_number) $('number').value=v.invoice_number;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(v.issue_date||'')) $('date').value=v.issue_date;
+    documentTotal=Number.isFinite(v.total_gross)?v.total_gross:null;
+    rows=v.lines.filter(x=>x.raw_name).map(x=>{
+      const p=bestProductMatch(x.raw_name);
+      const confidence=Number(x.confidence);
+      const uncertain=!Number.isFinite(confidence)||confidence<0.92;
+      return {
+        id:uid(),rawName:x.raw_name,productId:p?.id||'',sourceCode:x.source_code||null,
+        qty:Number.isFinite(x.quantity)?x.quantity:null,vatRate:Number.isFinite(x.vat_rate)?x.vat_rate:null,
+        price:Number.isFinite(x.unit_price_net)?x.unit_price_net:null,
+        lineNet:Number.isFinite(x.line_total_net)?x.line_total_net:null,
+        lineGross:Number.isFinite(x.line_total_gross)?x.line_total_gross:null,
+        unitGross:null,isBonus:!!x.is_bonus,confidence:Number.isFinite(confidence)?confidence:null,
+        warning:x.warning||(uncertain?'AI si není jistá čtením tohoto řádku':'')
+      };
+    });
+    render();
+    const warnings=[...(v.warnings||[]),...rows.filter(x=>x.warning).map(x=>x.warning)];
+    $('ocrStatus').textContent='AI přečetla přímo dokument'+(warnings.length?' · některá pole chtějí kontrolu':' · čtení bez varování');
+    $('ocrProgress').style.width='100%';
+    toast('AI přečetla '+rows.length+' položek přímo z faktury'+(warnings.length?' · '+warnings.length+' upozornění':'')+'.',6500);
+  }
+
   async function handleFile(file) {
     fingerprint=await sha256(file);
     sourceFileName=file.name || 'invoice';
@@ -493,6 +538,18 @@
 
     const canvas=$('invoicePreview');
     let text='';
+    $('ocrStatus').textContent='AI čte přímo fakturu…';
+    $('ocrProgress').style.width='12%';
+    try {
+      const vision=await readWithVision(file,'');
+      applyVisionResult(vision);
+      $('ocrText').value='[AI vision: dokument přečten přímo z obrazu/PDF]';
+      cropMeta={vision:true,provider:vision.provider||'openai-vision',model:vision.model||null};
+      return;
+    } catch (visionError) {
+      console.warn('AI vision selhalo, používám OCR fallback.',visionError);
+      $('ocrStatus').textContent='AI čtení není dostupné. Používám OCR fallback…';
+    }
     if(file.type==='application/pdf'){
       if(!window.pdfjsLib)throw new Error('PDF knihovna se nenačetla.');
       pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -549,7 +606,7 @@
         calculated_net:calculatedNet,
         warnings:rows.filter(r=>r.warning).length
       },
-      extraction_provider:window.PubGuruNativeOCR?.available?.()?'apple-vision-native':'tesseract-browser-v3',
+      extraction_provider:cropMeta?.vision?'openai-vision':(window.PubGuruNativeOCR?.available?.()?'apple-vision-native':'tesseract-browser-v3'),
       status:'review',
       created_by:ctx.user.id
     }).select('id').single();

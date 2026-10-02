@@ -184,3 +184,21 @@ test('POS touch controls disable accidental text selection and columns are indep
  assert.match(css,/-webkit-touch-callout:none/);
  assert.match(css,/touch-action:manipulation/);
 });
+
+
+test('split payment uses product tiles then quantity buttons and returns to items',{concurrency:false},async()=>{
+ const h=await harness();try{
+  h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();
+  await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift');
+  h.click('.category-tile[data-action="category"]');await until(()=>h.w.document.querySelector('.product[data-action="add"]'),'products');
+  h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines.length===1,'line');
+  h.click('[data-action="add"]');await until(()=>h.server.orders[0].lines[0].quantity===2,'two pieces');
+  h.click('[data-action="paySplit"]');await until(()=>h.w.document.querySelector('.split-product'),'split picker');
+  assert.equal(h.w.document.querySelectorAll('.selected-line select').length,0);
+  h.click('.split-product');await until(()=>h.w.document.querySelector('[data-split-qty="1"]'),'qty');
+  h.click('[data-split-qty="1"]');await until(()=>h.w.document.querySelector('.split-product.picked'),'back to items');
+  assert.match(h.w.document.querySelector('.split-product.picked .split-picked').textContent,/1×/);
+  assert.equal(h.w.document.querySelector('[data-split-pay="cash"]').disabled,false);
+  assert.equal(h.w.document.querySelector('[data-split-pay="card"]').disabled,false);
+ }finally{h.dom.window.close();}
+});

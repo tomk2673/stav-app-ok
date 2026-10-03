@@ -167,3 +167,13 @@ test('variance explanation UI records evidence without a stock correction action
   assert.match(view, /sklad beze změny/);
   assert.doesNotMatch(view, /stock_movements.*insert|manual_correction/i);
 });
+
+
+test('connected PUB apps expose direct navigation both ways', () => {
+  const invoices = read('pub_guru/start.html');
+  const pos = read('pub_bizz_pos/index.html');
+  assert.match(invoices, /href="\.\.\/pub_bizz_pos\/index\.html"/);
+  assert.match(invoices, /PUB POS · Pokladna/);
+  assert.match(pos, /href="\.\.\/pub_guru\/start\.html"/);
+  assert.match(pos, /PUB INVOICES/);
+});

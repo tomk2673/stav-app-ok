@@ -85,7 +85,7 @@ Deno.serve(async (req: Request) => {
       }
       const commit:any=await checked(db.rpc('pos_commit',{
         p_venue:venue.id,p_actor:user.id,p_request:body.requestId,p_hash:hash,p_expected:s.revision,
-        p_type:body.type,p_state:command.state,p_result:command.result
+        p_type:body.type,p_state:command.state,p_result:command.result ?? null
       }));
       if(!commit.conflict) return reply(await snapshot(venue,commit.result,stock));
       // Another device committed first. Recheck deduplication before executing again.

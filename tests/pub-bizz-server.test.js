@@ -25,7 +25,10 @@ test('reservation release requires explicit check and authorized actor',()=>{
  const {state:s,result:lock}=reserve(setup());
  assert.throws(()=>D.run(s,'cancelPayment',{orderId:'bar',paymentToken:lock.token},staff,stock),/zkontroluj/);
  assert.throws(()=>D.run(s,'cancelPayment',{orderId:'bar',paymentToken:lock.token,terminalChecked:true,reason:'check'},{...staff,id:crypto.randomUUID()},stock),/původní/);
- assert.equal(D.run(s,'cancelPayment',{orderId:'bar',paymentToken:lock.token,terminalChecked:true,reason:'Nezaplaceno'},owner,stock).state.orders[0].paymentLock,undefined);
+ const released=D.run(s,'cancelPayment',{orderId:'bar',paymentToken:lock.token,terminalChecked:true,reason:'Nezaplaceno'},owner,stock);
+ assert.equal(released.state.orders[0].paymentLock,undefined);
+ assert.equal(released.result,null,'RPC must receive an explicit null result for reservation release');
+ assert.ok(Object.hasOwn(JSON.parse(JSON.stringify({p_result:released.result})),'p_result'),'JSON must retain the required pos_commit argument');
 });
 test('recipe validates units, positive quantities and tenant stock list',()=>{
  const s=setup(),p={productId:'agnis-2810',version:0,mode:'recipe',components:[{productId:product.id,quantity:40,unit:'ml'}]};

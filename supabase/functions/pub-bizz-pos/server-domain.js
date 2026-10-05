@@ -11,7 +11,7 @@
     check(staffCommands.has(type) || (manager.has(actor.role) && managerCommands.has(type)), 'Tuto operaci může provést vedoucí nebo majitel.');
     const p = structuredClone(payload || {}), s = structuredClone(state);
     s.recipes ||= {};
-    let result;
+    let result = null;
     const order = s.orders.find(o=>o.id===p.orderId);
     if (['addLine','removeLine','setLineQuantity','deleteOrder'].includes(type)) check(!order?.paymentLock, 'Na tomto účtu právě probíhá platba. Nejdřív ji dokonči nebo zkontroluj rezervaci.');
     if (type === 'checkout') {

@@ -32,6 +32,15 @@ begin
   raise exception 'Staff settings unexpectedly accepted';
  exception when insufficient_privilege then null;
  end;
+ -- A released reservation has no result object, but the RPC argument must exist.
+ state := merged || jsonb_build_object('revision',2);
+ request := gen_random_uuid();
+ answer := public.pos_commit(venue,actor,request,'cancel-null-result',1,'cancelPayment',state,null);
+ if answer->'result' is distinct from 'null'::jsonb then raise exception 'Cancellation null result lost'; end if;
+ answer := public.pos_commit(venue,actor,request,'cancel-null-result',1,'cancelPayment',state,null);
+ if answer->>'duplicate'<>'true' then raise exception 'Cancellation retry not deduplicated'; end if;
+ if (select revision from public.pos_registers where venue_id=venue)<>2 then raise exception 'Cancellation revision incorrect'; end if;
+ if (select count(*) from public.pos_requests where venue_id=venue)<>2 then raise exception 'Cancellation duplicated'; end if;
  update public.memberships set role='accountant' where organization_id=org and user_id=actor;
  begin
   perform public.pos_commit(venue,actor,gen_random_uuid(),'accountant-merge',1,'mergeOrders',merged,result);

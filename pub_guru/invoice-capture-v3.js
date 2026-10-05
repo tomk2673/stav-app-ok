@@ -451,6 +451,7 @@
         if(typeof m.progress==='number')$('ocrProgress').style.width=`${Math.round((base+m.progress*span)*100)}%`;
       }
     });
+    cropMeta={...cropMeta,vision:false,provider:result.data.native?'apple-vision-native':'tesseract-browser-v3',model:null};
     return result.data.text || '';
   }
 
@@ -543,7 +544,8 @@
     try {
       const vision=await readWithVision(file,'');
       applyVisionResult(vision);
-      $('ocrText').value='[AI vision: dokument přečten přímo z obrazu/PDF]';
+      $('ocrText').value='[AI vision: dokument přečten přímo z obrazu/PDF]'+
+        (Number.isFinite(documentTotal)?'\nCelkem: '+documentTotal.toFixed(2):'');
       cropMeta={vision:true,provider:vision.provider||'openai-vision',model:vision.model||null};
       return;
     } catch (visionError) {
@@ -555,6 +557,7 @@
       pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
       const max=Math.min(pdf.numPages,4);
+      cropMeta={detected:false,pdf:true};
       for(let i=1;i<=max;i++){
         const page=await pdf.getPage(i);
         const vp=page.getViewport({scale:2.5});
@@ -563,7 +566,6 @@
         enhance(canvas);
         text+=`\n--- STRANA ${i} ---\n${await recognize(canvas,`Strana ${i}: `,(i-1)/max,1/max)}`;
       }
-      cropMeta={detected:false,pdf:true};
     }else{
       const image=new Image();
       const url=URL.createObjectURL(file);
@@ -575,7 +577,7 @@
       text=await recognizeLong(canvas);
     }
     $('ocrText').value=text.trim();
-    $('ocrStatus').textContent=window.PubGuruNativeOCR?.available?.()?'Apple Vision OCR dokončeno.':'OCR dokončeno.';
+    $('ocrStatus').textContent=cropMeta?.provider==='apple-vision-native'?'Apple Vision OCR dokončeno.':'OCR dokončeno.';
     $('ocrProgress').style.width='100%';
     parseText();
   }
@@ -587,6 +589,8 @@
     if(dup.error)throw dup.error;
     if(dup.data)return toast('Tento doklad už je v databázi.',5500);
 
+    const extractionProvider=cropMeta?.provider||(cropMeta?.vision?'openai-vision':(window.PubGuruNativeOCR?.available?.()?'apple-vision-native':'tesseract-browser-v3'));
+    const extractionModel=cropMeta?.model||null;
     const calculatedNet=rows.reduce((s,r)=>s+(Number.isFinite(r.lineNet)?r.lineNet:(r.qty*r.price)),0);
     const ins=await db().from('invoices').insert({
       organization_id:ctx.organization.id,
@@ -606,7 +610,7 @@
         calculated_net:calculatedNet,
         warnings:rows.filter(r=>r.warning).length
       },
-      extraction_provider:cropMeta?.vision?'openai-vision':(window.PubGuruNativeOCR?.available?.()?'apple-vision-native':'tesseract-browser-v3'),
+      extraction_provider:extractionProvider,
       status:'review',
       created_by:ctx.user.id
     }).select('id').single();
@@ -655,7 +659,8 @@
         captured_lines:rows.length,
         total_gross:documentTotal,
         warnings:rows.filter(r=>r.warning).length,
-        extraction_provider:window.PubGuruNativeOCR?.available?.()?'apple-vision-native':'tesseract-browser-v3'
+        extraction_provider:extractionProvider,
+        extraction_model:extractionModel
       }
     });
     if(audit.error)throw audit.error;

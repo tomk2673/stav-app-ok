@@ -451,6 +451,7 @@
         if(typeof m.progress==='number')$('ocrProgress').style.width=`${Math.round((base+m.progress*span)*100)}%`;
       }
     });
+    cropMeta={...cropMeta,vision:false,provider:result.data.native?'apple-vision-native':'tesseract-browser-v3',model:null};
     return result.data.text || '';
   }
 
@@ -473,6 +474,51 @@
     return text;
   }
 
+  function fileDataUrl(file) {
+    return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(r.error||new Error('Soubor nelze načíst.'));r.readAsDataURL(file);});
+  }
+
+  async function readWithVision(file, ocrText='') {
+    const session=await db().auth.getSession();
+    const token=session.data?.session?.access_token;
+    if(!token) throw new Error('Pro AI čtení je nutné přihlášení.');
+    const dataUrl=await fileDataUrl(file);
+    const body={file_name:file.name||'invoice',mime_type:file.type||'image/jpeg',ocr_text:ocrText};
+    if(file.type==='application/pdf') body.file_data=dataUrl; else body.data_url=dataUrl;
+    const response=await fetch('/api/invoice-vision',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(body)});
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(payload.detail||payload.error||('AI čtení HTTP '+response.status));
+    return payload;
+  }
+
+  function applyVisionResult(payload) {
+    const v=payload?.invoice;
+    if(!v||!Array.isArray(v.lines)) throw new Error('AI nevrátila platnou strukturu faktury.');
+    if(v.supplier) $('supplier').value=v.supplier;
+    if(v.invoice_number) $('number').value=v.invoice_number;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(v.issue_date||'')) $('date').value=v.issue_date;
+    documentTotal=Number.isFinite(v.total_gross)?v.total_gross:null;
+    rows=v.lines.filter(x=>x.raw_name).map(x=>{
+      const p=bestProductMatch(x.raw_name);
+      const confidence=Number(x.confidence);
+      const uncertain=!Number.isFinite(confidence)||confidence<0.92;
+      return {
+        id:uid(),rawName:x.raw_name,productId:p?.id||'',sourceCode:x.source_code||null,
+        qty:Number.isFinite(x.quantity)?x.quantity:null,vatRate:Number.isFinite(x.vat_rate)?x.vat_rate:null,
+        price:Number.isFinite(x.unit_price_net)?x.unit_price_net:null,
+        lineNet:Number.isFinite(x.line_total_net)?x.line_total_net:null,
+        lineGross:Number.isFinite(x.line_total_gross)?x.line_total_gross:null,
+        unitGross:null,isBonus:!!x.is_bonus,confidence:Number.isFinite(confidence)?confidence:null,
+        warning:x.warning||(uncertain?'AI si není jistá čtením tohoto řádku':'')
+      };
+    });
+    render();
+    const warnings=[...(v.warnings||[]),...rows.filter(x=>x.warning).map(x=>x.warning)];
+    $('ocrStatus').textContent='AI přečetla přímo dokument'+(warnings.length?' · některá pole chtějí kontrolu':' · čtení bez varování');
+    $('ocrProgress').style.width='100%';
+    toast('AI přečetla '+rows.length+' položek přímo z faktury'+(warnings.length?' · '+warnings.length+' upozornění':'')+'.',6500);
+  }
+
   async function handleFile(file) {
     fingerprint=await sha256(file);
     sourceFileName=file.name || 'invoice';
@@ -493,11 +539,25 @@
 
     const canvas=$('invoicePreview');
     let text='';
+    $('ocrStatus').textContent='AI čte přímo fakturu…';
+    $('ocrProgress').style.width='12%';
+    try {
+      const vision=await readWithVision(file,'');
+      applyVisionResult(vision);
+      $('ocrText').value='[AI vision: dokument přečten přímo z obrazu/PDF]'+
+        (Number.isFinite(documentTotal)?'\nCelkem: '+documentTotal.toFixed(2):'');
+      cropMeta={vision:true,provider:vision.provider||'openai-vision',model:vision.model||null};
+      return;
+    } catch (visionError) {
+      console.warn('AI vision selhalo, používám OCR fallback.',visionError);
+      $('ocrStatus').textContent='AI čtení není dostupné. Používám OCR fallback…';
+    }
     if(file.type==='application/pdf'){
       if(!window.pdfjsLib)throw new Error('PDF knihovna se nenačetla.');
       pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
       const max=Math.min(pdf.numPages,4);
+      cropMeta={detected:false,pdf:true};
       for(let i=1;i<=max;i++){
         const page=await pdf.getPage(i);
         const vp=page.getViewport({scale:2.5});
@@ -506,7 +566,6 @@
         enhance(canvas);
         text+=`\n--- STRANA ${i} ---\n${await recognize(canvas,`Strana ${i}: `,(i-1)/max,1/max)}`;
       }
-      cropMeta={detected:false,pdf:true};
     }else{
       const image=new Image();
       const url=URL.createObjectURL(file);
@@ -518,7 +577,7 @@
       text=await recognizeLong(canvas);
     }
     $('ocrText').value=text.trim();
-    $('ocrStatus').textContent=window.PubGuruNativeOCR?.available?.()?'Apple Vision OCR dokončeno.':'OCR dokončeno.';
+    $('ocrStatus').textContent=cropMeta?.provider==='apple-vision-native'?'Apple Vision OCR dokončeno.':'OCR dokončeno.';
     $('ocrProgress').style.width='100%';
     parseText();
   }
@@ -530,6 +589,8 @@
     if(dup.error)throw dup.error;
     if(dup.data)return toast('Tento doklad už je v databázi.',5500);
 
+    const extractionProvider=cropMeta?.provider||(cropMeta?.vision?'openai-vision':(window.PubGuruNativeOCR?.available?.()?'apple-vision-native':'tesseract-browser-v3'));
+    const extractionModel=cropMeta?.model||null;
     const calculatedNet=rows.reduce((s,r)=>s+(Number.isFinite(r.lineNet)?r.lineNet:(r.qty*r.price)),0);
     const ins=await db().from('invoices').insert({
       organization_id:ctx.organization.id,
@@ -549,7 +610,7 @@
         calculated_net:calculatedNet,
         warnings:rows.filter(r=>r.warning).length
       },
-      extraction_provider:window.PubGuruNativeOCR?.available?.()?'apple-vision-native':'tesseract-browser-v3',
+      extraction_provider:extractionProvider,
       status:'review',
       created_by:ctx.user.id
     }).select('id').single();
@@ -598,7 +659,8 @@
         captured_lines:rows.length,
         total_gross:documentTotal,
         warnings:rows.filter(r=>r.warning).length,
-        extraction_provider:window.PubGuruNativeOCR?.available?.()?'apple-vision-native':'tesseract-browser-v3'
+        extraction_provider:extractionProvider,
+        extraction_model:extractionModel
       }
     });
     if(audit.error)throw audit.error;

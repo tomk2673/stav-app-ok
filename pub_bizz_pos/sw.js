@@ -1,6 +1,6 @@
-const CACHE = 'pub-bizz-pos-shell-2.0.3';
+const CACHE = 'pub-bizz-pos-shell-2.0.4';
 const SHELL = ['./', './index.html', './style.css', './compat.js', './catalog.js', './core.js', './storage.js', './app.js', './config.js', './cloud.js', './stock.js', './vendor/supabase-2.117.2.js', './icon.svg', './manifest.webmanifest'];
-self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL))));
+self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil((async () => {
   for (const key of await caches.keys()) if (key.startsWith('pub-bizz-pos-shell-') && key !== CACHE) await caches.delete(key);
   await self.clients.claim();
@@ -15,3 +15,4 @@ self.addEventListener('fetch', event => {
     catch (e) { if (event.request.mode === 'navigate') return await cache.match('./index.html'); throw e; }
   })());
 });
+

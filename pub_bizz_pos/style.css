@@ -212,3 +212,7 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
   .quantity-picker .qty-choice{min-height:66px}.quantity-picker .qty-pad{gap:8px}
 }
 @media(max-width:359px){.entry-counts{grid-template-columns:repeat(3,minmax(0,1fr))}.entry-target{flex-wrap:wrap}}
+@media(min-width:631px){
+  .receipt{height:var(--pos-height,calc(100dvh - 185px));max-height:var(--pos-height,calc(100dvh - 185px))}
+  .accounts{max-height:var(--pos-height,calc(100dvh - 185px))}
+}

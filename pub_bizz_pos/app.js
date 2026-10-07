@@ -77,6 +77,7 @@ function render() {
     renderProducts();
     $('#search').addEventListener('input', e => { query = e.target.value; document.querySelectorAll('.category').forEach(b => b.classList.toggle('active', !query && b.dataset.id===category)); renderProducts(); });
     bindAccountSearch();
+    resizePOSWorkspace();
   }
   if(view==='stock')POSStockUI.bind();
   if(focused&&['search','recipe-search','account-search'].includes(focused)&&document.getElementById(focused)){const el=document.getElementById(focused);el.focus();if(selection!==null)el.setSelectionRange(selection,selection);}
@@ -123,6 +124,10 @@ function updateEntryContext() {
     const active=Number(b.dataset.id)===entryQuantity;
     b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));
   });
+}
+function resizePOSWorkspace() {
+  const layout=$('.pos-layout');if(!layout)return;
+  layout.style.setProperty('--pos-height',`${Math.max(280,window.innerHeight-Math.max(10,layout.getBoundingClientRect().top)-16)}px`);
 }
 function selectAccount(id) {
   if(!state.orders.some(o=>o.id===id))return;
@@ -384,6 +389,7 @@ window.addEventListener('pos-connection',connection);
 window.addEventListener('online',connection);window.addEventListener('offline',connection);
 async function refresh(){if(state){try{const next=await Store.read();if(next.revision!==state.revision){state=next;render();}}catch{toast('Nepodařilo se načíst uložená data.',true);}}}
 window.addEventListener('focus',refresh);
+window.addEventListener('resize',resizePOSWorkspace);
 (async()=>{
   document.querySelectorAll('[data-cloud]').forEach(x=>x.hidden=!window.POSCloud);
   try{state=await Store.open(refresh);C.validate(state);render();connection();

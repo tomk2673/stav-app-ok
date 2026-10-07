@@ -218,6 +218,10 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
   .quantity-picker .qty-choice{min-height:66px}.quantity-picker .qty-pad{gap:8px}
 }
 @media(max-width:359px){.entry-counts{grid-template-columns:repeat(3,minmax(0,1fr))}.entry-target{flex-wrap:wrap}}
+@media(min-width:631px){
+  .receipt{height:var(--pos-height,calc(100dvh - 185px));max-height:var(--pos-height,calc(100dvh - 185px))}
+  .accounts{max-height:var(--pos-height,calc(100dvh - 185px))}
+}
 </style>
   <script src="./compat.js"></script>
 </head>
@@ -3106,6 +3110,7 @@ function render() {
     renderProducts();
     $('#search').addEventListener('input', e => { query = e.target.value; document.querySelectorAll('.category').forEach(b => b.classList.toggle('active', !query && b.dataset.id===category)); renderProducts(); });
     bindAccountSearch();
+    resizePOSWorkspace();
   }
   if(view==='stock')POSStockUI.bind();
   if(focused&&['search','recipe-search','account-search'].includes(focused)&&document.getElementById(focused)){const el=document.getElementById(focused);el.focus();if(selection!==null)el.setSelectionRange(selection,selection);}
@@ -3152,6 +3157,10 @@ function updateEntryContext() {
     const active=Number(b.dataset.id)===entryQuantity;
     b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));
   });
+}
+function resizePOSWorkspace() {
+  const layout=$('.pos-layout');if(!layout)return;
+  layout.style.setProperty('--pos-height',`${Math.max(280,window.innerHeight-Math.max(10,layout.getBoundingClientRect().top)-16)}px`);
 }
 function selectAccount(id) {
   if(!state.orders.some(o=>o.id===id))return;
@@ -3413,6 +3422,7 @@ window.addEventListener('pos-connection',connection);
 window.addEventListener('online',connection);window.addEventListener('offline',connection);
 async function refresh(){if(state){try{const next=await Store.read();if(next.revision!==state.revision){state=next;render();}}catch{toast('Nepodařilo se načíst uložená data.',true);}}}
 window.addEventListener('focus',refresh);
+window.addEventListener('resize',resizePOSWorkspace);
 (async()=>{
   document.querySelectorAll('[data-cloud]').forEach(x=>x.hidden=!window.POSCloud);
   try{state=await Store.open(refresh);C.validate(state);render();connection();

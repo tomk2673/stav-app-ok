@@ -18,3 +18,22 @@ test('invalid bulk import rolls back the complete operation',()=>{const f=fixtur
 test('corrupted backup totals are rejected',()=>{const f=fixture();f.apply('checkout',payload(f));const copy=structuredClone(f.s);copy.receipts[0].total++;assert.throws(()=>C.validate(copy),/součet/);});
 
 test("provided catalog keeps only 208 priced IDs and agreed Cuba price",()=>{const s=C.initial();assert.equal(s.products.length,208);assert.equal(s.products.filter(p=>p.price===null).length,0);assert.equal(new Set(s.products.map(p=>p.id)).size,208);for(const id of ["agnis-4328","agnis-4336"])assert.equal(s.products.find(p=>p.id===id).price,13000);assert.equal(s.products.find(p=>p.id==="agnis-63").price,4200);assert.equal(s.products.find(p=>p.id==="agnis-6301"),undefined);});
+
+
+test('multiple pieces are added in one atomic command, with default single-piece compatibility',()=>{
+ const f=fixture(),revision=f.s.revision,audit=f.s.audit.length;
+ f.apply('addLine',{orderId:'bar',productId:f.product.id,quantity:5});
+ assert.equal(f.s.orders[0].lines[0].quantity,6);
+ assert.equal(C.sum(f.s.orders[0].lines),33000);
+ assert.equal(f.s.revision,revision+1);assert.equal(f.s.audit.length,audit+1);
+ f.apply('addLine',{orderId:'bar',productId:f.product.id});assert.equal(f.s.orders[0].lines[0].quantity,7);
+ C.validate(f.s);
+});
+test('invalid counts and accumulated limits do not change the order',()=>{
+ const f=fixture();
+ for(const quantity of [0,-1,1.5,1000,null,'5',NaN]){
+  const before=JSON.stringify(f.s);assert.throws(()=>f.apply('addLine',{orderId:'bar',productId:f.product.id,quantity}));assert.equal(JSON.stringify(f.s),before);
+ }
+ f.apply('addLine',{orderId:'bar',productId:f.product.id,quantity:998});
+ const before=JSON.stringify(f.s);assert.throws(()=>f.apply('addLine',{orderId:'bar',productId:f.product.id,quantity:1}),/999/);assert.equal(JSON.stringify(f.s),before);
+});

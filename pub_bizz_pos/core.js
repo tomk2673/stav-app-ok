@@ -114,9 +114,13 @@
       needShift(); const o = order(); const pr = s.products.find(x => x.id === p.productId && x.active);
       check(pr && integer(pr.price) && pr.price > 0, 'Nejdřív nastav cenu položky.');
       check(s.settings.vat !== 'payer' || pr.vatRate !== null, 'U této položky nejdřív nastav sazbu DPH v ceníku.');
+      const quantity = p.quantity === undefined ? 1 : p.quantity;
+      check(integer(quantity, 999) && quantity > 0, 'Vyber množství 1 až 999.');
       const line = o.lines.find(x => x.productId === pr.id && x.price === pr.price && x.vatRate === pr.vatRate && x.name === pr.name && x.serving === pr.serving);
-      if (line) { check(line.quantity < 999, 'Limit množství je 999.'); line.quantity++; }
-      else o.lines.push({ id: uid(), productId: pr.id, sourceCode: pr.sourceCode || '', stockProductId: pr.stockProductId, name: pr.name, serving: pr.serving, price: pr.price, vatRate: pr.vatRate, quantity: 1 });
+      check(!line || line.quantity + quantity <= 999, 'Limit množství je 999.');
+      check(sum(o.lines) + pr.price * quantity <= 100000000, 'Překročen limit účtu.');
+      if (line) line.quantity += quantity;
+      else o.lines.push({ id: uid(), productId: pr.id, sourceCode: pr.sourceCode || '', stockProductId: pr.stockProductId, name: pr.name, serving: pr.serving, price: pr.price, vatRate: pr.vatRate, quantity });
       check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
     } else if (type === 'removeLine') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.'); check(clean(p.reason), 'Doplň důvod opravy.');
@@ -202,3 +206,4 @@
   const api = { initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines };
   if (typeof module !== 'undefined') module.exports = api; else root.POSCore = api;
 })(globalThis);
+

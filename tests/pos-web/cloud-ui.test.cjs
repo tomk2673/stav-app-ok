@@ -14,7 +14,7 @@ async function harness(){
   const w=dom.window,venue={id:crypto.randomUUID(),organization_id:crypto.randomUUID(),name:'Test venue',currency:'CZK',role:'owner'},user={id:crypto.randomUUID(),email:'owner@example.test'};
   let server=C.initial();server.venueId=venue.id;server.recipes={};
   const requests=new Map(),calls=[];let dropNext=false;
-  w.structuredClone=structuredClone;w.TextEncoder=TextEncoder;w.AbortController=AbortController;
+  w.structuredClone=structuredClone;w.TextEncoder=TextEncoder;
   w.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
   w.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');this.dispatchEvent(new w.Event('close'));};
   w.HTMLElement.prototype.scrollIntoView=function(){};w.print=()=>{};
@@ -56,7 +56,8 @@ test('online UI survives a lost response without adding an item twice and comple
    await until(()=>h.w.document.querySelector('[name="received"]'),'payment dialog');
    assert.ok(h.server.orders[0].paymentLock,'reserved before terminal/cash prompt');
    h.submit();await until(()=>h.server.receipts.length===1&&!h.server.orders[0].lines.length,'paid');
-   await until(()=>h.w.document.querySelector('#dialog-title').textContent==='Zaplaceno','receipt acknowledgement');
+   assert.equal(h.w.document.querySelector('#dialog').open,false);
+   assert.match(h.w.document.querySelector('#toast').textContent,/Zaplaceno/);
    assert.equal(h.server.orders[0].paymentLock,undefined);
    assert.match(h.w.document.querySelector('#save-state').textContent,/Potvrzeno/);
   }finally{h.dom.window.close();}
@@ -158,5 +159,87 @@ test('fast register keeps product grid node stable while adding and correcting a
   h.click('[data-action="minus"]');await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent==='1×','line corrected');
   assert.equal(h.w.document.querySelector('#dialog').open,false);
   assert.equal(h.w.document.querySelector('#products'),grid);
+ }finally{h.dom.window.close();}
+});
+
+
+async function startShift(h){
+ h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();
+ await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
+}
+test('search selects the real table number or a customer without accents and marks five pieces in one request',{concurrency:false},async()=>{
+ const h=await harness();try{
+  await startShift(h);
+  for(const name of ['Stůl 12','Stůl 2','Žaneta'])h.external('newOrder',{name});
+  await h.w.POSCloud.refresh();await until(()=>h.w.document.querySelector('#account-search'),'search ready');
+  const search=h.w.document.querySelector('#account-search');
+  search.value='12';search.dispatchEvent(new h.w.Event('input'));
+  const table=h.w.document.querySelector('#account-results [data-action="account"]');assert.equal(table.querySelector('strong').textContent,'Stůl 12');table.click();
+  assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Stůl 12');
+  search.value='zaneta';search.dispatchEvent(new h.w.Event('input'));
+  const customer=h.w.document.querySelector('#account-results [data-action="account"]');assert.equal(customer.querySelector('strong').textContent,'Žaneta');customer.click();
+  h.click('[data-action="entryCount"][data-id="5"]');h.click('.product[data-action="add"]');
+  await until(()=>h.server.orders.find(o=>o.name==='Žaneta').lines[0]?.quantity===5,'five pieces marked');
+  assert.equal(h.calls.filter(c=>c.type==='addLine').length,1);
+  assert.equal(h.calls.find(c=>c.type==='addLine').payload.quantity,5);
+  assert.equal(h.w.document.querySelector('#entry-quantity').textContent,'1×');
+  assert.equal(h.server.orders.find(o=>o.name==='Stůl 12').lines.length,0);
+ }finally{h.dom.window.close();}
+});
+test('calculator accepts multi-digit counts and single-tap corrections close automatically',{concurrency:false},async()=>{
+ const h=await harness();try{
+  await startShift(h);h.click('[data-action="entryQuantity"]');h.click('[data-qty-more]');
+  h.click('[data-qty-digit="1"]');h.click('[data-qty-digit="2"]');h.click('[data-qty-confirm]');
+  assert.equal(h.w.document.querySelector('#dialog').open,false);assert.equal(h.w.document.querySelector('#entry-quantity').textContent,'12×');
+  h.click('.product[data-action="add"]');await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent==='12×','12 pieces marked');
+  h.click('[data-action="quantityPad"]');h.click('[data-qty="3"]');
+  await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent==='3×','three pieces correction');
+  assert.equal(h.w.document.querySelector('#dialog').open,false);
+  assert.equal(h.calls.filter(c=>c.type==='setLineQuantity').length,1);
+  h.click('[data-action="entryQuantity"]');h.click('[data-qty="4"]');h.click('.product[data-action="add"]');
+  await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent==='7×','second quantity picker has no stale listener');
+ }finally{h.dom.window.close();}
+});
+test('split bill selects item then pieces, returns to other items, leaves the remainder and needs no receipt dismissal',{concurrency:false},async()=>{
+ const h=await harness();try{
+  await startShift(h);
+  const products=[...h.w.document.querySelectorAll('.product[data-action="add"]')];
+  h.click('[data-action="entryCount"][data-id="5"]');products[0].click();await until(()=>h.server.orders[0].lines[0]?.quantity===5,'first product');
+  h.click('[data-action="entryCount"][data-id="3"]');products[1].click();await until(()=>h.server.orders[0].lines.length===2,'second product');
+  const original=structuredClone(h.server.orders[0].lines);
+  h.click('[data-action="paySplit"]');await until(()=>h.w.document.querySelector('.payment-item'),'split opened');
+  assert.equal(h.w.document.querySelector('#dialog-submit').disabled,true);
+  h.click(`[data-payment-line="${original[0].id}"]`);h.click('[data-qty="2"]');
+  assert.equal(h.w.document.querySelector('#payment-items').hidden,false);assert.equal(h.w.document.querySelector('#payment-qty-editor').hidden,true);
+  h.click(`[data-payment-line="${original[1].id}"]`);h.click('[data-qty="1"]');
+  assert.equal(h.w.document.querySelector('#dialog-form').elements['line-'+original[0].id].value,'2');
+  assert.equal(h.w.document.querySelector('#dialog-form').elements['line-'+original[1].id].value,'1');
+  h.submit();await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'partial paid and returned to register');
+  assert.deepEqual(h.server.receipts[0].lines.map(l=>l.quantity),[2,1]);assert.deepEqual(h.server.orders[0].lines.map(l=>l.quantity),[3,2]);
+  assert.match(h.w.document.querySelector('#toast').textContent,/Zaplaceno/);
+  h.w.document.querySelector('[data-view="history"]').click();h.click('[data-action="receipt"]');assert.equal(h.w.document.querySelector('#dialog-title').textContent,'Zaplaceno');
+  assert.equal(h.w.document.querySelector('#dialog-submit').textContent,'Vytisknout doklad');
+ }finally{h.dom.window.close();}
+});
+test('partial card payment requires terminal confirmation and preserves the other pieces',{concurrency:false},async()=>{
+ const h=await harness();try{
+  await startShift(h);h.click('[data-action="entryCount"][data-id="4"]');h.click('.product[data-action="add"]');
+  await until(()=>h.server.orders[0].lines[0]?.quantity===4,'four pieces');
+  h.click('[data-action="paySplit"]');await until(()=>h.w.document.querySelector('.payment-item'),'split');
+  h.click('.payment-item');h.click('[data-qty="1"]');h.click('[data-payment-mode="card"]');
+  const confirm=h.w.document.querySelector('[name="cardConfirmed"]');assert.equal(confirm.required,true);
+  h.submit();await until(()=>/terminálu/.test(h.w.document.querySelector('#dialog-error').textContent),'unconfirmed terminal rejected');
+  assert.equal(h.server.receipts.length,0);confirm.checked=true;h.submit();
+  await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'card paid');
+  assert.equal(h.server.orders[0].lines[0].quantity,3);assert.equal(h.server.receipts[0].cash,0);assert.ok(h.server.receipts[0].card>0);
+ }finally{h.dom.window.close();}
+});
+test('a lost response to a five-piece entry recovers the same request without duplicating pieces',{concurrency:false},async()=>{
+ const h=await harness();try{
+  await startShift(h);h.click('[data-action="entryCount"][data-id="5"]');h.drop();h.click('.product[data-action="add"]');
+  await until(()=>h.w.POSCloud.pending&&!h.w.POSCloud.busy,'lost quantity response');assert.equal(h.server.orders[0].lines[0].quantity,5);
+  h.click('[data-action="retryPending"]');await until(()=>!h.w.POSCloud.pending&&h.w.document.querySelector('.quantity-tap')?.textContent==='5×','quantity recovered');
+  const calls=h.calls.filter(c=>c.type==='addLine');assert.equal(calls.length,2);assert.equal(calls[0].requestId,calls[1].requestId);
+  assert.equal(h.server.orders[0].lines[0].quantity,5);assert.equal(h.w.document.querySelector('#entry-quantity').textContent,'1×');
  }finally{h.dom.window.close();}
 });

@@ -1,6 +1,6 @@
 /* Shared online register; standalone HTML keeps the separate local emergency mode. */
 'use strict';
-const C = POSCore, Store = POSStore;
+const C = window.POSCore, Store = window.POSStore;
 const $ = s => document.querySelector(s);
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const E = escapeHTML;
@@ -392,13 +392,20 @@ window.addEventListener('focus',refresh);
 window.addEventListener('resize',resizePOSWorkspace);
 (async()=>{
   document.querySelectorAll('[data-cloud]').forEach(x=>x.hidden=!window.POSCloud);
-  try{state=await Store.open(refresh);C.validate(state);render();connection();
+  try{
+    window.POSRuntime?.assertReady();
+    if(window.POSBootError)throw window.POSBootError;
+    if(!C||!Store||(!document.documentElement.dataset.standalone&&!window.POSCloud))throw new Error('Sdílená pokladna se nenačetla. Obnov stránku a zkontroluj připojení.');
+    state=await Store.open(refresh);C.validate(state);render();connection();
     if(window.POSCloud?.meta.recoveredResult?.kind==='sale')finishPayment(POSCloud.meta.recoveredResult);
     else if(window.POSCloud?.meta.recoveredResult?.kind)receiptDialog(POSCloud.meta.recoveredResult);
     else if(window.POSCloud?.meta.recoveredResult?.type==='mergeOrders')finishMerge(POSCloud.meta.recoveredResult);
     else if(window.POSCloud?.meta.recoveryMessage)toast(POSCloud.meta.recoveryMessage,true);
     if(document.documentElement.dataset.standalone){$('#offline-status').textContent='Samostatná offline verze · data tohoto prohlížeče';}
     else if('serviceWorker' in navigator){try{await navigator.serviceWorker.register('./sw.js');await navigator.serviceWorker.ready;$('#offline-status').textContent=window.POSCloud?'Sdílené účty · PUB GURU · připojení je nutné':'Připraveno i bez internetu · jedno zařízení';}catch{$('#offline-status').textContent=window.POSCloud?'Sdílené účty · PUB GURU':'Offline spuštění není připravené · data zůstávají místní';}}
-  }catch(e){$('#app').innerHTML=`<div class="panel"><h1>Pokladnu nelze otevřít</h1><p class="error">${E(e.message)}</p><p class="section-gap">Nic nemaž. Zkus běžné okno Chrome / Edge, nebo obnov stránku. Pokud máš zálohu, můžeš ji obnovit v novém profilu prohlížeče.</p></div>`;$('#save-state').textContent='Úložiště není dostupné';}
+  }catch(e){
+    if(window.POSRuntime)window.POSRuntime.fail(e.message);
+    else{$('#app').innerHTML=`<div class="panel"><h1>Pokladnu nelze otevřít</h1><p class="error">${E(e.message)}</p><p class="section-gap">Nic nemaž. Obnov stránku nebo použij aktuální Firefox ESR 115 na Windows 7.</p></div>`;$('#save-state').textContent='Pokladna není připravená';}
+  }
 })();
 

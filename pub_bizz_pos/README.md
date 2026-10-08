@@ -46,6 +46,8 @@ Při změně doménového kódu spustit z kořene `python3 pub_bizz_pos/sync-edg
 
 ## Ověření
 
+Kompatibilita Windows 7, konkrétní opravy, testy skutečných enginů a zbývající omezení jsou v [WINDOWS7.md](WINDOWS7.md). Doporučená varianta pro Windows 7 je aktuální Firefox ESR 115 přes HTTPS, s povoleným úložištěm. Testy Linux enginů nejsou potvrzením provozu na skutečném Win7 PC.
+
 ```sh
 node --test tests/pub-bizz-pos.test.js tests/pub-bizz-server.test.js tests/pub-bizz-merge.test.js
 npm ci --prefix tests/pos-web

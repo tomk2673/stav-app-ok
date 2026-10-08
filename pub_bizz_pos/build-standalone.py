@@ -9,6 +9,8 @@ html = html.replace('<link rel="manifest" href="./manifest.webmanifest">', '')
 html = html.replace('href="./icon.svg"', 'href="data:image/svg+xml;base64,' + base64.b64encode((root / 'icon.svg').read_bytes()).decode() + '"')
 html = html.replace('<link rel="stylesheet" href="./style.css">', '<style>' + (root / 'style.css').read_text() + '</style>')
 html = html.replace('href="./" aria-label="PUB-BIZZ pokladna"', 'href="#" aria-label="PUB-BIZZ pokladna"')
+# The compatibility guard must also work when this file is opened on its own.
+html = html.replace('<script src="./compat.js"></script>', '<script>' + (root / 'compat.js').read_text().replace('</script', '<\\/script') + '</script>')
 for online in ('vendor/supabase-2.117.2.js', 'config.js', 'cloud.js'):
     html = html.replace('<script src="./' + online + '" defer></script>', '')
 scripts = []

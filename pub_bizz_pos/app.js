@@ -8,8 +8,9 @@ const fmt = n => new Intl.NumberFormat('cs-CZ', { style:'currency', currency:'CZ
 const inputMoney = n => String(n / 100).replace('.', ',');
 const date = d => new Date(d).toLocaleString('cs-CZ', {timeZone:'Europe/Prague', day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
 const colors = {'Pivo':'#f1c986','Destiláty':'#b1bcf3','Nealko':'#8acbb6','Víno':'#dbabd6','Koktejly':'#efaa91','Likéry':'#b6c49f','Rumy':'#daba8b','Whisky':'#e2b46a','Brandy':'#e3aa9e','Teplé nápoje':'#c6ba91','Snacks':'#98b8df'};
-let state, view = 'pos', current = 'bar', category = 'Pivo', query = '', toastTimer, submitting = false;
+let state, view = 'pos', current = 'bar', category = 'Vše', query = '', toastTimer, submitting = false;
 let accountQuery = '', accountSearchOpen = false, entryQuantity = 1;
+let salesHistory, salesCounts;
 const normalizeSearch = value => String(value).toLocaleLowerCase('cs').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 const getOrder = () => state.orders.find(x => x.id === current) || state.orders[0];
 const btn = (label, action, cls = 'secondary', attrs = '') => `<button type="button" class="${cls}" data-action="${action}" ${attrs}>${label}</button>`;
@@ -197,9 +198,24 @@ function quantityPad(lineId) {
     $('#dialog').close();try{await command('setLineQuantity',{orderId:o.id,lineId:l.id,quantity},true);}catch(err){toast(err.message||'Množství se nepodařilo změnit.',true);}
   });
 }
+function productSalesCounts() {
+  // Receipts come from the shared confirmed state; never count taps or unpaid orders.
+  // Cache per immutable receipt array so typing in search does not rescan history.
+  if (salesHistory === state.receipts) return salesCounts;
+  const refunded = new Set(state.receipts.filter(r => r.kind === 'refund').map(r => r.refundOf));
+  const counts = new Map();
+  for (const receipt of state.receipts) {
+    if (receipt.kind !== 'sale' || refunded.has(receipt.id)) continue;
+    for (const line of receipt.lines) counts.set(line.productId, (counts.get(line.productId) || 0) + line.quantity);
+  }
+  salesHistory = state.receipts; salesCounts = counts;
+  return counts;
+}
 function renderProducts() {
   const norm = normalizeSearch;
-  const products = state.products.filter(p => p.active && (query || category === 'Vše' || p.category === category) && norm(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(norm(query)));
+  const counts = productSalesCounts();
+  const products = state.products.filter(p => p.active && (query || category === 'Vše' || p.category === category) && norm(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(norm(query)))
+    .sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0));
   $('#products').innerHTML = products.map(p => `<button class="product" style="--category:${colors[p.category] || '#a5c99a'}" data-action="add" data-id="${E(p.id)}"><span class="product-cat">${E(p.category)}${p.sourceCode ? ` · #${E(p.sourceCode)}` : ''}</span><span class="product-name">${E(p.name)}</span>${p.serving ? `<span class="product-serving">${E(p.serving)}</span>` : ''}<span class="product-price ${p.price === null ? 'unset' : ''}">${p.price === null ? (p.priceNote ? E(p.priceNote) + ' · zadat cenu' : 'Doplnit cenu') : fmt(p.price)}</span><span class="product-plus">+</span></button>`).join('') + `<button class="product quick-product" data-action="newProduct"><span>+</span>Nová položka</button>`;
 }
 function renderHistory() {

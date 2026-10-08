@@ -46,6 +46,8 @@ Při změně doménového kódu spustit z kořene `python3 pub_bizz_pos/sync-edg
 
 ## Ověření
 
+Nabídka zboží začíná kategorií **Vše** a řadí aktivní položky sestupně podle celkového počtu zaplacených kusů v historii provozovny. Stejné řazení platí uvnitř kategorií i ve vyhledávání. Vratky a doklady vrácené na stůl se nepočítají; shodná četnost zachovává původní pořadí ceníku. Pořadí se obnoví po potvrzené platbě nebo načtení nového společného stavu. Samotné markování a opravy počtu tlačítka nepřesouvají. Nouzová místní kopie používá vlastní historii.
+
 Kompatibilita Windows 7, konkrétní opravy, testy skutečných enginů a zbývající omezení jsou v [WINDOWS7.md](WINDOWS7.md). Doporučená varianta pro Windows 7 je aktuální Firefox ESR 115 přes HTTPS, s povoleným úložištěm. Testy Linux enginů nejsou potvrzením provozu na skutečném Win7 PC.
 
 ```sh

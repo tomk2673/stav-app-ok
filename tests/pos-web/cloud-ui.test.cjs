@@ -8,11 +8,11 @@ const D=require('../../pub_bizz_pos/server-domain.js');
 const root=path.resolve(__dirname,'../../pub_bizz_pos');
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(predicate,label){for(let i=0;i<200;i++){if(predicate())return;await pause(10);}throw new Error('Timed out: '+label);}
-async function harness(){
+async function harness(seed=state=>state){
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const dom=new JSDOM(html,{url:'https://pos.test/pub_bizz_pos/index.html',runScripts:'outside-only',pretendToBeVisual:true});
   const w=dom.window,venue={id:crypto.randomUUID(),organization_id:crypto.randomUUID(),name:'Test venue',currency:'CZK',role:'owner'},user={id:crypto.randomUUID(),email:'owner@example.test'};
-  let server=C.initial();server.venueId=venue.id;server.recipes={};
+  let server=C.initial();server.venueId=venue.id;server.recipes={};server=seed(server);
   const requests=new Map(),calls=[];let dropNext=false;
   w.structuredClone=structuredClone;w.TextEncoder=TextEncoder;
   w.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
@@ -167,6 +167,63 @@ async function startShift(h){
  h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();
  await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
 }
+function sold(server,productId,quantity){
+ C.execute(server,'addLine',{orderId:'bar',productId,quantity});
+ const order=server.orders[0];
+ return C.execute(server,'checkout',{orderId:order.id,revision:order.revision,operationId:crypto.randomUUID(),selected:order.lines.map(l=>({id:l.id,quantity:l.quantity})),mode:'cash',received:C.sum(order.lines)});
+}
+const productIds=h=>[...h.w.document.querySelectorAll('.product[data-action="add"]')].map(p=>p.dataset.id);
+test('shared sales rank products by pieces across categories and search, excluding refunds and keeping ties stable',{concurrency:false},async()=>{
+ const ids={};
+ const h=await harness(server=>{
+  C.execute(server,'openShift',{opening:0,operator:'Test'});
+  for(const [key,name,category,price] of [
+   ['rare','Častý drahý','Test',100000],['popular','Častý oblíbený','Test',100],
+   ['tie','Častý stejný počet','Test',200],['global','Častý jiná kategorie','Jiná',100],
+   ['refund','Častý vrácený','Test',100],['restored','Častý zpět na stůl','Test',100],
+   ['archived','Častý archivovaný','Test',100]
+  ])ids[key]=C.execute(server,'product',{name,category,price,vatRate:21}).id;
+  sold(server,ids.rare,2);sold(server,ids.popular,5);sold(server,ids.tie,5);sold(server,ids.global,8);
+  sold(server,ids.archived,50);C.execute(server,'archiveProduct',{id:ids.archived});
+  const refunded=sold(server,ids.refund,30);C.execute(server,'refund',{receiptId:refunded.id,reason:'Test'});
+  const restored=sold(server,ids.restored,40);C.execute(server,'restoreReceipt',{receiptId:restored.id});
+  // The restored open items must not leak into the ranking of paid sales.
+  return server;
+ });
+ try{
+  assert.equal(h.w.document.querySelector('.category.active').dataset.id,'Vše');
+  assert.deepEqual(productIds(h).slice(0,4),[ids.global,ids.popular,ids.tie,ids.rare]);
+  assert.ok(!productIds(h).includes(ids.archived));
+  h.click('[data-action="category"][data-id="Test"]');
+  assert.deepEqual(productIds(h),[ids.popular,ids.tie,ids.rare,ids.refund,ids.restored]);
+  const input=h.w.document.querySelector('#search');input.value='casty';input.dispatchEvent(new h.w.Event('input',{bubbles:true}));
+  assert.deepEqual(productIds(h),[ids.global,ids.popular,ids.tie,ids.rare,ids.refund,ids.restored]);
+ }finally{h.dom.window.close();}
+});
+test('new paid quantities update ranking and a refund removes them; unpaid marking leaves button positions unchanged',{concurrency:false},async()=>{
+ const h=await harness();try{
+  await startShift(h);h.click('[data-action="category"][data-id="Pivo"]');
+  const original=productIds(h),id=original[1],firstButton=h.w.document.querySelector('.product[data-action="add"]');
+  h.click('[data-action="entryCount"][data-id="5"]');h.click('.product[data-id="'+id+'"]');
+  await until(()=>h.server.orders[0].lines[0]?.quantity===5,'five unpaid pieces');
+  assert.deepEqual(productIds(h),original);assert.equal(h.w.document.querySelector('.product[data-action="add"]'),firstButton);
+  h.click('[data-action="paySplit"]');await until(()=>h.w.document.querySelector('.payment-item'),'split dialog');
+  h.click('.payment-item');h.click('[data-qty="2"]');h.submit();
+  await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'two paid pieces');
+  assert.equal(h.server.orders[0].lines[0].quantity,3);assert.equal(productIds(h)[0],id);
+  await h.w.POSCloud.refresh();assert.equal(productIds(h)[0],id);
+  h.external('refund',{receiptId:h.server.receipts[0].id,reason:'Test'});await h.w.POSCloud.refresh();
+  await until(()=>productIds(h)[0]===original[0],'refund refreshes ranking');
+  assert.deepEqual(productIds(h),original);
+ }finally{h.dom.window.close();}
+});
+test('an unused catalog keeps its original order in all products and each category',{concurrency:false},async()=>{
+ const h=await harness();try{
+  assert.deepEqual(productIds(h),h.server.products.filter(p=>p.active).map(p=>p.id));
+  h.click('[data-action="category"][data-id="Pivo"]');
+  assert.deepEqual(productIds(h),h.server.products.filter(p=>p.active&&p.category==='Pivo').map(p=>p.id));
+ }finally{h.dom.window.close();}
+});
 test('search selects the real table number or a customer without accents and marks five pieces in one request',{concurrency:false},async()=>{
  const h=await harness();try{
   await startShift(h);

@@ -112,7 +112,10 @@ async function flow(browser,base,width){
     await page.locator('[data-action="entryQuantity"]').click();await page.locator('[data-qty-more]').click();
     for(const digit of ['1','2'])await page.locator('[data-qty-digit="'+digit+'"]').click();
     await page.locator('[data-qty-confirm]').click();assert.equal(await page.locator('#entry-quantity').textContent(),'12×');
-    await page.locator('.product[data-action="add"]').first().click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='12×');
+    const markedProduct=await page.locator('.product[data-action="add"]').nth(1).getAttribute('data-id');
+    const firstProduct=await page.locator('.product[data-action="add"]').first().getAttribute('data-id');
+    await page.locator('.product[data-id="'+markedProduct+'"]').click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='12×');
+    assert.equal(await page.locator('.product[data-action="add"]').first().getAttribute('data-id'),firstProduct,'unpaid marking keeps product positions');
     await page.locator('[data-action="quantityPad"]').click();await page.locator('[data-qty="5"]').click();
     await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='5×');
     await page.locator('[data-action="paySplit"]').click();await page.locator('.payment-item').first().click();await page.locator('[data-qty="2"]').click();
@@ -120,10 +123,12 @@ async function flow(browser,base,width){
     await page.locator('[data-payment-mode="card"]').click();await page.locator('#dialog-submit').click();assert.equal(f.state.receipts.length,0,'terminal confirmation required');
     await page.locator('[name="cardConfirmed"]').check();await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
     assert.equal(f.state.receipts[0].lines[0].quantity,2);assert.ok(f.state.receipts[0].card>0);
+    assert.equal(await page.locator('.product[data-action="add"]').first().getAttribute('data-id'),markedProduct,'confirmed paid pieces move the product to the top');
     const order=f.state.orders.find(o=>o.name==='Žaneta');assert.equal(order.lines[0].quantity,3);
     f.dropResponse();await page.locator('.product[data-action="add"]').first().click();await page.locator('[data-action="retryPending"]').waitFor();
     const pendingId=await page.evaluate(()=>POSCloud.pending.requestId);
     await page.reload();await until(page,()=>window.POSCloud&&!POSCloud.pending&&document.querySelector('.product'));
+    assert.equal(await page.locator('.product[data-action="add"]').first().getAttribute('data-id'),markedProduct,'sales ranking survives reload');
     assert.equal(f.state.orders.find(o=>o.name==='Žaneta').lines[0].quantity,4);
     assert.equal(f.calls.filter(c=>c.requestId===pendingId).length,2,'reload replays the same durable ID');
     await page.locator('#account-search').fill('zaneta');await page.locator('#account-results [data-action="account"]').first().click();
@@ -139,7 +144,7 @@ async function flow(browser,base,width){
     const local=await page.evaluate(async()=>{const s=await POSCloud.localBackup();return {orders:s.orders.length,receipts:s.receipts.length};});
     assert.equal(local.receipts,0);
     assert.deepEqual(errors,[]);
-    return {width,passed:true,steps:['password rejection','password login','401 refresh','session reload','open shift','table/customer search','12-piece keypad','quantity correction','partial card confirmation','return to marking','durable ID reload/replay','cash payment','IndexedDB backup','layout']};
+    return {width,passed:true,steps:['password rejection','password login','401 refresh','session reload','open shift','table/customer search','12-piece keypad','quantity correction','partial card confirmation','paid product ranking','stable unpaid buttons','ranking reload','return to marking','durable ID reload/replay','cash payment','IndexedDB backup','layout']};
   }finally{await context.close();}
 }
 async function failures(browser,base){

@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#121716"><meta name="description" content="PUB POS pokladna pro bar. Účty, placení a uzávěrka směny.">
   <title>PUB POS · Pokladna</title>
-  <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxOTIiIGhlaWdodD0iMTkyIiB2aWV3Qm94PSIwIDAgMTkyIDE5MiI+PHJlY3Qgd2lkdGg9IjE5MiIgaGVpZ2h0PSIxOTIiIHJ4PSI0NCIgZmlsbD0iI2Q0Zjc3ZCIvPjx0ZXh0IHg9IjQyIiB5PSIxMzYiIGZvbnQtZmFtaWx5PSJBcmlhbCxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyNCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IiMyMzMzMTMiPlA8L3RleHQ+PGNpcmNsZSBjeD0iMTQ0IiBjeT0iMTM0IiByPSIxMCIgZmlsbD0iIzIzMzMxMyIvPjwvc3ZnPgoK" type="image/svg+xml"><style>:root{color-scheme:dark;--bg:#101513;--surface:#191f1c;--raised:#222a26;--line:#303a34;--text:#f2f5ef;--muted:#a3afa5;--lime:#d4f77d;--lime-text:#233313;--danger:#ffa99b;--radius:14px;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:16px}
+  <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxOTIiIGhlaWdodD0iMTkyIiB2aWV3Qm94PSIwIDAgMTkyIDE5MiI+PHJlY3Qgd2lkdGg9IjE5MiIgaGVpZ2h0PSIxOTIiIHJ4PSI0NCIgZmlsbD0iI2Q0Zjc3ZCIvPjx0ZXh0IHg9IjQyIiB5PSIxMzYiIGZvbnQtZmFtaWx5PSJBcmlhbCxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyNCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IiMyMzMzMTMiPlA8L3RleHQ+PGNpcmNsZSBjeD0iMTQ0IiBjeT0iMTM0IiByPSIxMCIgZmlsbD0iIzIzMzMxMyIvPjwvc3ZnPgo=" type="image/svg+xml"><style>:root{color-scheme:dark;--bg:#101513;--surface:#191f1c;--raised:#222a26;--line:#303a34;--text:#f2f5ef;--muted:#a3afa5;--lime:#d4f77d;--lime-text:#233313;--danger:#ffa99b;--radius:14px;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:16px}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}button,input,select,textarea{font:inherit}button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}button{border:1px solid transparent;cursor:pointer;touch-action:manipulation}button:disabled{cursor:not-allowed;opacity:.38}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--lime);outline-offset:3px}button:hover:not(:disabled){filter:brightness(1.09)}button:active:not(:disabled){transform:translateY(1px)}a{color:inherit}h1,h2,h3,p{margin:0}h1{font-size:1.8rem;letter-spacing:-.05em}h2{font-size:1.35rem;letter-spacing:-.025em}h3{font-size:1.05rem}small,.small{font-size:.8125rem}.muted{color:var(--muted)}.topbar{height:88px;display:flex;align-items:center;justify-content:space-between;gap:28px;padding:0 28px;border-bottom:1px solid var(--line)}.brand{display:flex;align-items:center;gap:11px;min-width:190px;text-decoration:none;font-size:1.18rem;font-weight:850;letter-spacing:-.06em}.brandmark{display:flex;align-items:center;justify-content:center;width:44px;height:44px;background:var(--lime);border-radius:12px;color:var(--lime-text);font-size:1.9rem}.brandmark span{font-weight:600}.brand-light{font-weight:400;margin-left:3px}.brand small{display:block;letter-spacing:.21em;color:var(--muted);font-weight:550;font-size:.625rem;margin-top:4px}.topbar nav{display:flex;gap:4px}.topbar nav button{background:transparent;color:var(--muted);font-size:.9375rem;padding:13px 19px;border-radius:10px;font-weight:600}.topbar nav button.active{background:var(--raised);color:var(--text)}.top-right{display:flex;gap:12px;align-items:center}.network{font-size:.8125rem;color:var(--muted);white-space:nowrap}.network::before{content:'';width:6px;height:6px;background:var(--lime);border-radius:50%;display:inline-block;margin-right:7px}.network.offline::before{background:#ffce7f}.iconbutton{background:transparent;color:var(--muted);width:42px;height:42px;border:1px solid var(--line);border-radius:10px;font-size:1.5rem}.contextbar{display:flex;align-items:center;justify-content:space-between;padding:18px 28px;gap:12px;font-size:.8125rem;color:var(--muted)}.contextbar strong{font-size:.8rem;letter-spacing:.045em;color:#dce4d9}.context-divider{margin:0 13px;color:#506051}.save-state{font-size:.8125rem}.save-state.error{color:var(--danger)}main{padding:6px 28px 24px;min-height:calc(100dvh - 191px)}.pos-layout{display:grid;grid-template-columns:172px minmax(0,1fr) 355px;gap:22px;min-height:calc(100dvh - 205px);align-items:stretch}.accounts{padding:7px 0;display:flex;flex-direction:column;gap:9px}.eyebrow{font-size:.75rem;letter-spacing:.09em;font-weight:700;color:var(--muted);text-transform:uppercase}.section-label{display:flex;align-items:center;justify-content:space-between;margin:3px 0 15px}.badge{background:var(--raised);padding:3px 8px;font-size:.75rem;border-radius:6px;color:var(--muted)}.account{width:100%;text-align:left;display:flex;gap:12px;align-items:center;background:transparent;color:var(--text);border-radius:12px;padding:16px 11px;min-height:74px;border:1px solid var(--line)}.account.active{border-color:var(--lime);background:#242e1d}.account-number{font-size:1rem;color:var(--muted);flex-shrink:0;width:27px;text-align:center}.account.active .account-number{color:var(--lime)}.account-name{font-size:.875rem;font-weight:600;overflow-wrap:anywhere}.account-amount{display:block;font-size:.8125rem;color:var(--muted);margin-top:5px}.account.active .account-amount{color:var(--lime)}.add-account{background:transparent;border:1px dashed #475444;color:var(--muted);border-radius:12px;padding:15px 8px;margin-top:5px;min-height:52px}.sidebar-note{font-size:.8125rem;line-height:1.65;color:#879589;margin-top:auto;padding-top:32px}.sidebar-note strong{color:#c5d1bd;display:block}.catalog-area{display:flex;flex-direction:column;min-width:0}.workspace-heading{display:flex;justify-content:space-between;gap:16px;align-items:center;margin:0 0 22px}.workspace-heading p{margin-top:6px;font-size:.875rem;color:var(--muted)}.search{position:relative;margin-bottom:17px}.search input{width:100%;padding:15px 17px 15px 43px;background:var(--surface);border:1px solid var(--line);border-radius:12px;color:var(--text);min-height:52px}.search-icon{position:absolute;left:16px;top:15px;color:var(--muted)}.categories{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:20px}.category{background:var(--surface);color:var(--muted);padding:11px 14px;border:1px solid var(--line);border-radius:9px;font-size:.8125rem;font-weight:600;min-height:43px}.category.active{color:var(--lime-text);background:var(--lime);border-color:var(--lime)}.products{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;align-content:start}.product{position:relative;min-height:132px;text-align:left;padding:18px 15px 14px;background:var(--surface);border:1px solid var(--line);border-radius:13px;color:var(--text);display:flex;flex-direction:column;overflow:hidden}.product::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--category,#a0b2f7)}.product-cat{font-size:.625rem;letter-spacing:.1em;text-transform:uppercase;color:var(--category,#a0b2f7);margin-bottom:13px;font-weight:700}.product-name{font-size:.9375rem;font-weight:650;line-height:1.3;overflow-wrap:anywhere}.product-serving{font-size:.8125rem;color:var(--muted);margin-top:5px}.product-price{font-size:1.08rem;margin-top:auto;padding-top:15px;font-weight:750}.product-price.unset{color:var(--muted);font-size:.8125rem;font-weight:500}.product-plus{position:absolute;right:12px;bottom:12px;font-size:1.3rem;color:var(--category,#a0b2f7)}.quick-product{border-style:dashed;background:transparent;justify-content:center;align-items:center;text-align:center;color:var(--muted)}.quick-product::before{display:none}.quick-product span{font-size:1.6rem;margin-bottom:10px}.notice{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:13px 16px;background:#272a1b;border:1px solid #424b2d;border-radius:11px;font-size:.8125rem;line-height:1.5;color:#d8e1b9;margin-bottom:18px}.notice .textbutton{white-space:nowrap}.textbutton{background:transparent;color:var(--lime);font-size:.875rem;padding:6px;text-decoration:underline;text-underline-offset:4px}.receipt{display:flex;flex-direction:column;background:#f4f6ef;color:#20291f;border-radius:17px;overflow:hidden;min-height:590px}.receipt-head{padding:22px 22px 18px;border-bottom:1px dashed #cdd5c8;display:flex;align-items:center;justify-content:space-between;gap:12px}.receipt-head h2{font-size:1.15rem}.receipt-head p{font-size:.75rem;color:#6a7768;margin-top:5px}.receipt-number{border:1px solid #d3dccb;border-radius:8px;padding:6px 9px;color:#67715f;font-size:.8125rem}.receipt-items{padding:7px 21px;flex:1;min-height:160px}.receipt-empty{height:100%;min-height:230px;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;gap:15px;color:#83907d}.receipt-empty span{font-size:2.5rem;font-weight:300}.receipt-empty p{max-width:200px;font-size:.875rem;line-height:1.6}.line{padding:16px 0;border-bottom:1px solid #e0e5dc}.line-top{display:flex;justify-content:space-between;gap:15px;font-size:.9rem;font-weight:650;line-height:1.4}.line-top span{overflow-wrap:anywhere}.line-bottom{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-top:10px;gap:12px;font-size:.8125rem;color:#73806b}.quantity{display:flex;flex-shrink:0;gap:12px;align-items:center;margin-left:auto;font-size:1rem;font-weight:650;color:#263222}.quantity>span{min-width:24px;text-align:center;font-variant-numeric:tabular-nums}.quantity button{display:grid;place-items:center;flex-shrink:0;width:56px;height:56px;min-width:56px;min-height:56px;padding:0;background:#e6ebdf;border:1px solid #d4ddce;border-radius:10px;color:#354c2d;font-size:1.75rem;font-weight:650;line-height:1}.receipt-bottom{padding:18px 21px 21px;background:#edf1e5;border-top:1px dashed #cdd5c8}.receipt-meta{display:flex;justify-content:space-between;font-size:.8125rem;color:#6b7862;margin-bottom:16px}.receipt-total{display:flex;justify-content:space-between;align-items:baseline;font-weight:550;font-size:1rem;margin-bottom:20px}.receipt-total strong{font-size:2rem;letter-spacing:-.055em}.payment-buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px}.payment-buttons button{border-radius:10px;min-height:62px;font-weight:700;font-size:.9375rem}.paycash{background:#263820;color:#f2f6eb}.paycard{background:#d2ed99;color:#24331b}.splitbutton{width:100%;background:transparent;color:#526446;padding:14px 4px 0;font-size:.8125rem}.shift-start{background:var(--lime);color:var(--lime-text);font-weight:700;border-radius:11px;padding:14px 18px;min-height:50px}.primary,.secondary,.danger-button{padding:13px 20px;border-radius:10px;min-height:48px;font-weight:650}.primary{background:var(--lime);color:var(--lime-text)}.secondary{background:var(--raised);color:var(--text);border:1px solid var(--line)}.danger-button{background:#422923;color:#ffc1b3;border:1px solid #613a30}.footer{padding:0 28px 18px;display:flex;align-items:center;justify-content:space-between;gap:15px;color:#849184;font-size:.75rem}.footer b{font-weight:450;color:#536653;margin-left:8px}.footer button{background:transparent;color:#acb99e;font-size:.75rem;padding:5px}.page{max-width:1140px;margin:8px auto 30px}.page .workspace-heading{margin-bottom:26px}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin-bottom:24px}.stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px}.stat .eyebrow{font-size:.7rem}.stat strong{display:block;font-size:1.9rem;margin-top:14px;letter-spacing:-.04em}.stat.lime{background:var(--lime);color:var(--lime-text)}.stat.lime .eyebrow{color:#4c652e}.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:24px;margin-bottom:20px}.panel h3{margin-bottom:18px}.panel p{line-height:1.65;color:var(--muted);font-size:.875rem}.actions{display:flex;gap:10px;flex-wrap:wrap}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px}table{width:100%;border-collapse:collapse;text-align:left;font-size:.875rem}th{background:var(--raised);padding:13px 16px;color:var(--muted);font-weight:550;white-space:nowrap}td{border-top:1px solid var(--line);padding:14px 16px}td button{white-space:nowrap}.amount{text-align:right;font-variant-numeric:tabular-nums}.table-actions{display:flex;gap:9px;justify-content:flex-end}.empty{padding:42px;text-align:center;color:var(--muted);font-size:.9375rem;line-height:1.7}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:17px}.field{display:flex;flex-direction:column;gap:8px;font-size:.875rem;color:#c8d2c2}.field.full{grid-column:1/-1}.field input,.field select,.field textarea{width:100%;background:#111812;border:1px solid #40503c;color:var(--text);border-radius:9px;padding:12px;min-height:48px}.field textarea{min-height:110px;resize:vertical}.field small{font-size:.75rem;color:var(--muted);line-height:1.5}.form-actions{margin-top:22px;display:flex;gap:12px;flex-wrap:wrap}.inline-check{display:flex;gap:10px;align-items:center;font-size:.875rem;line-height:1.5;padding:14px 0}.inline-check input{width:21px;height:21px;accent-color:#d4f77d;flex-shrink:0}.section-gap{margin-top:24px}.help{font-size:.875rem;color:var(--muted);line-height:1.65;margin:0 0 20px}.payment-summary{background:var(--raised);padding:20px;border-radius:12px;margin:18px 0;font-size:.875rem}.summary-row{display:flex;justify-content:space-between;gap:10px;margin:8px 0}.summary-row.total{font-size:1.35rem;font-weight:700;padding-bottom:10px}.selected-line{display:grid;grid-template-columns:minmax(0,1fr) 78px;gap:18px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line);font-size:.875rem}.selected-line input{width:78px;padding:10px;background:#111812;border:1px solid #40503c;color:var(--text);border-radius:8px}.selected-line small{color:var(--muted);display:block;margin-top:4px}.receipt-preview{font-family:ui-monospace,monospace;background:#f7f9f2;color:#182418;padding:22px;border-radius:10px;font-size:.875rem;line-height:1.55}.receipt-preview header{text-align:center}.receipt-preview h3{margin-bottom:4px}.receipt-preview hr{border:0;border-top:1px dashed #9bad94;margin:16px 0}.receipt-preview .muted{color:#586e4e}.receipt-preview table{font:inherit}.receipt-preview td{border:0;padding:6px 0;font-size:.8125rem}.receipt-preview .summary-row{margin:5px 0}.receipt-preview .footnote{font-size:.75rem;margin-top:18px;text-align:center}.tag{font-size:.75rem;border-radius:5px;padding:4px 8px;background:#293923;color:#c6e4b8}.tag.orange{color:#f0d5a9;background:#3f3326}.error{color:var(--danger);font-size:.875rem;line-height:1.5;margin-top:12px}.error:empty{display:none}dialog{border:1px solid #475340;border-radius:20px;background:#191f1b;color:var(--text);padding:27px;width:min(560px,calc(100% - 28px));max-height:90dvh;box-shadow:0 25px 120px #0008}dialog::backdrop{background:#050906cc;backdrop-filter:blur(4px)}.dialog-head{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-bottom:22px}.dialog-head h2{font-size:1.4rem}.dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.toast{position:fixed;bottom:25px;left:50%;transform:translate(-50%,20px);padding:15px 22px;background:var(--lime);color:var(--lime-text);border-radius:12px;box-shadow:0 9px 40px #0005;font-size:.9rem;opacity:0;pointer-events:none;transition:.15s;z-index:20;max-width:90vw;text-align:center}.toast.visible{opacity:1;transform:translate(-50%,0)}.toast.bad{background:#fac2b4;color:#4e2116}.loading{padding:70px;text-align:center;color:var(--muted)}#print-area{display:none}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
 @media(min-width:1500px){.pos-layout{grid-template-columns:200px minmax(0,1fr) 400px;gap:30px}.products{grid-template-columns:repeat(4,minmax(0,1fr))}.product{min-height:158px}.product-name{font-size:1.05rem}.topbar,.contextbar{padding-left:36px;padding-right:36px}main{padding-left:36px;padding-right:36px}}
 @media(max-width:1150px){.pos-layout{grid-template-columns:140px minmax(0,1fr) 310px;gap:15px}.products{grid-template-columns:repeat(2,minmax(0,1fr))}.topbar{gap:12px;padding:0 20px}.topbar nav button{padding:12px}.top-right .network{display:none}main{padding:6px 20px 24px}.contextbar{padding:16px 20px}.brand{min-width:170px}.receipt-total strong{font-size:1.8rem}}
@@ -223,7 +223,74 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
   .accounts{max-height:var(--pos-height,calc(100dvh - 185px))}
 }
 </style>
-  <script src="./compat.js"></script>
+  <script>(function(root){'use strict';
+if(!root.globalThis) root.globalThis=root;
+if(!root.structuredClone) root.structuredClone=function(value){return JSON.parse(JSON.stringify(value));};
+if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
+ root.crypto.randomUUID=function(){var b=new Uint8Array(16);root.crypto.getRandomValues(b);b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;var h=[];for(var i=0;i<16;i++)h.push((b[i]+256).toString(16).slice(1));return h.slice(0,4).join('')+'-'+h.slice(4,6).join('')+'-'+h.slice(6,8).join('')+'-'+h.slice(8,10).join('')+'-'+h.slice(10).join('');};
+}
+})(typeof globalThis!=='undefined'?globalThis:window);
+
+// Keep this guard in ES5 so even a browser that cannot parse app.js gets a remedy.
+(function(root){'use strict';
+  var failure='';
+  function fail(message){
+    failure=message;
+    var app=document.getElementById('app');
+    if(!app)return;
+    var panel=document.createElement('section'),title=document.createElement('h1'),detail=document.createElement('p'),help=document.createElement('p');
+    panel.className='panel login-panel';title.textContent='Pokladnu nelze otevřít';
+    detail.className='error section-gap';detail.textContent=message;
+    help.className='section-gap';help.textContent='Na Windows 7 použij aktuální Firefox ESR 115 v běžném okně. Nic nemaž; pokud chyba přetrvá, obnov stránku a zkontroluj připojení.';
+    panel.appendChild(title);panel.appendChild(detail);panel.appendChild(help);
+    app.textContent='';app.appendChild(panel);
+    var status=document.getElementById('save-state'),network=document.getElementById('network');
+    if(status){status.textContent='Pokladna není připravená';status.className='save-state error';}
+    if(network){network.textContent='Pokladna není připravená';network.className='network offline';}
+  }
+  function assertReady(){
+    if(failure)throw new Error(failure);
+    var standalone=document.documentElement.getAttribute('data-standalone')==='true';
+    var dialog=root.HTMLDialogElement&&root.HTMLDialogElement.prototype;
+    if(!root.Promise||!root.Map||!root.Set||!root.FormData||!root.URL||!root.URLSearchParams||
+       !root.AbortController||!root.TextEncoder||!root.Intl||!root.Intl.NumberFormat||
+       !Object.fromEntries||!Array.prototype.find||!Array.prototype.includes||
+       !String.prototype.normalize||!String.prototype.replaceAll||!dialog||!dialog.showModal||!dialog.close||
+       (!standalone&&(!root.fetch||!root.WebSocket))){
+      throw new Error('Prohlížeč je příliš starý nebo mu chybí funkce potřebné pro pokladnu.');
+    }
+    if(!standalone&&root.location.protocol!=='https:'&&
+       !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(root.location.hostname)){
+      throw new Error('Sdílenou pokladnu otevři přes zabezpečenou adresu https://.');
+    }
+    if(!root.crypto||!root.crypto.getRandomValues||!root.crypto.randomUUID||!root.crypto.subtle){
+      throw new Error('Není dostupné zabezpečené generování ID a ověřování záloh. Zkontroluj https:// a prohlížeč.');
+    }
+    if(!standalone){
+      // Supabase may fall back to memory, but the POS must retain unacknowledged IDs.
+      var probe='pub-bizz-storage-check:'+root.crypto.randomUUID();
+      try{
+        var storage=root.localStorage;
+        storage.setItem(probe,probe);
+        if(storage.getItem(probe)!==probe)throw new Error('Storage did not retain the probe');
+        storage.removeItem(probe);
+      }catch(e){
+        throw new Error('Prohlížeč nemůže uložit přihlášení a nepotvrzené operace. Povol data webu a použij běžné okno s volným místem.');
+      }
+    }
+  }
+  root.POSRuntime={assertReady:assertReady,fail:fail,getError:function(){return failure;}};
+  root.addEventListener('error',function(event){
+    var target=event.target;
+    if(target&&target.tagName==='SCRIPT'&&target.src){
+      fail('Nepodařilo se načíst všechny součásti pokladny. Obnov stránku a zkontroluj připojení.');
+    }
+  },true);
+  document.addEventListener('DOMContentLoaded',function(){
+    try{assertReady();}catch(e){fail(e.message);}
+  });
+})(window);
+</script>
 </head>
 <body>
   <header class="topbar">
@@ -2742,7 +2809,6 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
   ]
 }; if(typeof module!=="undefined") module.exports=catalog; else root.POSCatalog=catalog; })(globalThis);
 
-
 /* PUB-BIZZ POS — money is stored in integer haléře; state changes commit atomically. */
 (function (root) {
   'use strict';
@@ -3000,7 +3066,6 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
   root.POSStore = { open, read, restore, command: (type, payload) => update(s => POSCore.execute(s, type, payload)) };
 })(globalThis);
 
-
 (function(root){
   'use strict';
   const E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -3030,10 +3095,9 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
   root.POSStockUI={render,bind,edit};
 })(globalThis);
 
-
 /* Shared online register; standalone HTML keeps the separate local emergency mode. */
 'use strict';
-const C = POSCore, Store = POSStore;
+const C = window.POSCore, Store = window.POSStore;
 const $ = s => document.querySelector(s);
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const E = escapeHTML;
@@ -3425,16 +3489,22 @@ window.addEventListener('focus',refresh);
 window.addEventListener('resize',resizePOSWorkspace);
 (async()=>{
   document.querySelectorAll('[data-cloud]').forEach(x=>x.hidden=!window.POSCloud);
-  try{state=await Store.open(refresh);C.validate(state);render();connection();
+  try{
+    window.POSRuntime?.assertReady();
+    if(window.POSBootError)throw window.POSBootError;
+    if(!C||!Store||(!document.documentElement.dataset.standalone&&!window.POSCloud))throw new Error('Sdílená pokladna se nenačetla. Obnov stránku a zkontroluj připojení.');
+    state=await Store.open(refresh);C.validate(state);render();connection();
     if(window.POSCloud?.meta.recoveredResult?.kind==='sale')finishPayment(POSCloud.meta.recoveredResult);
     else if(window.POSCloud?.meta.recoveredResult?.kind)receiptDialog(POSCloud.meta.recoveredResult);
     else if(window.POSCloud?.meta.recoveredResult?.type==='mergeOrders')finishMerge(POSCloud.meta.recoveredResult);
     else if(window.POSCloud?.meta.recoveryMessage)toast(POSCloud.meta.recoveryMessage,true);
     if(document.documentElement.dataset.standalone){$('#offline-status').textContent='Samostatná offline verze · data tohoto prohlížeče';}
     else if('serviceWorker' in navigator){try{await navigator.serviceWorker.register('./sw.js');await navigator.serviceWorker.ready;$('#offline-status').textContent=window.POSCloud?'Sdílené účty · PUB GURU · připojení je nutné':'Připraveno i bez internetu · jedno zařízení';}catch{$('#offline-status').textContent=window.POSCloud?'Sdílené účty · PUB GURU':'Offline spuštění není připravené · data zůstávají místní';}}
-  }catch(e){$('#app').innerHTML=`<div class="panel"><h1>Pokladnu nelze otevřít</h1><p class="error">${E(e.message)}</p><p class="section-gap">Nic nemaž. Zkus běžné okno Chrome / Edge, nebo obnov stránku. Pokud máš zálohu, můžeš ji obnovit v novém profilu prohlížeče.</p></div>`;$('#save-state').textContent='Úložiště není dostupné';}
+  }catch(e){
+    if(window.POSRuntime)window.POSRuntime.fail(e.message);
+    else{$('#app').innerHTML=`<div class="panel"><h1>Pokladnu nelze otevřít</h1><p class="error">${E(e.message)}</p><p class="section-gap">Nic nemaž. Obnov stránku nebo použij aktuální Firefox ESR 115 na Windows 7.</p></div>`;$('#save-state').textContent='Pokladna není připravená';}
+  }
 })();
 
 </script></body>
 </html>
-

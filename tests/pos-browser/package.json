@@ -1,0 +1,13 @@
+{
+  "name": "pub-pos-browser-compatibility",
+  "private": true,
+  "scripts": {
+    "test": "node compat-flow.cjs",
+    "install-browsers": "node node_modules/pw109/cli.js install chromium && node node_modules/pw115/cli.js install firefox && node node_modules/pwmodern/cli.js install chromium webkit"
+  },
+  "devDependencies": {
+    "pw109": "npm:playwright-core@1.29.2",
+    "pw115": "npm:playwright-core@1.36.2",
+    "pwmodern": "npm:playwright-core@1.51.1"
+  }
+}

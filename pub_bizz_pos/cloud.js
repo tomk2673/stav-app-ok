@@ -2,7 +2,15 @@
   'use strict';
   if(document.documentElement.dataset.standalone) return;
   const local = root.POSStore, cfg=root.POS_CONFIG;
-  const client=root.supabase.createClient(cfg.url,cfg.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
+  let client;
+  try {
+    root.POSRuntime?.assertReady();
+    if(!local||!root.POSCore||!cfg?.url||!cfg?.publishableKey||!root.supabase?.createClient) throw new Error('Nepodařilo se načíst sdílenou pokladnu. Obnov stránku a zkontroluj připojení.');
+    client=root.supabase.createClient(cfg.url,cfg.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
+  } catch(e) {
+    // Never let an online page silently use the separate local emergency register.
+    root.POSBootError=e;root.POSRuntime?.fail(e.message);return;
+  }
   let user,venue,cache,meta={stock:[],issues:[],issueCount:0},onChange,opened,resolveOpen,lastConfirmed=0,poll,busy=false,queue=Promise.resolve();
   const endpoint=cfg.url+'/functions/v1/pub-bizz-pos';
   const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

@@ -3,13 +3,18 @@
 (function () {
   const pending = new Map();
   let seq = 0;
+  let browserRecognize = null;
 
   function nativeHandler() {
     return window.webkit?.messageHandlers?.pubGuruVision || null;
   }
 
   function available() {
-    return !!nativeHandler();
+    return typeof nativeHandler()?.postMessage === 'function';
+  }
+
+  function report(logger, message) {
+    try { if (typeof logger === 'function') logger(message); } catch (_) { /* UI progress must not break OCR. */ }
   }
 
   function callNative(canvas, logger) {
@@ -24,8 +29,14 @@
         resolve: payload => {
           clearTimeout(timer);
           pending.delete(requestId);
-          logger?.({ status: 'Apple Vision OCR dokončeno', progress: 1 });
-          resolve({ data: { text: payload.text || '', confidence: payload.confidence || 0, native: true } });
+          if (typeof payload.text !== 'string' || !payload.text.trim()) {
+            reject(new Error('Apple Vision nevrátilo žádný čitelný text.'));
+            return;
+          }
+          report(logger, { status: 'Apple Vision OCR dokončeno', progress: 1 });
+          const confidence = Number(payload.confidence);
+          resolve({ data: { text: payload.text, confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) * 100 : 0,
+            lines: Array.isArray(payload.lines) ? payload.lines : [], native: true } });
         },
         reject: error => {
           clearTimeout(timer);
@@ -34,7 +45,7 @@
         }
       });
 
-      logger?.({ status: 'Apple Vision OCR', progress: 0.08 });
+      report(logger, { status: 'Apple Vision OCR', progress: 0.08 });
       try {
         nativeHandler().postMessage({
           requestId,
@@ -57,18 +68,32 @@
     else waiter.resolve(payload);
   };
 
+  async function recognize(input, language = 'ces+eng', options = {}) {
+    let result;
+    if (available() && input instanceof HTMLCanvasElement) {
+      try {
+        result = await callNative(input, options.logger);
+      } catch (error) {
+        console.warn('Apple Vision OCR selhalo, používám Tesseract fallback.', error);
+      }
+    }
+    if (!result) {
+      const fallback = browserRecognize || window.Tesseract?.recognize?.bind(window.Tesseract);
+      if (!fallback) throw new Error('Místní OCR není dostupné. Zkus doklad načíst znovu po připojení k internetu.');
+      result = await fallback(input, language, options);
+    }
+    if (typeof result?.data?.text === 'string' && window.PubGuruNormalizeOcrText) {
+      result.data.text = window.PubGuruNormalizeOcrText(result.data.text);
+    }
+    return result;
+  }
+  // Native OCR is usable even if the Tesseract CDN is unavailable.
+  window.PubGuruNativeOCR.recognize = recognize;
+
   function install() {
     if (!window.Tesseract?.recognize || window.Tesseract.__pubGuruVisionWrapped) return false;
-    const original = window.Tesseract.recognize.bind(window.Tesseract);
-    window.Tesseract.recognize = function (input, language, options = {}) {
-      if (available() && input instanceof HTMLCanvasElement) {
-        return callNative(input, options.logger).catch(error => {
-          console.warn('Apple Vision OCR selhalo, používám Tesseract fallback.', error);
-          return original(input, language, options);
-        });
-      }
-      return original(input, language, options);
-    };
+    browserRecognize = window.Tesseract.recognize.bind(window.Tesseract);
+    window.Tesseract.recognize = recognize;
     window.Tesseract.__pubGuruVisionWrapped = true;
     return true;
   }

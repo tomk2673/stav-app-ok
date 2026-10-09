@@ -442,8 +442,9 @@
   }
 
   async function recognize(canvas, label='', base=0, span=1) {
-    if (!window.Tesseract) throw new Error('OCR knihovna se nenačetla.');
-    const result=await Tesseract.recognize(canvas,'ces+eng',{
+    const ocr=window.PubGuruNativeOCR?.recognize || window.Tesseract?.recognize;
+    if (!ocr) throw new Error('OCR knihovna se nenačetla.');
+    const result=await ocr(canvas,'ces+eng',{
       tessedit_pageseg_mode:'6',
       preserve_interword_spaces:'1',
       logger:m=>{
@@ -451,7 +452,8 @@
         if(typeof m.progress==='number')$('ocrProgress').style.width=`${Math.round((base+m.progress*span)*100)}%`;
       }
     });
-    cropMeta={...cropMeta,vision:false,provider:result.data.native?'apple-vision-native':'tesseract-browser-v3',model:null};
+    const providers=[...new Set([...(cropMeta?.providers||[]),result.data.native?'apple-vision-native':'tesseract-browser-v3'])];
+    cropMeta={...cropMeta,vision:false,providers,provider:providers.join('+'),model:null};
     return result.data.text || '';
   }
 
@@ -485,10 +487,14 @@
     const dataUrl=await fileDataUrl(file);
     const body={file_name:file.name||'invoice',mime_type:file.type||'image/jpeg',ocr_text:ocrText};
     if(file.type==='application/pdf') body.file_data=dataUrl; else body.data_url=dataUrl;
-    const response=await fetch('/api/invoice-vision',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(body)});
-    const payload=await response.json().catch(()=>({}));
-    if(!response.ok) throw new Error(payload.detail||payload.error||('AI čtení HTTP '+response.status));
-    return payload;
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),20000);
+    try {
+      const response=await fetch('/api/invoice-vision',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(body)});
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(payload.detail||payload.error||('AI čtení HTTP '+response.status));
+      return payload;
+    } finally { clearTimeout(timeout); }
   }
 
   function applyVisionResult(payload) {
@@ -520,6 +526,18 @@
   }
 
   async function handleFile(file) {
+    if(handleFile.busy)return toast('Počkej na dokončení čtení dokladu.');
+    handleFile.busy=true;
+    rows=[];fingerprint=null;sourceFileName=null;documentTotal=null;cropMeta=null;
+    $('ocrText').value='';
+    $('supplier').value='';$('number').value='';
+    $('submitBtn').disabled=true;
+    render();
+    try { await readDocument(file); }
+    finally { handleFile.busy=false; }
+  }
+
+  async function readDocument(file) {
     fingerprint=await sha256(file);
     sourceFileName=file.name || 'invoice';
     const dup=await db().from('invoices').select('id,invoice_number,status')
@@ -539,18 +557,22 @@
 
     const canvas=$('invoicePreview');
     let text='';
-    $('ocrStatus').textContent='AI čte přímo fakturu…';
-    $('ocrProgress').style.width='12%';
-    try {
-      const vision=await readWithVision(file,'');
-      applyVisionResult(vision);
-      $('ocrText').value='[AI vision: dokument přečten přímo z obrazu/PDF]'+
-        (Number.isFinite(documentTotal)?'\nCelkem: '+documentTotal.toFixed(2):'');
-      cropMeta={vision:true,provider:vision.provider||'openai-vision',model:vision.model||null};
-      return;
-    } catch (visionError) {
-      console.warn('AI vision selhalo, používám OCR fallback.',visionError);
-      $('ocrStatus').textContent='AI čtení není dostupné. Používám OCR fallback…';
+    cropMeta=null;
+    documentTotal=null;
+    if ($('useServerVision')?.checked) {
+      $('ocrStatus').textContent='AI čte přímo fakturu…';
+      $('ocrProgress').style.width='12%';
+      try {
+        const vision=await readWithVision(file,'');
+        applyVisionResult(vision);
+        $('ocrText').value='[AI vision: dokument přečten přímo z obrazu/PDF]'+
+          (Number.isFinite(documentTotal)?'\nCelkem: '+documentTotal.toFixed(2):'');
+        cropMeta={vision:true,provider:vision.provider||'openai-vision',model:vision.model||null};
+        return;
+      } catch (visionError) {
+        console.warn('AI vision selhalo, používám OCR fallback.',visionError);
+        $('ocrStatus').textContent='AI čtení není dostupné. Používám OCR fallback…';
+      }
     }
     if(file.type==='application/pdf'){
       if(!window.pdfjsLib)throw new Error('PDF knihovna se nenačetla.');
@@ -569,10 +591,12 @@
     }else{
       const image=new Image();
       const url=URL.createObjectURL(file);
-      image.src=url;await image.decode();
-      const b=prepareImage(image,canvas);
-      canvas.classList.remove('hidden');
-      URL.revokeObjectURL(url);
+      let b;
+      try {
+        image.src=url;await image.decode();
+        b=prepareImage(image,canvas);
+        canvas.classList.remove('hidden');
+      } finally { URL.revokeObjectURL(url); }
       $('ocrStatus').textContent=b.detected?'Doklad oříznutý. Čtu text…':'Čtu celou fotku…';
       text=await recognizeLong(canvas);
     }
@@ -589,7 +613,8 @@
     if(dup.error)throw dup.error;
     if(dup.data)return toast('Tento doklad už je v databázi.',5500);
 
-    const extractionProvider=cropMeta?.provider||(cropMeta?.vision?'openai-vision':(window.PubGuruNativeOCR?.available?.()?'apple-vision-native':'tesseract-browser-v3'));
+    if(handleFile.busy)return toast('Počkej na dokončení čtení dokladu.');
+    const extractionProvider=cropMeta?.provider||(cropMeta?.vision?'openai-vision':'manual-entry');
     const extractionModel=cropMeta?.model||null;
     const calculatedNet=rows.reduce((s,r)=>s+(Number.isFinite(r.lineNet)?r.lineNet:(r.qty*r.price)),0);
     const ins=await db().from('invoices').insert({
@@ -688,6 +713,9 @@
     if(p.error)throw p.error;
     products=p.data||[];
     $('date').value=today();
+    if ($('ocrMode')) $('ocrMode').textContent=window.PubGuruNativeOCR?.available?.()
+      ? 'iOS aplikace: Apple Vision čte v telefonu bez placeného API. Při chybě se použije Tesseract.'
+      : 'Safari / PWA / web: text čte Tesseract v prohlížeči bez placeného API. Apple Vision je dostupné jen v nativní iOS aplikaci.';
 
     const attach=id=>{
       const el=$(id);

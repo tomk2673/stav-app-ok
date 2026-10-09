@@ -97,6 +97,7 @@ final class InvoicePhotoAlbumService {
                 contentMode: .aspectFit,
                 options: options
             ) { image, info in
+                if (info?[PHImageResultIsDegradedKey] as? Bool) == true { return }
                 if let cancelled = info?[PHImageCancelledKey] as? Bool, cancelled {
                     continuation.resume(throwing: AlbumError.imageUnavailable)
                     return

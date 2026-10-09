@@ -34,6 +34,8 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PUB GURU.app/PUB GURU"
+        BUNDLE_LOADER: "$(TEST_HOST)"
 schemes:
   PubGuru:
     build:

@@ -1,6 +1,6 @@
 'use strict';
 (function(){
-let ctx=null,products=[],currentInvoice=null,currentLines=[];
+let ctx=null,products=[],currentInvoice=null,currentLines=[],posting=false;
 const db=()=>PubGuruBackend.client,$=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const n=v=>{const x=Number(String(v??'').replace(/\s/g,'').replace(',','.'));return Number.isFinite(x)?x:0};
@@ -15,7 +15,7 @@ async function role(){ctx=await PubGuruBackend.loadContext();if(!ctx?.user||!ctx
 async function loadProducts(){const r=await db().from('products').select('id,client_key,name,ean,volume_ml,current_purchase_price,current_purchase_price_gross,aliases').eq('organization_id',ctx.organization.id).is('archived_at',null).order('name');if(r.error)throw r.error;products=r.data||[]}
 function options(selected){return '<option value="">Vyber produkt…</option><option value="__new__">＋ Vytvořit nový produkt z tohoto řádku</option>'+products.map(p=>`<option value="${p.id}" ${p.id===selected?'selected':''}>${esc(p.name)}${p.ean?` · ${esc(p.ean)}`:''}${p.volume_ml?` · ${n(p.volume_ml)} ml`:''}</option>`).join('')}
 async function queue(){const r=await db().from('invoices').select('id,supplier_name,invoice_number,issue_date,total_amount,total_amount_gross,status,created_at,payment_status,payment_method').eq('organization_id',ctx.organization.id).eq('venue_id',ctx.venue.id).in('status',['review','approved']).order('created_at',{ascending:false}).limit(100);if(r.error)throw r.error;$('queueCount').textContent=String(r.data?.length||0);$('queue').innerHTML=r.data?.length?r.data.map(i=>`<button class="queue-item" data-id="${i.id}"><strong>${esc(i.supplier_name||'Bez dodavatele')}</strong><small>${esc(i.invoice_number||'bez čísla')} · ${money(i.total_amount_gross??i.total_amount??0)}${i.payment_status==='paid'?` · ${i.payment_method==='card'?'kartou':'hotově'}`:''}</small></button>`).join(''):'<div class="empty">Žádná faktura nečeká.</div>';document.querySelectorAll('.queue-item').forEach(b=>b.onclick=()=>openInvoice(b.dataset.id))}
-async function openInvoice(id){const[ir,lr]=await Promise.all([db().from('invoices').select('id,supplier_name,invoice_number,issue_date,total_amount,total_amount_gross,status,raw_extraction,payment_status,payment_method,paid_at').eq('id',id).single(),db().from('invoice_lines').select('id,raw_name,product_id,quantity,unit_price,unit_price_net,unit_price_gross,vat_rate,line_total_gross,status,original_values').eq('invoice_id',id).order('created_at')]);if(ir.error)throw ir.error;if(lr.error)throw lr.error;currentInvoice=ir.data;currentLines=lr.data||[];$('supplier').value=currentInvoice.supplier_name||'';$('number').value=currentInvoice.invoice_number||'';$('date').value=currentInvoice.issue_date||'';$('invoiceStatus').textContent=currentInvoice.status;$('rawOcr').textContent=currentInvoice.raw_extraction?.raw_text||'';$('totalGross').value=n(currentInvoice.total_amount_gross??currentInvoice.total_amount)||'';const pm=currentInvoice.payment_status==='paid'?(currentInvoice.payment_method==='card'?'card':'cash'):(currentInvoice.payment_status==='unpaid'?'unpaid':'unknown');$('paymentMode').value=pm;$('paidDate').value=currentInvoice.paid_at?String(currentInvoice.paid_at).slice(0,10):(currentInvoice.issue_date||'');syncPaidDate();$('editor').classList.remove('hidden');$('emptyEditor').classList.add('hidden');render()}
+async function openInvoice(id){if(posting)return;const[ir,lr]=await Promise.all([db().from('invoices').select('id,supplier_name,invoice_number,issue_date,total_amount,total_amount_gross,status,raw_extraction,payment_status,payment_method,paid_at').eq('id',id).single(),db().from('invoice_lines').select('id,raw_name,product_id,quantity,unit_price,unit_price_net,unit_price_gross,vat_rate,line_total_gross,status,original_values').eq('invoice_id',id).order('created_at')]);if(ir.error)throw ir.error;if(lr.error)throw lr.error;currentInvoice=ir.data;currentLines=lr.data||[];$('supplier').value=currentInvoice.supplier_name||'';$('number').value=currentInvoice.invoice_number||'';$('date').value=currentInvoice.issue_date||'';$('invoiceStatus').textContent=currentInvoice.status;$('rawOcr').textContent=currentInvoice.raw_extraction?.raw_text||'';$('totalGross').value=n(currentInvoice.total_amount_gross??currentInvoice.total_amount)||'';const pm=currentInvoice.payment_status==='paid'?(currentInvoice.payment_method==='card'?'card':'cash'):(currentInvoice.payment_status==='unpaid'?'unpaid':'unknown');$('paymentMode').value=pm;$('paidDate').value=currentInvoice.paid_at?String(currentInvoice.paid_at).slice(0,10):(currentInvoice.issue_date||'');syncPaidDate();$('editor').classList.remove('hidden');$('emptyEditor').classList.add('hidden');render()}
 function detectedVolume(text){const ml=String(text||'').match(/(\d{2,4})\s*ml\b/i);if(ml)return n(ml[1]);const l=String(text||'').match(/(\d+(?:[.,]\d+)?)\s*l\b/i);return l?n(l[1])*1000:0}
 function vatForLine(l){const raw=l.vat_rate??l.original_values?.ocr_vat_rate;if(raw===null||raw===undefined||raw==='')return null;const v=n(raw);return [0,12,21].includes(v)?v:null}
 function grossForLine(l){const direct=n(l.unit_price_gross);if(direct>0)return direct;const orig=n(l.original_values?.ocr_unit_gross);if(orig>0)return orig;const vat=vatForLine(l),net=n(l.unit_price_net??l.unit_price);return net>0&&vat!==null?round2(net*(1+vat/100)):0}
@@ -56,7 +56,74 @@ async function history(lineId,productId,row){const q=await db().from('purchase_p
 async function learnProduct(row){const p=products.find(x=>x.id===row.pid);if(!p)return;const alias=row.raw.trim();const aliases=[...new Set([...(Array.isArray(p.aliases)?p.aliases:[]),alias].filter(Boolean))];const u=await db().from('products').update({volume_ml:row.vol||p.volume_ml||null,current_purchase_price:row.net,current_purchase_price_gross:row.gross,aliases,updated_at:new Date().toISOString()}).eq('id',row.pid);if(u.error)throw u.error;p.aliases=aliases;p.volume_ml=row.vol||p.volume_ml;p.current_purchase_price=row.net;p.current_purchase_price_gross=row.gross}
 async function learnSupplierMapping(row){if(!row.sourceCode||!row.pid||row.pid==='__new__')return false;const supplier=$('supplier').value.trim()||currentInvoice?.supplier_name||'';const payload={organization_id:ctx.organization.id,supplier_key:supplierKey(supplier),supplier_name:supplier||null,source_code:String(row.sourceCode).trim().toUpperCase(),raw_name:row.raw,normalized_raw_name:normalize(row.raw),product_id:row.pid,confidence:1,confirmed_by:ctx.user.id,updated_at:new Date().toISOString()};const r=await db().from('supplier_product_mappings').upsert(payload,{onConflict:'organization_id,supplier_key,source_code'});if(r.error)throw r.error;return true}
 function syncPaidDate(){const paid=['cash','card'].includes($('paymentMode').value);$('paidDateWrap').classList.toggle('hidden',!paid);if(paid&&!$('paidDate').value)$('paidDate').value=$('date').value||new Date().toISOString().slice(0,10)}
-async function post(){if(!currentInvoice)return;const check=reviewCheck();if(check.issues.length)return toast(check.issues[0],7000);const rs=check.rows,approved=check.approved,totalGross=check.totalGross;$('postBtn').disabled=true;$('postBtn').textContent='Zaúčtovávám…';try{let learned=0;for(const r of rs){if(r.status==='approved'&&r.pid==='__new__')r.pid=await createProduct(r);const u=await db().from('invoice_lines').update({product_id:r.status==='approved'?r.pid:null,quantity:r.qty||null,unit_price:r.net,unit_price_net:r.net,unit_price_gross:r.gross>0?r.gross:null,vat_rate:r.vat,line_total:r.lineNet,line_total_net:r.lineNet,line_total_gross:r.gross>0?r.lineGross:null,status:r.status,match_method:r.status==='approved'?'manager_confirmed':'manager_ignored',match_confidence:r.status==='approved'?1:null}).eq('id',r.id);if(u.error)throw u.error;if(r.status==='approved'){await learnProduct(r);if(await learnSupplierMapping(r))learned++;await history(r.id,r.pid,r)}}const mode=$('paymentMode').value;const paid=['cash','card'].includes(mode);const paymentStatus=paid?'paid':mode==='unpaid'?'unpaid':'unknown';const paidAt=paid?`${$('paidDate').value||$('date').value}T12:00:00`:null;const iu=await db().from('invoices').update({supplier_name:$('supplier').value.trim(),invoice_number:$('number').value.trim(),issue_date:$('date').value||null,total_amount:totalGross,total_amount_gross:totalGross,payment_status:paymentStatus,payment_method:paid?mode:null,paid_at:paidAt,status:'approved'}).eq('id',currentInvoice.id).in('status',['review','approved']);if(iu.error)throw iu.error;const a=await db().from('audit_events').insert({organization_id:ctx.organization.id,venue_id:ctx.venue.id,actor_user_id:ctx.user.id,event_type:'invoice.posted',entity_type:'invoice',entity_id:currentInvoice.id,after_data:{approved_lines:approved.length,total_gross:totalGross,payment_status:paymentStatus,payment_method:paid?mode:null,learned_supplier_mappings:learned}});if(a.error)throw a.error;toast(`Faktura uložena · ${money(totalGross)}${paid?` · ${mode==='card'?'kartou':'hotově'}`:''}.`,6000);currentInvoice=null;currentLines=[];$('editor').classList.add('hidden');$('emptyEditor').classList.remove('hidden');await loadProducts();await queue()}finally{$('postBtn').disabled=false;$('postBtn').textContent='Schválit a naskladnit'}}
+async function savedInvoiceState(){
+  const r=await db().from('invoices').select('id,status')
+    .eq('id',currentInvoice.id).eq('organization_id',ctx.organization.id).eq('venue_id',ctx.venue.id).single();
+  if(r.error)throw r.error;
+  return r.data.status;
+}
+async function post(){
+  if(!currentInvoice||posting)return;
+  const check=reviewCheck();if(check.issues.length)return toast(check.issues[0],7000);
+  const rs=check.rows,approved=check.approved,totalGross=check.totalGross;
+  posting=true;
+  $('postBtn').disabled=true;$('postBtn').textContent='Zaúčtovávám…';
+  const mode=$('paymentMode').value,paid=['cash','card'].includes(mode);
+  const paymentStatus=paid?'paid':mode==='unpaid'?'unpaid':'unknown';
+  try{
+    try{
+      // A lost posting response or a second device must not post or learn prices twice.
+      const state=await savedInvoiceState();
+      if(state!=='posted'){
+        if(!['review','approved'].includes(state))throw new Error('Faktura už není ke schválení.');
+        let learned=0;
+        for(const r of rs){
+          if(r.status==='approved'&&r.pid==='__new__')r.pid=await createProduct(r);
+          const u=await db().from('invoice_lines').update({
+            product_id:r.status==='approved'?r.pid:null,quantity:r.qty||null,
+            unit_price:r.net,unit_price_net:r.net,
+            unit_price_gross:r.gross>0?r.gross:null,vat_rate:r.vat,
+            line_total:r.lineNet,line_total_net:r.lineNet,
+            line_total_gross:r.gross>0?r.lineGross:null,status:r.status,
+            match_method:r.status==='approved'?'manager_confirmed':'manager_ignored',match_confidence:r.status==='approved'?1:null
+          }).eq('id',r.id).eq('invoice_id',currentInvoice.id).eq('organization_id',ctx.organization.id).select('id').single();
+          if(u.error)throw u.error;
+          if(r.status==='approved'){
+            await learnProduct(r);if(await learnSupplierMapping(r))learned++;await history(r.id,r.pid,r);
+          }
+        }
+        const paidAt=paid?`${$('paidDate').value||$('date').value}T12:00:00`:null;
+        const iu=await db().from('invoices').update({
+          supplier_name:$('supplier').value.trim(),invoice_number:$('number').value.trim(),issue_date:$('date').value||null,
+          total_amount:totalGross,total_amount_gross:totalGross,payment_status:paymentStatus,
+          payment_method:paid?mode:null,paid_at:paidAt,status:'approved'
+        }).eq('id',currentInvoice.id).eq('organization_id',ctx.organization.id).eq('venue_id',ctx.venue.id)
+          .in('status',['review','approved']).select('id').single();
+        if(iu.error)throw iu.error;
+        // The audit trigger posts stock and finishes its capture jobs in the same transaction.
+        const a=await db().from('audit_events').insert({
+          organization_id:ctx.organization.id,venue_id:ctx.venue.id,actor_user_id:ctx.user.id,
+          event_type:'invoice.posted',entity_type:'invoice',entity_id:currentInvoice.id,
+          after_data:{approved_lines:approved.length,total_gross:totalGross,payment_status:paymentStatus,
+            payment_method:paid?mode:null,learned_supplier_mappings:learned}
+        });
+        if(a.error)throw a.error;
+      }
+    }catch(error){
+      // Reconcile a committed transaction after an interrupted HTTP response.
+      let state;try{state=await savedInvoiceState()}catch{throw error}
+      if(state!=='posted')throw error;
+    }
+    toast(`Faktura uložena · ${money(totalGross)}${paid?` · ${mode==='card'?'kartou':'hotově'}`:''}.`,6000);
+    currentInvoice=null;currentLines=[];
+    $('editor').classList.add('hidden');$('emptyEditor').classList.remove('hidden');
+    try{await loadProducts();await queue()}catch(error){
+      console.warn(error);toast('Faktura je uložená. Pro aktualizaci přehledu obnov stránku.',7000);
+    }
+  }finally{
+    posting=false;$('postBtn').disabled=false;$('postBtn').textContent='Schválit a naskladnit';
+  }
+}
 async function init(){if(!await role())return;await loadProducts();await queue();$('paymentMode').onchange=syncPaidDate;$('date').onchange=()=>{if(['cash','card'].includes($('paymentMode').value)&&!$('paidDate').value)$('paidDate').value=$('date').value};$('postBtn').onclick=()=>post().catch(e=>{console.error(e);toast(`Zaúčtování selhalo: ${e.message}`,7000)})}
 document.addEventListener('DOMContentLoaded',()=>init().catch(e=>toast(`Nelze načíst frontu: ${e.message}`,7000)));
 })();

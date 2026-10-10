@@ -1,4 +1,4 @@
-const CACHE = 'pub-guru-shell-v7-pos';
+const CACHE = 'pub-guru-shell-v8-invoice-queue';
 const APP_SHELL = [
   './', './start.html', './index.html', './invoice-review.html', './closings.html', './styles.css', './app.js',
   './closings.js', './invoice-review.js', './backend.js', './roles.js', './navigation.js', './data-sync.js',
@@ -14,8 +14,9 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith((async()=>{
     const cache=await caches.open(CACHE),hit=await cache.match(event.request);
-    if(hit)return hit;
+    const fresh=/\.(?:html|js)$/.test(new URL(event.request.url).pathname)||event.request.mode==='navigate';
+    if(hit&&!fresh)return hit;
     try {const res=await fetch(event.request);if(res.ok)await cache.put(event.request,res.clone());return res;}
-    catch(error){if(event.request.mode==='navigate')return await cache.match('./start.html');throw error;}
+    catch(error){if(hit)return hit;if(event.request.mode==='navigate')return await cache.match('./start.html');throw error;}
   })());
 });

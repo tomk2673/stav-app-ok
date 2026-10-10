@@ -147,6 +147,7 @@
     } finally {
       busy = false;
       if (input) input.value = '';
+      window.dispatchEvent(new Event('pubguru:invoice-queue-ready'));
     }
   }
 
@@ -185,7 +186,7 @@
     return { queued, duplicates, failed, completedAssetIds };
   }
 
-  window.PubGuruFastCapture = { queueFiles, queueNativeImages };
+  window.PubGuruFastCapture = { queueFiles, queueNativeImages, isBusy:()=>busy };
 
   document.addEventListener('change', event => {
     const target = event.target;

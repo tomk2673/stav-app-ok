@@ -8,20 +8,40 @@
   let activeLogger = null;
   let queue = Promise.resolve();
 
+  function deadline(task, ms, message, cancel) {
+    let timer;
+    const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>{
+      try { cancel(); } catch (error) { console.warn('OCR cleanup failed',error); }
+      reject(new Error(message));
+    },ms);});
+    return Promise.race([task,timeout]).finally(()=>clearTimeout(timer));
+  }
+
   async function getWorker() {
     if (!workerPromise) {
-      workerPromise = tesseract.createWorker('ces+eng', 1, {
+      let initializingWorker=null;
+      const pending = tesseract.createWorker('ces+eng', 1, {
         logger: message => activeLogger?.(message)
       }).then(async worker => {
+        initializingWorker=worker;
         await worker.setParameters({
           tessedit_pageseg_mode: '6',
           preserve_interword_spaces: '1'
         });
         return worker;
+      });
+      const current = deadline(pending,60000,'OCR se nepodařilo načíst. Zkontroluj připojení a zkus čtení znovu.',()=>{
+        workerPromise=null;
+        if(initializingWorker)Promise.resolve(initializingWorker.terminate()).catch(()=>{});
+        else pending.then(worker=>worker.terminate()).catch(()=>{});
       }).catch(error => {
-        workerPromise = null;
+        if(workerPromise===current){
+          workerPromise = null;
+          if(initializingWorker)Promise.resolve(initializingWorker.terminate()).catch(()=>{});
+        }
         throw error;
       });
+      workerPromise=current;
     }
     return workerPromise;
   }
@@ -32,12 +52,18 @@
       try {
         const worker = await getWorker();
         if (options.tessedit_pageseg_mode || options.preserve_interword_spaces) {
-          await worker.setParameters({
+          await deadline(worker.setParameters({
             tessedit_pageseg_mode: String(options.tessedit_pageseg_mode || '6'),
             preserve_interword_spaces: String(options.preserve_interword_spaces || '1')
+          }),30000,'OCR nereaguje. Zkus čtení spustit znovu.',()=>{
+            workerPromise=null;
+            Promise.resolve(worker.terminate()).catch(()=>{});
           });
         }
-        return await worker.recognize(input);
+        return await deadline(worker.recognize(input),90000,'Čtení dokladu překročilo časový limit. Zkus ostřejší fotku nebo opakovat čtení.',()=>{
+          workerPromise=null;
+          Promise.resolve(worker.terminate()).catch(()=>{});
+        });
       } finally {
         activeLogger = null;
       }

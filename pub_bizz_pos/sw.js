@@ -1,4 +1,4 @@
-const CACHE = 'pub-bizz-pos-shell-2.0.6';
+const CACHE = 'pub-bizz-pos-shell-2.0.7';
 const SHELL = ['./', './index.html', './style.css', './compat.js', './catalog.js', './core.js', './storage.js', './app.js', './config.js', './cloud.js', './stock.js', './vendor/supabase-2.117.2.js', './icon.svg', './manifest.webmanifest'];
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil((async () => {

@@ -167,6 +167,102 @@ async function startShift(h){
  h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();
  await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
 }
+async function namedAccount(h,name='Stůl 12'){
+ h.click('[data-action="newOrder"]');h.w.document.querySelector('[name="name"]').value=name;h.submit();
+ await until(()=>h.w.document.querySelector('.receipt-head h2')?.textContent===name&&!h.w.document.querySelector('#dialog').open,'named account selected');
+ return h.server.orders.find(o=>o.name===name).id;
+}
+test('no account selection marks a quick sale; a blank new account reuses it without creating an account',{concurrency:false},async()=>{
+ const h=await harness();try{
+  await startShift(h);
+  assert.equal(h.w.document.querySelector('#account-search').value,'');
+  h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines.length===1,'automatic quick sale');
+  assert.equal(h.calls.filter(c=>c.type==='newOrder').length,0);
+  const id=await namedAccount(h,'Petr');
+  h.click('.product[data-action="add"]');await until(()=>h.server.orders.find(o=>o.id===id).lines.length===1,'named item');
+  const before=structuredClone(h.server);
+  h.click('[data-action="newOrder"]');
+  const name=h.w.document.querySelector('[name="name"]');assert.equal(name.required,false);assert.equal(name.value,'');
+  name.value='   ';h.submit();
+  await until(()=>!h.w.document.querySelector('#dialog').open&&h.w.document.querySelector('.receipt-head h2').textContent==='Rychlý prodej','blank means quick sale');
+  assert.deepEqual(h.server,before);assert.equal(h.calls.filter(c=>c.type==='newOrder').length,1);
+  assert.equal(h.w.document.querySelector('#account-search').value,'');
+  h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines[0].quantity===2,'next quick sale item');
+  assert.equal(h.server.orders.find(o=>o.id===id).lines[0].quantity,1);
+ }finally{h.dom.window.close();}
+});
+test('clearing the displayed table or customer switches to quick sale and preserves the unpaid account',{concurrency:false},async()=>{
+ const h=await harness();try{
+  await startShift(h);const id=await namedAccount(h);
+  h.click('.product[data-action="add"]');await until(()=>h.server.orders.find(o=>o.id===id).lines.length===1,'table item');
+  assert.equal(h.w.document.querySelector('#account-search').value,'Stůl 12');
+  h.external('newOrder',{name:'Žaneta'});await h.w.POSCloud.refresh();
+  await until(()=>h.w.document.querySelectorAll('.account').length===3,'refresh rendered');
+  const input=h.w.document.querySelector('#account-search'),grid=h.w.document.querySelector('#products');
+  assert.equal(input.value,'Stůl 12');input.value='';input.dispatchEvent(new h.w.Event('input'));
+  assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Rychlý prodej');
+  assert.equal(h.w.document.querySelector('#entry-account-name').textContent,'Rychlý prodej');
+  assert.equal(h.w.document.querySelector('#products'),grid);
+  h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines.length===1,'quick sale after clearing');
+  assert.equal(h.server.orders.find(o=>o.id===id).lines[0].quantity,1);
+ }finally{h.dom.window.close();}
+});
+test('a fully paid named account returns to quick sale for the next guest after cash or confirmed card payment',{concurrency:false},async()=>{
+ for(const mode of ['Cash','Card']){
+  const h=await harness();try{
+   await startShift(h);const id=await namedAccount(h);
+   h.click('.product[data-action="add"]');await until(()=>h.server.orders.find(o=>o.id===id).lines.length===1,'named item');
+   h.click('[data-action="pay'+mode+'"]');await until(()=>h.w.document.querySelector('[name="received"]'),'payment dialog');
+   if(mode==='Card'){
+    h.submit();await until(()=>/terminálu/.test(h.w.document.querySelector('#dialog-error').textContent),'unconfirmed card rejected');
+    assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Stůl 12');
+    h.w.document.querySelector('[name="cardConfirmed"]').checked=true;
+   }
+   h.submit();await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'paid');
+   assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Rychlý prodej');
+   assert.equal(h.w.document.querySelector('#account-search').value,'');
+   assert.equal(h.server.receipts[0].orderId,id);assert.equal(h.server.receipts[0].orderName,'Stůl 12');
+   h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines.length===1,'next guest');
+   assert.equal(h.server.orders.find(o=>o.id===id).lines.length,0);
+  }finally{h.dom.window.close();}
+ }
+});
+test('a partial named payment keeps its remainder selected and only the final payment returns to quick sale',{concurrency:false},async()=>{
+ const h=await harness();try{
+  await startShift(h);const id=await namedAccount(h,'Žaneta');
+  h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-action="add"]');
+  await until(()=>h.server.orders.find(o=>o.id===id).lines[0]?.quantity===3,'three pieces');
+  h.click('[data-action="paySplit"]');await until(()=>h.w.document.querySelector('.payment-item'),'split');
+  h.click('.payment-item');h.click('[data-qty="1"]');h.submit();
+  await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'partial paid');
+  assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Žaneta');
+  assert.equal(h.w.document.querySelector('#account-search').value,'Žaneta');
+  assert.equal(h.w.document.querySelector('.quantity-tap').textContent,'2×');
+  h.click('[data-action="payCash"]');await until(()=>h.w.document.querySelector('#dialog').open&&h.w.document.querySelector('#dialog-title').textContent==='Zaplatit hotově','remaining payment');h.submit();
+  await until(()=>h.server.receipts.length===2&&!h.w.document.querySelector('#dialog').open,'remainder paid');
+  assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Rychlý prodej');
+  assert.equal(h.server.orders.find(o=>o.id===id).lines.length,0);
+ }finally{h.dom.window.close();}
+});
+test('recovering a named checkout returns to quick sale once, or preserves items added before recovery',{concurrency:false},async()=>{
+ for(const laterItem of [false,true]){
+  const h=await harness();try{
+   await startShift(h);const id=await namedAccount(h);
+   h.click('.product[data-action="add"]');await until(()=>h.server.orders.find(o=>o.id===id).lines.length===1,'named item');
+   const productId=h.server.orders.find(o=>o.id===id).lines[0].productId;
+   h.click('[data-action="payCash"]');await until(()=>h.w.document.querySelector('[name="received"]'),'payment');
+   h.drop();h.submit();await until(()=>h.w.POSCloud.pending?.type==='checkout'&&!h.w.POSCloud.busy&&!h.w.document.querySelector('#dialog-submit').disabled,'checkout awaiting recovery');
+   assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Stůl 12');
+   if(laterItem)h.external('addLine',{orderId:id,productId});
+   h.click('.close-dialog');h.click('[data-action="retryPending"]');
+   await until(()=>!h.w.POSCloud.pending&&/Zaplaceno/.test(h.w.document.querySelector('#toast').textContent),'recovered');
+   assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,laterItem?'Stůl 12':'Rychlý prodej');
+   assert.equal(h.server.receipts.length,1);
+   const calls=h.calls.filter(c=>c.type==='checkout');assert.equal(calls.length,2);assert.equal(calls[0].requestId,calls[1].requestId);
+   assert.equal(h.server.orders.find(o=>o.id===id).lines.length,laterItem?1:0);
+  }finally{h.dom.window.close();}
+ }
+});
 function sold(server,productId,quantity){
  C.execute(server,'addLine',{orderId:'bar',productId,quantity});
  const order=server.orders[0];

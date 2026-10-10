@@ -109,6 +109,10 @@ async function flow(browser,base,width){
     assert.equal(await page.locator('.receipt-head h2').textContent(),'Stůl 12');
     await page.locator('#account-search').fill('zaneta');await page.locator('#account-results [data-action="account"]').first().click();
     assert.equal(await page.locator('.receipt-head h2').textContent(),'Žaneta');
+    assert.equal(await page.locator('#account-search').inputValue(),'Žaneta');
+    await page.locator('#account-search').fill('');
+    assert.equal(await page.locator('.receipt-head h2').textContent(),'Rychlý prodej','empty customer means quick sale');
+    await page.locator('#account-search').fill('zaneta');await page.locator('#account-results [data-action="account"]').first().click();
     await page.locator('[data-action="entryQuantity"]').click();await page.locator('[data-qty-more]').click();
     for(const digit of ['1','2'])await page.locator('[data-qty-digit="'+digit+'"]').click();
     await page.locator('[data-qty-confirm]').click();assert.equal(await page.locator('#entry-quantity').textContent(),'12×');
@@ -125,6 +129,7 @@ async function flow(browser,base,width){
     assert.equal(f.state.receipts[0].lines[0].quantity,2);assert.ok(f.state.receipts[0].card>0);
     assert.equal(await page.locator('.product[data-action="add"]').first().getAttribute('data-id'),markedProduct,'confirmed paid pieces move the product to the top');
     const order=f.state.orders.find(o=>o.name==='Žaneta');assert.equal(order.lines[0].quantity,3);
+    assert.equal(await page.locator('.receipt-head h2').textContent(),'Žaneta','partial payment preserves the selected customer');
     f.dropResponse();await page.locator('.product[data-action="add"]').first().click();await page.locator('[data-action="retryPending"]').waitFor();
     const pendingId=await page.evaluate(()=>POSCloud.pending.requestId);
     await page.reload();await until(page,()=>window.POSCloud&&!POSCloud.pending&&document.querySelector('.product'));
@@ -134,9 +139,13 @@ async function flow(browser,base,width){
     await page.locator('#account-search').fill('zaneta');await page.locator('#account-results [data-action="account"]').first().click();
     await page.locator('[data-action="payCash"]').click();await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
     assert.equal(f.state.receipts.length,2);assert.equal(f.state.orders.find(o=>o.name==='Žaneta').lines.length,0);
+    assert.equal(await page.locator('.receipt-head h2').textContent(),'Rychlý prodej','full payment returns to quick sale');
+    assert.equal(await page.locator('#account-search').inputValue(),'');
     assert.match(await page.locator('#toast').textContent(),/Zaplaceno/);
     await page.locator('.product[data-action="add"]').first().click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='1×');
     assert.equal(await page.locator('#dialog').evaluate(el=>el.open),false,'ready to mark immediately after payment');
+    assert.equal(f.state.orders.find(o=>o.id==='bar').lines[0].quantity,1,'next guest is marked on quick sale automatically');
+    assert.equal(f.state.orders.find(o=>o.name==='Žaneta').lines.length,0);
     const metrics=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,total:document.querySelector('.receipt-total').getBoundingClientRect().bottom,payment:document.querySelector('.payment-buttons').getBoundingClientRect().bottom,height:innerHeight}));
     assert.ok(metrics.scroll<=metrics.width,'no horizontal overflow');
     if(width>=631)assert.ok(metrics.total<=metrics.height&&metrics.payment<=metrics.height,'total and payments remain in view');

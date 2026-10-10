@@ -3202,8 +3202,12 @@ function renderAccountResults() {
 }
 function bindAccountSearch() {
   const input = $('#account-search');
-  input.addEventListener('focus', () => { accountSearchOpen = true; renderAccountResults(); });
-  input.addEventListener('input', e => { accountQuery = e.target.value; accountSearchOpen = true; renderAccountResults(); });
+  input.addEventListener('focus', () => { accountSearchOpen = true; if(!accountQuery&&current!=='bar')input.select(); renderAccountResults(); });
+  input.addEventListener('input', e => {
+    accountQuery = e.target.value; accountSearchOpen = true;
+    if(!accountQuery.trim()&&current!=='bar'){current='bar';renderPOSFast();}
+    renderAccountResults();
+  });
   input.addEventListener('keydown', e => {
     if (e.key==='Escape') { accountSearchOpen=false;renderAccountResults();input.blur(); }
     if (e.key==='Enter') {
@@ -3230,7 +3234,7 @@ function resizePOSWorkspace() {
 function selectAccount(id) {
   if(!state.orders.some(o=>o.id===id))return;
   current=id;entryQuantity=1;accountQuery='';accountSearchOpen=false;
-  const input=$('#account-search');if(input){input.value='';input.blur();}
+  const input=$('#account-search');if(input){input.value=id==='bar'?'':getOrder().name;input.blur();}
   renderPOSFast();renderAccountResults();
 }
 function renderPOS() {
@@ -3242,7 +3246,7 @@ function renderPOS() {
     <aside class="accounts"><div class="section-label"><span class="eyebrow">Otevřené účty</span><span class="badge">${state.orders.filter(x=>x.lines.length).length}</span></div>${accounts}${btn('+ Nový účet','newOrder','add-account')}</aside>
     <section class="catalog-area">
       <div class="order-entry"><div class="entry-target"><span>Na účet</span><strong id="entry-account-name">${E(o.name)}</strong><span id="entry-account-total">${fmt(C.sum(o.lines))}</span></div>
-        <div class="account-finder"><label class="sr-only" for="account-search">Stůl nebo zákazník</label><input id="account-search" type="search" placeholder="Hledat stůl nebo zákazníka…" autocomplete="off" value="${E(accountQuery)}" aria-expanded="false" aria-controls="account-results"><div id="account-results" class="account-results" hidden></div></div>
+        <div class="account-finder"><label class="sr-only" for="account-search">Stůl nebo zákazník; prázdné pole znamená rychlý prodej</label><input id="account-search" type="search" placeholder="Stůl / zákazník · prázdné = rychlý prodej" autocomplete="off" value="${E(accountQuery||(o.id==='bar'?'':o.name))}" aria-expanded="false" aria-controls="account-results"><div id="account-results" class="account-results" hidden></div></div>
         <div class="entry-counts" aria-label="Počet kusů pro další položku"><span>Počet</span>${[1,2,3,4,5].map(n=>btn(n,'entryCount',`entry-count ${n===entryQuantity?'active':''}`,`data-id="${n}" aria-pressed="${n===entryQuantity}"`)).join('')}${btn(`<strong id="entry-quantity">${entryQuantity}×</strong><small>Jiný počet</small>`,'entryQuantity','entry-calculator','aria-label="Zadat počet kusů na velké klávesnici"')}</div>
       </div>
       ${window.POSCloud&&o.paymentLock?`<div class="notice"><span>Účet je rezervovaný pro rozpracovanou platbu.</span>${btn('Zkontrolovat platbu','checkPayment','secondary')}</div>`:''}
@@ -3371,7 +3375,8 @@ function editProduct(id, addAfter = false) {
 function finishPayment(r) {
   window.paymentAbort?.abort();
   if($('#dialog').open)$('#dialog').close();
-  entryQuantity=1;updateEntryContext();
+  const remaining=state.orders.find(o=>o.id===r.orderId);
+  selectAccount(remaining?.lines.length?remaining.id:'bar');
   toast(`Zaplaceno · ${fmt(r.total)}${r.change?` · Vrátit ${fmt(r.change)}`:''}`);
 }
 async function pay(mode, resume=false) {
@@ -3465,7 +3470,10 @@ const actions={
   quantityPad:id=>quantityPad(id),
   entryCount:id=>{entryQuantity=Number(id);updateEntryContext();},entryQuantity:entryQuantityPad,
   account:id=>selectAccount(id),category:async id=>{category=id;query='';render();},openShift,mergeOrders,
-  newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta','name',accountQuery.trim(),'required maxlength="120" placeholder="např. Stůl 1 / Petr"'),f=>command('newOrder',{name:f.get('name')}),'Vytvořit účet',r=>selectAccount(r.id)),
+  newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta (nepovinné)','name',accountQuery.trim(),'maxlength="120" placeholder="Bez vyplnění = rychlý prodej"'),f=>{
+    const name=String(f.get('name')||'').trim();
+    return name?command('newOrder',{name}):{id:'bar'};
+  },'Pokračovat',r=>selectAccount(r.id)),
   deleteOrder:async()=>{await command('deleteOrder',{orderId:current});current='bar';render();},
   add:async (id,button)=>{const p=state.products.find(x=>x.id===id);if(!p)return;if(p.price===null){editProduct(id,true);return;}if(!C.activeShift(state)){openShift();return;}const quantity=button?.classList.contains('product')?entryQuantity:1,orderId=current;entryQuantity=1;updateEntryContext();await command('addLine',{orderId,productId:id,quantity},true);},
   minus:async id=>{await command('removeLine',{orderId:current,lineId:id,reason:'Oprava namarkování'},true);},

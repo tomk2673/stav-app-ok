@@ -38,3 +38,11 @@ node --test tests/*.test.js
 ```
 
 OCR je pomocník, ne účetní autopilot. Každou rozpoznanou položku a finanční hodnotu musí před zaúčtováním potvrdit oprávněný uživatel.
+
+## Fronta faktur
+
+Focení, dávkový výběr a import alba ukládají původní doklady do soukromého úložiště. Stránka Faktury automaticky zpracovává i dříve uložené úlohy pomocí místního OCR, bez placeného API. Pro zpracování musí zůstat otevřená; po návratu pokračuje. Serverové AI čtení jednotlivého dokladu je volitelné.
+
+Před nasazením webu aplikuj `database/20261010033954_invoice_capture_queue_worker.sql`. RPC převzetí s tokenem a obnovovanou desetiminutovou rezervací brání souběžnému čtení stejné úlohy. Faktura, její řádky, audit a stav fronty se ukládají v jedné transakci. Rozpoznaná data mají stav `review`; fronta sama nic nenaskladňuje. Otisk se bere z původního souboru před kompresí. Chybějící datum nebo částka zůstávají nevyplněné. Chyba jedné úlohy nezablokuje další; tlačítko „Zkusit znovu“ zachová uložený zdroj.
+
+Regrese fronty, jejího uživatelského toku a databázových přístupů jsou v `tests/pos-web` a spouštějí se pomocí `npm test --prefix tests/pos-web`.

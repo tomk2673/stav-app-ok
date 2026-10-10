@@ -24,10 +24,11 @@ async function until(predicate, label) {
   throw new Error('Timed out: ' + label);
 }
 
-async function harness({ payload = {}, visionOk = true, native = false, nativeFails = false } = {}) {
+async function harness({ payload = {}, visionOk = true, native = false, nativeFails = false, serverVision = true, pdfPages=1 } = {}) {
   const html = fs.readFileSync(path.join(root, 'invoice-capture.html'), 'utf8');
   const dom = new JSDOM(html, { url: 'https://invoices.test/pub_guru/invoice-capture.html', runScripts: 'outside-only' });
   const w = dom.window, writes = [], calls = [];
+  w.document.getElementById('useServerVision').checked=serverVision;
   Object.defineProperty(w, 'crypto', { value: webcrypto });
   w.console = { error: assert.fail, warn() {} };
   w.PubGuruBackend = {
@@ -62,7 +63,7 @@ async function harness({ payload = {}, visionOk = true, native = false, nativeFa
   w.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/jpeg;base64,dGVzdA==';
   w.pdfjsLib = {
     GlobalWorkerOptions: {},
-    getDocument: () => ({ promise: Promise.resolve({ numPages: 1,
+    getDocument: () => ({ promise: Promise.resolve({ numPages: pdfPages,
       getPage: async () => ({ getViewport: () => ({ width: 4, height: 4 }), render: () => ({ promise: Promise.resolve() }) }) }) })
   };
   if (native) {
@@ -179,4 +180,60 @@ test('server Vision with an unreadable document total remains blocked for review
     h.w.document.getElementById('submitBtn').click();
     assert.equal(h.writes.length, 0, 'missing total must not be invented or persisted');
   } finally { h.dom.window.close(); }
+});
+
+test('default document reading is local and does not invoke a paid API',async()=>{
+  const h=await harness({serverVision:false});
+  try{
+    await h.capture();
+    assert.deepEqual(h.calls,['tesseract']);
+    assertProvenance(await h.submit(),'tesseract-browser-v3',null);
+  }finally{h.dom.window.close();}
+});
+
+test('queued document keeps the upload fingerprint, does not invent a date, and cannot be manually submitted during saving',async()=>{
+  const h=await harness();
+  try{
+    const file=new h.w.File(['compressed'], 'source.pdf',{type:'application/pdf'});
+    file.arrayBuffer=async()=>new TextEncoder().encode('compressed').buffer;
+    h.w.PubGuruInvoiceCapture.beginQueue();
+    const result=await h.w.PubGuruInvoiceCapture.readQueued(file,{source_fingerprint:'original-upload-hash'});
+    assert.deepEqual(h.calls,['tesseract'],'batch always uses local OCR');
+    assert.equal(result.issue_date,null,'missing original issue date must stay missing');
+    assert.equal(result.lines.length,1);
+    assert.equal(result.provider,'tesseract-browser-v3');
+    assert.equal(h.w.document.getElementById('submitBtn').disabled,true);
+    h.w.document.getElementById('submitBtn').click();
+    assert.equal(h.writes.length,0,'saving belongs to the atomic queue RPC');
+    assert.equal(h.w.document.getElementById('ocrText').disabled,true,'editing stays locked until persistence finishes');
+    h.w.PubGuruInvoiceCapture.clearQueued();h.w.PubGuruInvoiceCapture.endQueue();
+    assert.equal(h.w.PubGuruInvoiceCapture.hasDraft(),false);
+    assert.equal(h.w.document.getElementById('ocrText').disabled,false);
+  }finally{h.dom.window.close();}
+});
+
+test('queue refuses to overwrite a manual draft and reports unreadable item text',async()=>{
+  const h=await harness({serverVision:false});
+  try{
+    await h.capture();
+    const file=new h.w.File(['test'], 'invoice.pdf',{type:'application/pdf'});
+    file.arrayBuffer=async()=>new TextEncoder().encode('test').buffer;
+    await assert.rejects(h.w.PubGuruInvoiceCapture.readQueued(file,{source_fingerprint:'hash'}),/rozepsaný doklad/);
+    assert.equal(h.w.document.getElementById('lineCount').textContent,'1');
+    h.w.PubGuruInvoiceCapture.clear();
+    h.w.Tesseract.recognize=async()=>({data:{text:'This photo contains no item quantities or prices'}});
+    await assert.rejects(h.w.PubGuruInvoiceCapture.readQueued(file,{source_fingerprint:'hash'}),/žádná položka/);
+    assert.equal(h.w.PubGuruInvoiceCapture.isBusy(),false);
+  }finally{h.dom.window.close();}
+});
+
+test('queued PDFs read every page rather than silently stopping after the fourth',async()=>{
+  const h=await harness({serverVision:false,pdfPages:5});
+  try{
+    const file=new h.w.File(['test'], 'invoice.pdf',{type:'application/pdf'});
+    file.arrayBuffer=async()=>new TextEncoder().encode('test').buffer;
+    const result=await h.w.PubGuruInvoiceCapture.readQueued(file,{source_fingerprint:'original'});
+    assert.equal(h.calls.length,5);assert.equal(result.lines.length,5);
+    assert.match(result.raw_text,/STRANA 5/);
+  }finally{h.dom.window.close();}
 });

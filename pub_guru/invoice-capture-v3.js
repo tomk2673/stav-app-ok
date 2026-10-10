@@ -8,6 +8,13 @@
   let sourceFileName = null;
   let documentTotal = null;
   let cropMeta = null;
+  let reading = false;
+  let queueLocked = false;
+  let manualDraft = false;
+  let resolveReady;
+  let rejectReady;
+  const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+  ready.catch(() => {});
 
   const $ = id => document.getElementById(id);
   const db = () => window.PubGuruBackend.client;
@@ -118,6 +125,7 @@
       el.querySelector('.price').oninput = e => rows[i].price = num(e.target.value, 0);
       el.querySelector('.remove').onclick = () => { rows.splice(i, 1); render(); };
     });
+    if(reading || queueLocked)lockEditor(true);
   }
 
   function cleanLines(text) {
@@ -485,10 +493,14 @@
     const dataUrl=await fileDataUrl(file);
     const body={file_name:file.name||'invoice',mime_type:file.type||'image/jpeg',ocr_text:ocrText};
     if(file.type==='application/pdf') body.file_data=dataUrl; else body.data_url=dataUrl;
-    const response=await fetch('/api/invoice-vision',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(body)});
-    const payload=await response.json().catch(()=>({}));
-    if(!response.ok) throw new Error(payload.detail||payload.error||('AI čtení HTTP '+response.status));
-    return payload;
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),25000);
+    try {
+      const response=await fetch('/api/invoice-vision',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(body)});
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(payload.detail||payload.error||('AI čtení HTTP '+response.status));
+      return payload;
+    } finally { clearTimeout(timeout); }
   }
 
   function applyVisionResult(payload) {
@@ -519,8 +531,41 @@
     toast('AI přečetla '+rows.length+' položek přímo z faktury'+(warnings.length?' · '+warnings.length+' upozornění':'')+'.',6500);
   }
 
-  async function handleFile(file) {
-    fingerprint=await sha256(file);
+  function lockEditor(locked) {
+    document.querySelectorAll('#ocrText, #supplier, #number, #date, #invoiceFile, #parseBtn, #clearBtn, #addLineBtn, #useServerVision, #lines input, #lines select, #lines button').forEach(el=>el.disabled=locked);
+    $('submitBtn').disabled=true;
+  }
+
+  async function handleFile(file, job=null) {
+    if(reading || (!job && queueLocked))throw new Error('Počkej na dokončení čtení dokladu.');
+    if(job && hasDraft())throw new Error('Nejdřív dokonči rozepsaný doklad.');
+    reading=true;
+    clear(false);
+    $('date').value=job?'':today();
+    lockEditor(true);
+    try {
+      const duplicate=await readDocument(file,job);
+      if(job)return duplicate || extraction();
+      manualDraft=!duplicate;
+    } finally {
+      reading=false;
+      lockEditor(queueLocked);
+      window.dispatchEvent(new Event('pubguru:invoice-read-finished'));
+    }
+  }
+
+  function readStep(task, cancel, ms=45000) {
+    let timer;
+    const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>{
+      try { Promise.resolve(cancel?.()).catch(()=>{}); } catch (error) { console.warn('Document cleanup failed',error); }
+      reject(new Error('Doklad při načítání nereaguje. Zkus čtení zopakovat.'));
+    },ms);});
+    return Promise.race([task,timeout]).finally(()=>clearTimeout(timer));
+  }
+
+  async function readDocument(file, job) {
+    // Upload compression changes the bytes. Keep the original queued fingerprint.
+    fingerprint=job?.source_fingerprint || await sha256(file);
     sourceFileName=file.name || 'invoice';
     const dup=await db().from('invoices').select('id,invoice_number,status')
       .eq('organization_id',ctx.organization.id).eq('source_fingerprint',fingerprint).maybeSingle();
@@ -528,7 +573,8 @@
     if(dup.data){
       $('duplicateBadge').textContent='duplicitní';
       $('duplicateBadge').className='badge danger';
-      return toast(`Tento doklad už existuje${dup.data.invoice_number?` (${dup.data.invoice_number})`:''}.`,6000);
+      toast(`Tento doklad už existuje${dup.data.invoice_number?` (${dup.data.invoice_number})`:''}.`,6000);
+      return { duplicate_invoice_id:dup.data.id };
     }
 
     $('duplicateBadge').textContent='nový doklad';
@@ -539,40 +585,50 @@
 
     const canvas=$('invoicePreview');
     let text='';
-    $('ocrStatus').textContent='AI čte přímo fakturu…';
-    $('ocrProgress').style.width='12%';
-    try {
-      const vision=await readWithVision(file,'');
-      applyVisionResult(vision);
-      $('ocrText').value='[AI vision: dokument přečten přímo z obrazu/PDF]'+
-        (Number.isFinite(documentTotal)?'\nCelkem: '+documentTotal.toFixed(2):'');
-      cropMeta={vision:true,provider:vision.provider||'openai-vision',model:vision.model||null};
-      return;
-    } catch (visionError) {
-      console.warn('AI vision selhalo, používám OCR fallback.',visionError);
-      $('ocrStatus').textContent='AI čtení není dostupné. Používám OCR fallback…';
+    if(!job && $('useServerVision')?.checked) {
+      $('ocrStatus').textContent='AI čte přímo fakturu…';
+      $('ocrProgress').style.width='12%';
+      try {
+        const vision=await readWithVision(file,'');
+        applyVisionResult(vision);
+        $('ocrText').value='[AI vision: dokument přečten přímo z obrazu/PDF]'+
+          (Number.isFinite(documentTotal)?'\nCelkem: '+documentTotal.toFixed(2):'');
+        cropMeta={vision:true,provider:vision.provider||'openai-vision',model:vision.model||null};
+        return;
+      } catch (visionError) {
+        console.warn('AI vision selhalo, používám OCR fallback.',visionError);
+        $('ocrStatus').textContent='AI čtení není dostupné. Používám OCR fallback…';
+      }
     }
     if(file.type==='application/pdf'){
       if(!window.pdfjsLib)throw new Error('PDF knihovna se nenačetla.');
       pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
-      const max=Math.min(pdf.numPages,4);
-      cropMeta={detected:false,pdf:true};
-      for(let i=1;i<=max;i++){
-        const page=await pdf.getPage(i);
-        const vp=page.getViewport({scale:2.5});
-        canvas.width=vp.width;canvas.height=vp.height;canvas.classList.remove('hidden');
-        await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
-        enhance(canvas);
-        text+=`\n--- STRANA ${i} ---\n${await recognize(canvas,`Strana ${i}: `,(i-1)/max,1/max)}`;
-      }
+      const loading=pdfjsLib.getDocument({data:await file.arrayBuffer()});
+      const pdf=await readStep(loading.promise,()=>loading.destroy?.());
+      try {
+        if(pdf.numPages>25)throw new Error('PDF má více než 25 stran. Rozděl jej na menší doklady.');
+        const max=pdf.numPages;
+        cropMeta={detected:false,pdf:true};
+        for(let i=1;i<=max;i++){
+          const page=await readStep(pdf.getPage(i),()=>pdf.destroy?.());
+          const vp=page.getViewport({scale:2.5});
+          canvas.width=vp.width;canvas.height=vp.height;canvas.classList.remove('hidden');
+          const renderTask=page.render({canvasContext:canvas.getContext('2d'),viewport:vp});
+          await readStep(renderTask.promise,()=>renderTask.cancel?.());
+          enhance(canvas);
+          text+=`\n--- STRANA ${i} ---\n${await recognize(canvas,`Strana ${i}: `,(i-1)/max,1/max)}`;
+          page.cleanup?.();
+        }
+      } finally { if(pdf.destroy)await pdf.destroy(); }
     }else{
       const image=new Image();
       const url=URL.createObjectURL(file);
-      image.src=url;await image.decode();
-      const b=prepareImage(image,canvas);
-      canvas.classList.remove('hidden');
-      URL.revokeObjectURL(url);
+      let b;
+      try {
+        image.src=url;await readStep(image.decode());
+        b=prepareImage(image,canvas);
+        canvas.classList.remove('hidden');
+      } finally { URL.revokeObjectURL(url); }
       $('ocrStatus').textContent=b.detected?'Doklad oříznutý. Čtu text…':'Čtu celou fotku…';
       text=await recognizeLong(canvas);
     }
@@ -580,9 +636,27 @@
     $('ocrStatus').textContent=cropMeta?.provider==='apple-vision-native'?'Apple Vision OCR dokončeno.':'OCR dokončeno.';
     $('ocrProgress').style.width='100%';
     parseText();
+    if(reading)lockEditor(true);
+  }
+
+  function extraction() {
+    const text=$('ocrText').value.trim();
+    if(!text)throw new Error('OCR nepřečetlo žádný text. Zkus ostřejší fotografii.');
+    if(!rows.length)throw new Error('Text byl přečten, ale žádná položka není jistá. Zkus ostřejší fotografii nebo otevři jeden doklad ke kontrole.');
+    return {
+      raw_text:text, supplier:$('supplier').value.trim() || null,
+      invoice_number:$('number').value.trim() || null, issue_date:$('date').value || null,
+      total_gross:documentTotal, provider:cropMeta?.provider || 'manual-entry',
+      crop:cropMeta, lines:rows, needs_review:true
+    };
+  }
+
+  function hasDraft() {
+    return manualDraft || !!$('ocrText')?.value.trim() || !!$('supplier')?.value.trim() || !!$('number')?.value.trim() || rows.length>0;
   }
 
   async function submit() {
+    if(reading || queueLocked)return toast('Počkej na dokončení čtení dokladu.');
     if(!rows.length)return toast('Není co uložit. Nejprve musí být nalezena aspoň jedna jistá položka.');
     const dup=fingerprint?await db().from('invoices').select('id').eq('organization_id',ctx.organization.id)
       .eq('source_fingerprint',fingerprint).maybeSingle():{data:null,error:null};
@@ -665,18 +739,23 @@
     });
     if(audit.error)throw audit.error;
 
+    manualDraft=false;
+    if(ctx.role==='staff')clear();
     toast(ctx.role==='staff'?'Faktura odeslána vedoucímu ke schválení.':'Faktura připravena ke schválení.',6000);
     if(['owner','manager'].includes(ctx.role))setTimeout(()=>location.href='invoice-review-v1.html',700);
   }
 
-  function clear() {
+  function clear(notify=true) {
+    manualDraft=false;
     rows=[];fingerprint=null;sourceFileName=null;documentTotal=null;cropMeta=null;
     for(const id of ['invoiceFile','cameraFile']) if($(id)) $(id).value='';
     $('ocrText').value='';$('supplier').value='';$('number').value='';$('date').value=today();
     $('invoicePreview').classList.add('hidden');
+    $('invoicePreview').width=1;$('invoicePreview').height=1;
     $('ocrProgressWrap').classList.add('hidden');
     $('duplicateBadge').textContent='nový doklad';$('duplicateBadge').className='badge muted';
     render();
+    if(notify)window.dispatchEvent(new Event('pubguru:invoice-cleared'));
   }
 
   async function init() {
@@ -704,9 +783,19 @@
     $('addLineBtn').onclick=()=>{rows.push({id:uid(),rawName:'',productId:'',qty:1,price:0,vatRate:null,lineGross:null,lineNet:null,warning:'ručně přidaná položka'});render();};
     $('submitBtn').onclick=()=>submit().catch(err=>{console.error(err);toast(`Uložení selhalo: ${err.message}`,7500);});
     render();
+    resolveReady(ctx);
   }
 
+  window.PubGuruInvoiceCapture={
+    ready,isBusy:()=>reading || queueLocked,hasDraft,readQueued:handleFile,
+    beginQueue:()=>{queueLocked=true;lockEditor(true);},
+    endQueue:()=>{queueLocked=false;lockEditor(false);window.dispatchEvent(new Event('pubguru:invoice-read-finished'));},
+    clearQueued:()=>clear(false),
+    clear:()=>{if(!reading && !queueLocked)clear();}
+  };
+
   document.addEventListener('DOMContentLoaded',()=>init().catch(err=>{
+    rejectReady(err);
     console.error(err);
     toast(`Nelze spustit faktury: ${err.message}`,7500);
   }));

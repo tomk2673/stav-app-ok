@@ -27,11 +27,13 @@
   if(!box||!txt)return;
   txt.innerHTML=ok?'✓ Povinné údaje a všechny rozpoznané řádky prošly kontrolou. Doklad může pokračovat ke schválení.':'⚠ Doklad není kompletně přečten: '+issues.join('; ')+'. Nic nedoplňuji odhadem.';
   box.style.borderColor=ok?'':'#b36b00';
-  if(submit){submit.disabled=!ok;submit.title=ok?'':'Nejdřív musí projít kontrola úplnosti čtení.';}
+  if(submit){submit.disabled=!ok||!!window.PubGuruInvoiceCapture?.isBusy();submit.title=ok?'':'Nejdřív musí projít kontrola úplnosti čtení.';}
  }
  document.addEventListener('DOMContentLoaded',()=>{
    const target=$('lines'); if(target)new MutationObserver(check).observe(target,{childList:true,subtree:true,attributes:true});
    ['ocrText','supplier','number','date'].forEach(id=>$(id)?.addEventListener('input',check));
    setInterval(check,1200); check();
  });
+ window.addEventListener('pubguru:invoice-read-finished',check);
+ window.addEventListener('pubguru:invoice-cleared',check);
 })();

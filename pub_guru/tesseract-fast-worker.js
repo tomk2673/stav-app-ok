@@ -19,9 +19,11 @@
 
   async function getWorker() {
     if (!workerPromise) {
+      let initializingWorker=null;
       const pending = tesseract.createWorker('ces+eng', 1, {
         logger: message => activeLogger?.(message)
       }).then(async worker => {
+        initializingWorker=worker;
         await worker.setParameters({
           tessedit_pageseg_mode: '6',
           preserve_interword_spaces: '1'
@@ -30,9 +32,13 @@
       });
       const current = deadline(pending,60000,'OCR se nepodařilo načíst. Zkontroluj připojení a zkus čtení znovu.',()=>{
         workerPromise=null;
-        pending.then(worker=>worker.terminate()).catch(()=>{});
+        if(initializingWorker)Promise.resolve(initializingWorker.terminate()).catch(()=>{});
+        else pending.then(worker=>worker.terminate()).catch(()=>{});
       }).catch(error => {
-        if(workerPromise===current)workerPromise = null;
+        if(workerPromise===current){
+          workerPromise = null;
+          if(initializingWorker)Promise.resolve(initializingWorker.terminate()).catch(()=>{});
+        }
         throw error;
       });
       workerPromise=current;

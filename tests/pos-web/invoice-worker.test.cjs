@@ -56,3 +56,15 @@ test('a stalled parameter update is bounded and releases the queue',async()=>{
   await h.fire(30000);assert.match((await blocked).message,/nereaguje/);
   assert.equal((await h.window.Tesseract.recognize('second')).data.text,'ok');assert.equal(created,2);
 });
+
+test('a worker that hangs during initial setup is terminated before another is created',async()=>{
+  let created=0,terminated=0;
+  const h=harness(async()=>{
+    const current=++created;
+    return {setParameters:async()=>current===1?new Promise(()=>{}):undefined,
+      terminate:async()=>{terminated++;},recognize:async()=>({data:{text:'next'}})};
+  });
+  const blocked=h.window.Tesseract.recognize('first').catch(error=>error);
+  await h.fire(60000);assert.match((await blocked).message,/načíst/);assert.equal(terminated,1);
+  assert.equal((await h.window.Tesseract.recognize('next')).data.text,'next');assert.equal(created,2);
+});

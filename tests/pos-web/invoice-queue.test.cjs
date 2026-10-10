@@ -132,3 +132,15 @@ test('queue filenames and error messages are displayed as text',async()=>{
     assert.match(list.textContent,/<img src=x/);assert.match(list.textContent,/<script>/);
   }finally{h.dom.window.close();}
 });
+
+test('only review jobs count as awaiting approval and completed jobs do not offer review again',async()=>{
+  const h=await harness({jobs:[{id:'finished',status:'done',invoice_id:'posted-invoice'},
+    {id:'waiting',status:'review',invoice_id:'review-invoice'}]});
+  try{
+    await until(()=>h.w.document.querySelectorAll('#queueJobs .queue-job').length===2 && !h.w.PubGuruInvoiceQueue.isBusy(),'summary rendered');
+    assert.match(h.w.document.getElementById('queueCount').textContent,/0 čeká · 1 ke kontrole · 0 chyb/);
+    const rows=h.w.document.querySelectorAll('#queueJobs .queue-job');
+    assert.match(rows[0].textContent,/Dokončeno/);assert.equal(rows[0].querySelector('a'),null);
+    assert.equal(rows[1].querySelector('a').textContent,'Zkontrolovat');
+  }finally{h.dom.window.close();}
+});

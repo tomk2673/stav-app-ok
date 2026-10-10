@@ -1,4 +1,4 @@
-const CACHE = 'pub-guru-shell-v8-invoice-queue';
+const CACHE = 'pub-guru-shell-v9-invoice-approval';
 const APP_SHELL = [
   './', './start.html', './index.html', './invoice-review.html', './closings.html', './styles.css', './app.js',
   './closings.js', './invoice-review.js', './backend.js', './roles.js', './navigation.js', './data-sync.js',

@@ -45,4 +45,8 @@ Focení, dávkový výběr a import alba ukládají původní doklady do soukrom
 
 Před nasazením webu aplikuj `database/20261010033954_invoice_capture_queue_worker.sql`. RPC převzetí s tokenem a obnovovanou desetiminutovou rezervací brání souběžnému čtení stejné úlohy. Faktura, její řádky, audit a stav fronty se ukládají v jedné transakci. Rozpoznaná data mají stav `review`; fronta sama nic nenaskladňuje. Otisk se bere z původního souboru před kompresí. Chybějící datum nebo částka zůstávají nevyplněné. Chyba jedné úlohy nezablokuje další; tlačítko „Zkusit znovu“ zachová uložený zdroj.
 
+Následně aplikuj `database/20261010141443_invoice_approval_queue_completion.sql` před aktualizací webu. Schvalování nejprve uloží mezistav `approved`; audit `invoice.posted` potom atomicky zaúčtuje sklad, změní fakturu na `posted` a dokončí její úlohu jako `done`. Selhání kteréhokoli z těchto kroků vrátí celou poslední transakci a úloha zůstane ke kontrole. Dokončení fronty má vlastní audit a neuděluje uživatelům přímé právo měnit úlohy. Samotná migrace nepřepisuje existující finanční ani skladová data.
+
+Starší úlohy s již zaúčtovanou fakturou souhrn zobrazí jako dokončené bez zpětného zápisu. Počty a seznam používají stejný odvozený stav, vždy pro stejnou organizaci a provozovnu. Samotné `approved` se jako dokončené nepočítá. Schvalování po ztracené odpovědi ověří uložený stav; již zaúčtovaný doklad znovu nemění. Ověření před nasazením probíhá pouze v oddělené testovací databázi; fyzický iPhone a reálné dodavatelské faktury tím nejsou ověřené.
+
 Regrese fronty, jejího uživatelského toku a databázových přístupů jsou v `tests/pos-web` a spouštějí se pomocí `npm test --prefix tests/pos-web`.

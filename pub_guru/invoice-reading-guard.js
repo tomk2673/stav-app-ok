@@ -2,7 +2,6 @@
 (function(){
  const $=id=>document.getElementById(id);
  const val=id=>$(id)?.value||'';
- const money=s=>{const x=String(s||'').match(/celkem\s*(?:\[\s*czk\s*\])?\s*:?\s*(-?\d[\d .]*[,.]\d{2})/ig)||[];if(!x.length)return null;const m=x[x.length-1].match(/(-?\d[\d .]*[,.]\d{2})/);return m?Number(m[1].replace(/\s/g,'').replace(/\.(?=\d{3})/g,'').replace(',','.')):null};
  function check(){
   const text=val('ocrText').trim(), rows=[...document.querySelectorAll('#lines .line')], issues=[];
   if(!text){render(['Doklad ještě nebyl přečten.'],false);return;}
@@ -10,10 +9,10 @@
   if(!val('number').trim())issues.push('chybí číslo dokladu');
   if(!val('date'))issues.push('chybí datum');
   if(!rows.length)issues.push('nebyla bezpečně přečtena žádná položka');
-  const total=money(text);
+  const total=window.PubGuruInvoiceCapture?.printedTotal?.() ?? null;
   if(total===null)issues.push('nepodařilo se jednoznačně přečíst CELKEM');
   let uncertain=0;
-  rows.forEach(r=>{const q=Number(r.querySelector('.qty')?.value),p=Number(r.querySelector('.price')?.value);if(!Number.isFinite(q)||q===0||!Number.isFinite(p)||p<0)uncertain++;});
+  rows.forEach(r=>{const qty=r.querySelector('.qty')?.value,price=r.querySelector('.price')?.value,q=Number(qty),p=Number(price);if(!qty||!price||!Number.isFinite(q)||q===0||!Number.isFinite(p)||p<0)uncertain++;});
   if(uncertain)issues.push(uncertain+' řádků nemá jisté množství/cenu');
   const rojal=/\bROJAL\b/i.test(text);
   if(rojal){

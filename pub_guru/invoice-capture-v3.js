@@ -35,6 +35,7 @@
 
   function parseNumber(value) {
     let s = String(value ?? '').trim().replace(/\s/g, '');
+    s = s.replace(/[.,]-$/, '');
     s = s.replace(/[^0-9,.\-]/g, '');
     if (!s) return NaN;
     const comma = s.lastIndexOf(',');
@@ -44,11 +45,11 @@
       const thousands = decimal === ',' ? '.' : ',';
       s = s.split(thousands).join('').replace(decimal, '.');
     } else if (comma >= 0) {
-      const tail = s.length - comma - 1;
-      s = tail === 2 ? s.replace(',', '.') : s.replace(/,/g, '');
+      s = s.replace(',', '.');
     } else if (dot >= 0) {
-      const tail = s.length - dot - 1;
-      if (tail !== 2) s = s.replace(/\./g, '');
+      // A single separator is decimal, including supplier quantities 1.000.
+      // Multiple dot groups are thousands (e.g. 1.234.567).
+      if (/^-?\d{1,3}(?:\.\d{3}){2,}$/.test(s)) s = s.replace(/\./g, '');
     }
     const x = Number(s);
     return Number.isFinite(x) ? x : NaN;
@@ -60,7 +61,7 @@
   };
 
   function moneyTokens(text) {
-    const matches = String(text || '').match(/-?\d{1,3}(?:[ .]\d{3})*(?:[,.]\d{2})|-?\d+[,.]\d{2}/g) || [];
+    const matches = String(text || '').match(/-?(?:\d{1,3}(?:[ .]\d{3})+|\d+)(?:[,.]\d{1,4}\b|[.,]-)/g) || [];
     return matches.map(parseNumber).filter(Number.isFinite);
   }
 
@@ -103,6 +104,7 @@
         r.sourceCode ? `kód ${esc(r.sourceCode)}` : '',
         Number.isFinite(r.vatRate) ? `DPH ${r.vatRate}%` : '',
         Number.isFinite(r.lineGross) ? `brutto ${r.lineGross.toLocaleString('cs-CZ', {maximumFractionDigits:2})} Kč` : '',
+        Number.isFinite(r.observedPrice) && !r.priceBasis ? `OCR cena ${r.observedPrice.toLocaleString('cs-CZ')} Kč` : '',
         r.warning ? `⚠ ${esc(r.warning)}` : ''
       ].filter(Boolean).join(' · ');
       return `<div class="line${r.warning ? ' line-warning' : ''}" data-i="${i}">
@@ -111,7 +113,7 @@
           ${meta ? `<small class="line-meta">${meta}</small>` : ''}
         </label>
         <label class="product">Produkt<select class="productId">${productOptions(r.productId)}</select></label>
-        <label>Ks<input class="qty" type="number" step="0.01" value="${Number.isFinite(r.qty) ? r.qty : ''}" /></label>
+        <label>Ks<input class="qty" type="number" step="0.001" value="${Number.isFinite(r.qty) ? r.qty : ''}" /></label>
         <label>Cena/ks bez DPH<input class="price" type="number" min="0" step="0.01" value="${Number.isFinite(r.price) ? r.price.toFixed(2) : ''}" /></label>
         <button class="icon-btn remove" title="Odstranit">×</button>
       </div>`;
@@ -172,16 +174,32 @@
   }
 
   function parseInvoiceNumber(text) {
-    const m = String(text || '').match(/(?:č[ií]slo|cislo)\s+dokladu\s*[:\-]?\s*([0-9O]{6,12})/i);
+    const m = String(text || '').match(/(?:(?:č[ií]slo|cislo)\s+(?:dokladu|faktury)|faktura\s+(?:č\.?|c\.?|č[ií]slo))\s*[:\-]?\s*([A-Z0-9][A-Z0-9\/_-]{0,39})/i);
     if (!m) return '';
-    return m[1].replace(/O/gi, '0');
+    if (!/[0-9]/.test(m[1])) return '';
+    return /^[0-9O]+$/i.test(m[1]) ? m[1].replace(/O/gi, '0') : m[1];
   }
 
   function parsePrintedTotal(text) {
-    const all = [...String(text || '').matchAll(/celkem\s*(?:\[\s*czk\s*\])?\s*:?\s*(-?\d[\d\s.]*[,.]\d{2})/ig)];
-    if (!all.length) return null;
-    const x = parseNumber(all[all.length - 1][1]);
-    return Number.isFinite(x) ? x : null;
+    const lines = cleanLines(text).map(x => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase());
+    const candidates = [];
+    const taxNote = /spotrebni\s+dan|zaklad\s+dane|bez\s+dph|celkem\s+dph|dan\s+celkem|rekapitulace/;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (taxNote.test(line)) continue;
+      const rank = /k\s+uhrade|celkem\s+k\s+zaplaceni/.test(line) ? 100
+        : /celkem.*(?:s\s+dph|vcetne\s+dph|brutto)|celkova\s+cena.*dph/.test(line) ? 90
+        : /^celkem\b|^celkova\s+(?:cena|castka)/.test(line) ? 80
+        : /^(?:kc|czk)\s*:/.test(line) ? 40 : 0;
+      if (!rank || (rank <= 80 && taxNote.test(lines[i - 1] || ''))) continue;
+      let amounts = moneyTokens(line);
+      if (!amounts.length && /^[\d\s.,\-]+(?:\s*(?:kc|czk))?$/.test(lines[i + 1] || '')) amounts = moneyTokens(lines[i + 1]);
+      if (amounts.length === 1) candidates.push({ rank, amount: amounts[0] });
+    }
+    if (!candidates.length) return null;
+    const best = Math.max(...candidates.map(x => x.rank));
+    const amounts = [...new Set(candidates.filter(x => x.rank === best).map(x => x.amount))];
+    return amounts.length === 1 ? amounts[0] : null;
   }
 
   function codeFromLine(line) {
@@ -197,7 +215,7 @@
   function dataFromLine(line) {
     const vat = String(line || '').match(/\b(0|12|21)\s*%/);
     if (!vat) return null;
-    const qtyMatch = String(line || '').match(/(-?\d+(?:[,.]\d+)?|\|)\s*(KS|KUS)\b/i);
+    const qtyMatch = String(line || '').match(/(-?(?:\d{1,3}(?:\s+\d{3})+|\d+)(?:[,.]\d+)?|\|)\s*(KS|KUS)\b/i);
     if (!qtyMatch) return null;
     const qty = qtyMatch[1] === '|' ? 1 : parseNumber(qtyMatch[1]);
     if (!Number.isFinite(qty)) return null;
@@ -302,21 +320,41 @@
 
   function parseGenericRows(text) {
     const found = [];
-    for (const line of cleanLines(text)) {
+    const lines = cleanLines(text);
+    const qtyPattern = /(-?(?:\d{1,3}(?:\s+\d{3})+|\d+)(?:[,.]\d+)?)\s*(ks|kus|bal|kart|btl)\b/i;
+    const headers = lines.filter(line => !qtyPattern.test(line));
+    const bases = new Set(headers.flatMap(line => [...line.matchAll(/cena(?:\s*\/\s*ks)?\s*(bez\s+dph|s\s+dph)/ig)].map(m => /bez/i.test(m[1]) ? 'net' : 'gross')));
+    const basis = bases.size === 1 ? [...bases][0] : null;
+    const rates = new Set(headers.flatMap(line => [...line.matchAll(/dph\s*(0|12|21)\s*%/ig)].map(m => Number(m[1]))));
+    const headerVat = rates.size === 1 ? [...rates][0] : null;
+    for (const line of lines) {
       if (/(celkem|dph|dodavatel|odb[eě]ratel|faktura|stvrzenka|č[ií]slo dokladu|ico|ičo|dic|dič)/i.test(line)) continue;
-      const qty = line.match(/(-?\d+(?:[,.]\d+)?)\s*(ks|kus|bal|kart|btl)\b/i);
+      const qty = line.match(qtyPattern);
       if (!qty) continue;
       const prices = moneyTokens(line.slice((qty.index || 0) + qty[0].length));
       if (!prices.length) continue;
-      const name = line.slice(0, qty.index || 0).replace(/[;:|]+$/g,'').trim();
+      let name = line.slice(0, qty.index || 0).replace(/[;:|]+$/g,'').trim();
       if (name.length < 3 || !/[A-Za-zÁ-ž]/.test(name)) continue;
+      const code = name.match(/^(\d{4,8})(?:\s+\1)?\s+(.+)$/);
+      if (code) name = code[2];
+      const quantity = parseNumber(qty[1]);
+      const vat = line.match(/\b(0|12|21)\s*%/);
+      const vatRate = vat ? Number(vat[1]) : headerVat;
+      const observedPrice = Math.abs(prices[0]);
+      const linePrice = prices.length > 1 ? prices[prices.length - 1] : quantity * observedPrice;
+      const unitGross = basis === 'gross' ? observedPrice : basis === 'net' && vatRate !== null ? observedPrice * (1 + vatRate / 100) : null;
+      const unitNet = basis === 'net' ? observedPrice : basis === 'gross' && vatRate !== null ? observedPrice / (1 + vatRate / 100) : null;
+      const warnings = [vatRate === null ? 'nepřečtená sazba DPH' : '', basis === null ? `OCR cena ${observedPrice.toLocaleString('cs-CZ')} Kč: není jasné, zda je cena s DPH nebo bez DPH` : ''].filter(Boolean);
+      if (Math.abs(quantity * observedPrice - linePrice) > 0.03) warnings.push('součet řádku nesedí s množstvím a jednotkovou cenou');
       const p = bestProductMatch(name);
       found.push({
         id: uid(), rawName: name, productId: p?.id || '',
-        qty: parseNumber(qty[1]), price: Math.abs(prices[0]),
-        vatRate: null, unitGross: null, lineNet: null,
-        lineGross: prices.length > 1 ? prices[prices.length - 1] : null,
-        warning: 'zkontrolovat sazbu DPH'
+        sourceCode: code ? code[1] : null,
+        qty: quantity, price: unitNet, observedPrice, priceBasis: basis,
+        vatRate, unitGross,
+        lineNet: Number.isFinite(unitNet) ? (basis === 'net' ? linePrice : linePrice / (1 + vatRate / 100)) : null,
+        lineGross: Number.isFinite(unitGross) ? (basis === 'gross' ? linePrice : linePrice * (1 + vatRate / 100)) : null,
+        warning: warnings.join(' · ')
       });
     }
     return found.slice(0, 80);
@@ -643,6 +681,7 @@
     const text=$('ocrText').value.trim();
     if(!text)throw new Error('OCR nepřečetlo žádný text. Zkus ostřejší fotografii.');
     if(!rows.length)throw new Error('Text byl přečten, ale žádná položka není jistá. Zkus ostřejší fotografii nebo otevři jeden doklad ke kontrole.');
+    documentTotal=parsePrintedTotal(text);
     return {
       raw_text:text, supplier:$('supplier').value.trim() || null,
       invoice_number:$('number').value.trim() || null, issue_date:$('date').value || null,
@@ -658,6 +697,7 @@
   async function submit() {
     if(reading || queueLocked)return toast('Počkej na dokončení čtení dokladu.');
     if(!rows.length)return toast('Není co uložit. Nejprve musí být nalezena aspoň jedna jistá položka.');
+    documentTotal=parsePrintedTotal($('ocrText').value);
     const dup=fingerprint?await db().from('invoices').select('id').eq('organization_id',ctx.organization.id)
       .eq('source_fingerprint',fingerprint).maybeSingle():{data:null,error:null};
     if(dup.error)throw dup.error;
@@ -714,6 +754,8 @@
           ocr_vat_rate:r.vatRate,
           ocr_unit_gross:r.unitGross,
           ocr_line_gross:r.lineGross,
+          ocr_observed_unit_price:r.observedPrice ?? null,
+          ocr_price_basis:r.priceBasis ?? null,
           parser_warning:r.warning||null
         }
       });
@@ -788,6 +830,7 @@
 
   window.PubGuruInvoiceCapture={
     ready,isBusy:()=>reading || queueLocked,hasDraft,readQueued:handleFile,
+    printedTotal:()=>parsePrintedTotal($('ocrText').value),
     beginQueue:()=>{queueLocked=true;lockEditor(true);},
     endQueue:()=>{queueLocked=false;lockEditor(false);window.dispatchEvent(new Event('pubguru:invoice-read-finished'));},
     clearQueued:()=>clear(false),

@@ -8,7 +8,7 @@ const { webcrypto } = require('node:crypto');
 const { JSDOM } = require('jsdom');
 
 const root = path.resolve(__dirname, '../../pub_guru');
-const ocrText = 'Dodavatel: Test supplier\nČíslo dokladu: 123456\nTest vodka 1 ks 10,00 10,00\nCelkem: 10,00';
+const ocrText = 'Dodavatel: Test supplier\nČíslo dokladu: 123456\nCena/ks bez DPH · DPH 0%\nTest vodka 1 ks 10,00 10,00\nCelkem: 10,00';
 const visionInvoice = {
   supplier: 'Test supplier', invoice_number: 'TEST-1', issue_date: '2026-10-05',
   total_gross: 10, warnings: [],
@@ -24,7 +24,7 @@ async function until(predicate, label) {
   throw new Error('Timed out: ' + label);
 }
 
-async function harness({ payload = {}, visionOk = true, native = false, nativeFails = false, serverVision = true, pdfPages=1 } = {}) {
+async function harness({ payload = {}, visionOk = true, native = false, nativeFails = false, serverVision = true, pdfPages=1, text=ocrText, expectedLines=1 } = {}) {
   const html = fs.readFileSync(path.join(root, 'invoice-capture.html'), 'utf8');
   const dom = new JSDOM(html, { url: 'https://invoices.test/pub_guru/invoice-capture.html', runScripts: 'outside-only' });
   const w = dom.window, writes = [], calls = [];
@@ -56,7 +56,7 @@ async function harness({ payload = {}, visionOk = true, native = false, nativeFa
     return { ok: visionOk, status: visionOk ? 200 : 503,
       json: async () => visionOk ? { invoice: visionInvoice, ...payload } : { error: 'vision_not_configured' } };
   };
-  w.Tesseract = { recognize: async () => { calls.push('tesseract'); return { data: { text: ocrText } }; } };
+  w.Tesseract = { recognize: async () => { calls.push('tesseract'); return { data: { text } }; } };
   w.HTMLCanvasElement.prototype.getContext = function () {
     return { getImageData: () => ({ data: new Uint8ClampedArray(this.width * this.height * 4) }), putImageData() {} };
   };
@@ -71,7 +71,7 @@ async function harness({ payload = {}, visionOk = true, native = false, nativeFa
       calls.push('native');
       queueMicrotask(() => w.PubGuruNativeOCR.resolve(nativeFails
         ? { requestId, error: 'native unavailable' }
-        : { requestId, text: ocrText, confidence: 1 }));
+        : { requestId, text, confidence: 1 }));
     } } } };
   }
   for (const name of ['native-vision-bridge.js', 'invoice-capture-v3.js', 'invoice-reading-guard.js']) {
@@ -87,7 +87,7 @@ async function harness({ payload = {}, visionOk = true, native = false, nativeFa
       const previousCalls = calls.length;
       w.document.getElementById('invoiceFile').onchange({ target: { files: [file] } });
       await until(() => calls.length > previousCalls && w.document.getElementById('ocrProgress').style.width === '100%', 'document read');
-      assert.equal(w.document.getElementById('lineCount').textContent, '1');
+      assert.equal(w.document.getElementById('lineCount').textContent, String(expectedLines));
     },
     async submit() {
       const submit = w.document.getElementById('submitBtn');
@@ -235,5 +235,103 @@ test('queued PDFs read every page rather than silently stopping after the fourth
     const result=await h.w.PubGuruInvoiceCapture.readQueued(file,{source_fingerprint:'original'});
     assert.equal(h.calls.length,5);assert.equal(result.lines.length,5);
     assert.match(result.raw_text,/STRANA 5/);
+  }finally{h.dom.window.close();}
+});
+
+test('supplier quantities with one or three decimal places are not multiplied by 1000',async()=>{
+  const text='Dodavatel: Test supplier\nČíslo dokladu: 123456\nCena/ks bez DPH · DPH 0%\n'+
+    '0361 CO2 15kg 1,000 ks 570,25 570,25\n0323 0323 Pivoplyn 201 (15kg) 2.000 ks 599,17 1198,34\n'+
+    '0211 Vratná záloha -1,000 ks 1000,- -1000,-\nTest voda 1,5 ks 10,00 15,00\nTest soda 0.125 ks 10,00 1,25\nTest obaly 1000 ks 1,00 1000,00\nCelkem: 1784,84';
+  const h=await harness({serverVision:false,text,expectedLines:6});
+  try{
+    await h.capture();
+    const quantities=[...h.w.document.querySelectorAll('.qty')].map(x=>Number(x.value));
+    assert.deepEqual(quantities,[1,2,-1,1.5,0.125,1000]);
+    assert.equal(h.w.document.querySelector('.rawName').value,'CO2 15kg');
+    assert.match(h.w.document.querySelector('.line-meta').textContent,/kód 0361/);
+    assert.equal(h.w.document.querySelectorAll('.price')[2].value,'1000.00');
+  }finally{h.dom.window.close();}
+});
+
+test('ROJAL decimal quantities retain their VAT and printed line totals',async()=>{
+  const text='ROJAL spol. s r.o.\nČíslo dokladu: 123456\nID zboží Název zboží\nAB-123 Test vodka\n21% 1,000 KS 121,00 121,00\nCelkem [CZK]: 121,00';
+  const h=await harness({serverVision:false,text});
+  try{
+    await h.capture();
+    assert.equal(h.w.document.querySelector('.qty').value,'1');
+    assert.equal(h.w.document.querySelector('.price').value,'100.00');
+    assert.match(h.w.document.querySelector('.line-meta').textContent,/DPH 21%/);
+  }finally{h.dom.window.close();}
+});
+
+for(const [label,totalText,expected] of [
+  ['excise note on one line','Kč: 5 812,00\nSpotřební daň obsažená v prodejní ceně celkem 629,20Kč',5812],
+  ['excise note on a separate line','Kc: 5 812,00\nSpotřební daň obsažená v prodejní ceně\ncelkem 629,20Kč',5812],
+  ['gross before net summary','Celkem s DPH: 5.812,00\nCelkem bez DPH: 4803,31\nCelkem DPH: 1008,69',5812],
+  ['amount due before excise','Celkem k úhradě: 5 812,00\nSpotřební daň obsažená v prodejní ceně celkem 629,20 Kč',5812],
+  ['printed dash notation','K úhradě: 1000,-',1000],
+  ['conflicting totals','Celkem: 5 812,00\nCelkem: 6 000,00',null],
+  ['excise is the only amount','Spotřební daň obsažená v prodejní ceně\ncelkem 629,20 Kč',null]
+]){
+  test('invoice total distinguishes '+label,async()=>{
+    const text=ocrText.replace('Celkem: 10,00',totalText);
+    const h=await harness({serverVision:false,text});
+    try{
+      await h.capture();
+      assert.equal(h.w.PubGuruInvoiceCapture.printedTotal(),expected);
+      if(expected===null){
+        assert.equal(h.w.document.getElementById('submitBtn').disabled,true);
+        h.w.document.getElementById('submitBtn').click();
+        assert.equal(h.writes.length,0);
+      }
+    }finally{h.dom.window.close();}
+  });
+}
+
+test('unknown generic price basis and VAT stay missing rather than becoming zero-tax net prices',async()=>{
+  const h=await harness({serverVision:false,text:ocrText.replace('Cena/ks bez DPH · DPH 0%\n','')});
+  try{
+    await h.capture();
+    assert.equal(h.w.document.querySelector('.price').value,'');
+    assert.match(h.w.document.querySelector('.line-meta').textContent,/nepřečtená sazba DPH/);
+    assert.match(h.w.document.querySelector('.line-meta').textContent,/není jasné/);
+    assert.equal(h.w.document.getElementById('submitBtn').disabled,true);
+  }finally{h.dom.window.close();}
+});
+
+test('editing numeric inputs preserves decimal quantities and decimal prices on persistence',async()=>{
+  const h=await harness({serverVision:false});
+  try{
+    await h.capture();
+    for(const [selector,value] of [['.qty','1.5'],['.price','9.5']]){
+      const input=h.w.document.querySelector(selector);input.value=value;input.dispatchEvent(new h.w.Event('input',{bubbles:true}));
+    }
+    await h.submit();
+    const line=h.writes.find(x=>x.table==='invoice_lines').data;
+    assert.equal(line.quantity,1.5);
+    assert.equal(line.unit_price_net,9.5);
+  }finally{h.dom.window.close();}
+});
+
+test('grouped quantities and alphanumeric invoice identifiers remain readable',async()=>{
+  const text=ocrText.replace('Číslo dokladu: 123456','Faktura č.: FV-2026/100').replace('1 ks','1 234,000 ks');
+  const h=await harness({serverVision:false,text});
+  try{
+    await h.capture();
+    assert.equal(h.w.document.querySelector('.qty').value,'1234');
+    assert.equal(h.w.document.getElementById('number').value,'FV-2026/100');
+  }finally{h.dom.window.close();}
+});
+
+test('the reading gate checks the current OCR text rather than a stale parsed total',async()=>{
+  const h=await harness({serverVision:false});
+  try{
+    await h.capture();
+    const input=h.w.document.getElementById('ocrText');
+    input.value=ocrText.replace('Celkem: 10,00','Spotřební daň obsažená v prodejní ceně celkem 629,20 Kč');
+    input.dispatchEvent(new h.w.Event('input',{bubbles:true}));
+    assert.equal(h.w.PubGuruInvoiceCapture.printedTotal(),null);
+    assert.equal(h.w.document.getElementById('submitBtn').disabled,true);
+    assert.equal(h.writes.length,0);
   }finally{h.dom.window.close();}
 });

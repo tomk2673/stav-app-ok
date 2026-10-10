@@ -46,3 +46,9 @@ Focení, dávkový výběr a import alba ukládají původní doklady do soukrom
 Před nasazením webu aplikuj `database/20261010033954_invoice_capture_queue_worker.sql`. RPC převzetí s tokenem a obnovovanou desetiminutovou rezervací brání souběžnému čtení stejné úlohy. Faktura, její řádky, audit a stav fronty se ukládají v jedné transakci. Rozpoznaná data mají stav `review`; fronta sama nic nenaskladňuje. Otisk se bere z původního souboru před kompresí. Chybějící datum nebo částka zůstávají nevyplněné. Chyba jedné úlohy nezablokuje další; tlačítko „Zkusit znovu“ zachová uložený zdroj.
 
 Regrese fronty, jejího uživatelského toku a databázových přístupů jsou v `tests/pos-web` a spouštějí se pomocí `npm test --prefix tests/pos-web`.
+
+## Kontrola načtených částek
+
+Množství `1,000` a `1.000` znamená jeden kus; desetinná čísla a záporné vratky zůstávají zachované. Částka k úhradě má přednost před ostatními součty. Spotřební daň, základ daně a samostatný součet DPH se nikdy nepoužijí jako konečná cena. Rozporné celkové částky zůstanou nevyplněné.
+
+Neznámá sazba DPH zůstává nevybraná. Pokud z OCR není jasné, zda jednotková cena obsahuje DPH, zobrazí se jen jako nepřepočtená OCR cena s upozorněním. Schválení vyžaduje dodavatele, číslo a datum dokladu, vyplněné schvalované řádky a shodu jejich finančního součtu s fakturou. Započítávají se také ignorované obaly a služby; jejich částky zůstávají uložené bez naskladnění. Tolerance je nejvýše 1 Kč, případně 0,02 Kč na řádek u dokladů nad 50 řádků. Kontrola probíhá před prvním zápisem produktů, cen, historie nebo schválení.

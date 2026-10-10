@@ -17,10 +17,40 @@ function options(selected){return '<option value="">Vyber produkt…</option><op
 async function queue(){const r=await db().from('invoices').select('id,supplier_name,invoice_number,issue_date,total_amount,total_amount_gross,status,created_at,payment_status,payment_method').eq('organization_id',ctx.organization.id).eq('venue_id',ctx.venue.id).in('status',['review','approved']).order('created_at',{ascending:false}).limit(100);if(r.error)throw r.error;$('queueCount').textContent=String(r.data?.length||0);$('queue').innerHTML=r.data?.length?r.data.map(i=>`<button class="queue-item" data-id="${i.id}"><strong>${esc(i.supplier_name||'Bez dodavatele')}</strong><small>${esc(i.invoice_number||'bez čísla')} · ${money(i.total_amount_gross??i.total_amount??0)}${i.payment_status==='paid'?` · ${i.payment_method==='card'?'kartou':'hotově'}`:''}</small></button>`).join(''):'<div class="empty">Žádná faktura nečeká.</div>';document.querySelectorAll('.queue-item').forEach(b=>b.onclick=()=>openInvoice(b.dataset.id))}
 async function openInvoice(id){if(posting)return;const[ir,lr]=await Promise.all([db().from('invoices').select('id,supplier_name,invoice_number,issue_date,total_amount,total_amount_gross,status,raw_extraction,payment_status,payment_method,paid_at').eq('id',id).single(),db().from('invoice_lines').select('id,raw_name,product_id,quantity,unit_price,unit_price_net,unit_price_gross,vat_rate,line_total_gross,status,original_values').eq('invoice_id',id).order('created_at')]);if(ir.error)throw ir.error;if(lr.error)throw lr.error;currentInvoice=ir.data;currentLines=lr.data||[];$('supplier').value=currentInvoice.supplier_name||'';$('number').value=currentInvoice.invoice_number||'';$('date').value=currentInvoice.issue_date||'';$('invoiceStatus').textContent=currentInvoice.status;$('rawOcr').textContent=currentInvoice.raw_extraction?.raw_text||'';$('totalGross').value=n(currentInvoice.total_amount_gross??currentInvoice.total_amount)||'';const pm=currentInvoice.payment_status==='paid'?(currentInvoice.payment_method==='card'?'card':'cash'):(currentInvoice.payment_status==='unpaid'?'unpaid':'unknown');$('paymentMode').value=pm;$('paidDate').value=currentInvoice.paid_at?String(currentInvoice.paid_at).slice(0,10):(currentInvoice.issue_date||'');syncPaidDate();$('editor').classList.remove('hidden');$('emptyEditor').classList.add('hidden');render()}
 function detectedVolume(text){const ml=String(text||'').match(/(\d{2,4})\s*ml\b/i);if(ml)return n(ml[1]);const l=String(text||'').match(/(\d+(?:[.,]\d+)?)\s*l\b/i);return l?n(l[1])*1000:0}
-function grossForLine(l){const direct=n(l.unit_price_gross);if(direct>0)return direct;const orig=n(l.original_values?.ocr_unit_gross);if(orig>0)return orig;const net=n(l.unit_price_net??l.unit_price);const vat=n(l.vat_rate??l.original_values?.ocr_vat_rate);return net>0?round2(net*(1+vat/100)):0}
-function vatForLine(l){const v=n(l.vat_rate??l.original_values?.ocr_vat_rate);return [0,12,21].includes(v)?v:21}
-function render(){$('lines').innerHTML=currentLines.length?currentLines.map((l,i)=>{const p=products.find(x=>x.id===l.product_id),vol=p?.volume_ml||detectedVolume(l.raw_name),code=l.original_values?.source_code||'',vat=vatForLine(l),gross=grossForLine(l),net=netFromGross(gross,vat);return `<div class="review-line" data-i="${i}"><label class="raw">Text<input class="rawname" value="${esc(l.raw_name)}" readonly>${code?`<small class="line-note">kód dodavatele ${esc(code)}</small>`:''}</label><label class="product">Produkt<select class="pid">${options(l.product_id)}</select></label><label>Ks<input class="qty" type="number" step="0.01" value="${l.quantity??''}"></label><label>Cena/ks s DPH<input class="gross" type="number" min="0" step="0.01" value="${gross||''}"><small class="net-preview">bez DPH ${net.toFixed(2)} Kč</small></label><label>DPH<select class="vat"><option value="0" ${vat===0?'selected':''}>0 %</option><option value="12" ${vat===12?'selected':''}>12 %</option><option value="21" ${vat===21?'selected':''}>21 %</option></select></label><label>Objem ml<input class="vol" type="number" min="1" step="1" value="${vol||''}"></label><label>Akce<select class="status"><option value="approved">Schválit</option><option value="ignored" ${l.status==='ignored'?'selected':''}>Ignorovat</option></select></label></div>`}).join(''):'<div class="empty">Faktura nemá žádné řádky.</div>';document.querySelectorAll('.review-line').forEach(e=>{const update=()=>{const gross=n(e.querySelector('.gross').value),vat=n(e.querySelector('.vat').value);e.querySelector('.net-preview').textContent=`bez DPH ${netFromGross(gross,vat).toFixed(2)} Kč`};e.querySelector('.gross').oninput=update;e.querySelector('.vat').onchange=update})}
-function readRows(){return [...document.querySelectorAll('.review-line')].map((e,i)=>{const gross=n(e.querySelector('.gross').value),vat=n(e.querySelector('.vat').value),qty=n(e.querySelector('.qty').value),net=netFromGross(gross,vat);return{id:currentLines[i].id,raw:currentLines[i].raw_name,sourceCode:currentLines[i].original_values?.source_code||'',pid:e.querySelector('.pid').value,qty,gross,vat,net,lineGross:round2(qty*gross),lineNet:round2(qty*net),vol:n(e.querySelector('.vol').value),status:e.querySelector('.status').value}})}
+function vatForLine(l){const raw=l.vat_rate??l.original_values?.ocr_vat_rate;if(raw===null||raw===undefined||raw==='')return null;const v=n(raw);return [0,12,21].includes(v)?v:null}
+function grossForLine(l){const direct=n(l.unit_price_gross);if(direct>0)return direct;const orig=n(l.original_values?.ocr_unit_gross);if(orig>0)return orig;const vat=vatForLine(l),net=n(l.unit_price_net??l.unit_price);return net>0&&vat!==null?round2(net*(1+vat/100)):0}
+function render(){
+  $('lines').innerHTML=currentLines.length?currentLines.map((l,i)=>{
+    const p=products.find(x=>x.id===l.product_id),vol=p?.volume_ml||detectedVolume(l.raw_name),code=l.original_values?.source_code||'',vat=vatForLine(l),gross=grossForLine(l);
+    const warning=l.original_values?.parser_warning||'';
+    return `<div class="review-line" data-i="${i}"><label class="raw">Text<input class="rawname" value="${esc(l.raw_name)}" readonly>${code?`<small class="line-note">kód dodavatele ${esc(code)}</small>`:''}${warning?`<small class="line-note">⚠ ${esc(warning)}</small>`:''}</label><label class="product">Produkt<select class="pid">${options(l.product_id)}</select></label><label>Ks<input class="qty" type="number" step="0.001" value="${l.quantity??''}"></label><label>Cena/ks s DPH<input class="gross" type="number" min="0" step="0.01" value="${gross||''}"><small class="net-preview">${vat===null?'Doplň sazbu DPH':`bez DPH ${netFromGross(gross,vat).toFixed(2)} Kč`}</small></label><label>DPH<select class="vat"><option value="" ${vat===null?'selected':''}>Doplň DPH…</option><option value="0" ${vat===0?'selected':''}>0 %</option><option value="12" ${vat===12?'selected':''}>12 %</option><option value="21" ${vat===21?'selected':''}>21 %</option></select></label><label>Objem ml<input class="vol" type="number" min="1" step="1" value="${vol||''}"></label><label>Akce<select class="status"><option value="approved">Schválit</option><option value="ignored" ${l.status==='ignored'?'selected':''}>Ignorovat</option></select></label></div>`;
+  }).join(''):'<div class="empty">Faktura nemá žádné řádky.</div>';
+  document.querySelectorAll('.review-line').forEach(e=>{
+    const update=()=>{const gross=n(e.querySelector('.gross').value),rawVat=e.querySelector('.vat').value;e.querySelector('.net-preview').textContent=rawVat===''?'Doplň sazbu DPH':`bez DPH ${netFromGross(gross,n(rawVat)).toFixed(2)} Kč`};
+    e.querySelector('.gross').oninput=update;e.querySelector('.vat').onchange=update;
+  });
+}
+function readRows(){return [...document.querySelectorAll('.review-line')].map((e,i)=>{const gross=n(e.querySelector('.gross').value),rawVat=e.querySelector('.vat').value,vat=rawVat===''?null:n(rawVat),qty=n(e.querySelector('.qty').value),net=vat===null?null:netFromGross(gross,vat);return{id:currentLines[i].id,raw:currentLines[i].raw_name,sourceCode:currentLines[i].original_values?.source_code||'',pid:e.querySelector('.pid').value,qty,gross,vat,net,lineGross:round2(qty*gross),lineNet:net===null?null:round2(qty*net),vol:n(e.querySelector('.vol').value),status:e.querySelector('.status').value}})}
+function reviewCheck(){
+  const rs=readRows(),approved=rs.filter(r=>r.status==='approved'),totalGross=n($('totalGross').value),issues=[];
+  if(!approved.length)issues.push('Schval alespoň jednu položku.');
+  if(!$('supplier').value.trim())issues.push('Doplň dodavatele.');
+  if(!$('number').value.trim())issues.push('Doplň číslo faktury.');
+  if(!$('date').value)issues.push('Doplň datum dokladu.');
+  for(const r of approved){
+    if(!r.pid)issues.push(`Vyber produkt nebo „Vytvořit nový“: ${r.raw}`);
+    if(r.qty===0)issues.push(`Doplň množství: ${r.raw}`);
+    if(r.gross<=0)issues.push(`Doplň cenu s DPH: ${r.raw}`);
+    if(r.vat===null)issues.push(`Doplň sazbu DPH: ${r.raw}`);
+  }
+  if(totalGross<=0)issues.push('Doplň konečnou cenu faktury s DPH.');
+  // Ignored deposit/service rows still belong to the financial document total.
+  const calculatedGross=round2(rs.reduce((sum,r)=>sum+r.lineGross,0));
+  const difference=round2(calculatedGross-totalGross);
+  if(totalGross>0&&Math.abs(difference)>Math.max(1,rs.length*0.02))issues.push(`Součet položek ${money(calculatedGross)} nesedí s fakturou ${money(totalGross)}. Rozdíl ${money(Math.abs(difference))}. Zkontroluj množství a ceny včetně obalů.`);
+  return {rows:rs,approved,totalGross,calculatedGross,difference,issues};
+}
+window.PubGuruInvoiceReview={check:reviewCheck};
 async function createProduct(row){const key=`inv_${slug(row.raw)}_${crypto.randomUUID().slice(0,8)}`;const r=await db().from('products').insert({organization_id:ctx.organization.id,client_key:key,name:row.raw.trim()||'Nový produkt',volume_ml:row.vol||null,current_purchase_price:row.net,current_purchase_price_gross:row.gross,calibration_status:'missing',aliases:[row.raw.trim()].filter(Boolean),updated_at:new Date().toISOString()}).select('id,client_key,name,volume_ml,current_purchase_price,current_purchase_price_gross,aliases').single();if(r.error)throw r.error;products.push(r.data);const a=await db().from('audit_events').insert({organization_id:ctx.organization.id,venue_id:ctx.venue.id,actor_user_id:ctx.user.id,event_type:'product.created_from_invoice',entity_type:'product',entity_id:r.data.id,after_data:{name:r.data.name,source_invoice:currentInvoice.id,volume_ml:row.vol}});if(a.error)throw a.error;return r.data.id}
 async function history(lineId,productId,row){const q=await db().from('purchase_price_history').select('id').eq('invoice_line_id',lineId).maybeSingle();if(q.error)throw q.error;if(!q.data){const x=await db().from('purchase_price_history').insert({organization_id:ctx.organization.id,venue_id:ctx.venue.id,product_id:productId,invoice_line_id:lineId,unit_price:row.net,unit_price_net:row.net,unit_price_gross:row.gross,vat_rate:row.vat});if(x.error)throw x.error}}
 async function learnProduct(row){const p=products.find(x=>x.id===row.pid);if(!p)return;const alias=row.raw.trim();const aliases=[...new Set([...(Array.isArray(p.aliases)?p.aliases:[]),alias].filter(Boolean))];const u=await db().from('products').update({volume_ml:row.vol||p.volume_ml||null,current_purchase_price:row.net,current_purchase_price_gross:row.gross,aliases,updated_at:new Date().toISOString()}).eq('id',row.pid);if(u.error)throw u.error;p.aliases=aliases;p.volume_ml=row.vol||p.volume_ml;p.current_purchase_price=row.net;p.current_purchase_price_gross=row.gross}
@@ -34,15 +64,8 @@ async function savedInvoiceState(){
 }
 async function post(){
   if(!currentInvoice||posting)return;
-  const rs=readRows(),approved=rs.filter(r=>r.status==='approved');
-  if(!approved.length)return toast('Schval alespoň jednu položku.');
-  for(const r of approved){
-    if(!r.pid)return toast(`Vyber produkt nebo „Vytvořit nový“: ${r.raw}`);
-    if(r.qty===0)return toast(`Doplň množství: ${r.raw}`);
-    if(r.gross<=0)return toast(`Doplň cenu s DPH: ${r.raw}`);
-  }
-  const totalGross=n($('totalGross').value);
-  if(totalGross<=0)return toast('Doplň konečnou cenu faktury s DPH.');
+  const check=reviewCheck();if(check.issues.length)return toast(check.issues[0],7000);
+  const rs=check.rows,approved=check.approved,totalGross=check.totalGross;
   posting=true;
   $('postBtn').disabled=true;$('postBtn').textContent='Zaúčtovávám…';
   const mode=$('paymentMode').value,paid=['cash','card'].includes(mode);
@@ -58,10 +81,10 @@ async function post(){
           if(r.status==='approved'&&r.pid==='__new__')r.pid=await createProduct(r);
           const u=await db().from('invoice_lines').update({
             product_id:r.status==='approved'?r.pid:null,quantity:r.qty||null,
-            unit_price:r.status==='approved'?r.net:null,unit_price_net:r.status==='approved'?r.net:null,
-            unit_price_gross:r.status==='approved'?r.gross:null,vat_rate:r.status==='approved'?r.vat:null,
-            line_total:r.status==='approved'?r.lineNet:null,line_total_net:r.status==='approved'?r.lineNet:null,
-            line_total_gross:r.status==='approved'?r.lineGross:null,status:r.status,
+            unit_price:r.net,unit_price_net:r.net,
+            unit_price_gross:r.gross>0?r.gross:null,vat_rate:r.vat,
+            line_total:r.lineNet,line_total_net:r.lineNet,
+            line_total_gross:r.gross>0?r.lineGross:null,status:r.status,
             match_method:r.status==='approved'?'manager_confirmed':'manager_ignored',match_confidence:r.status==='approved'?1:null
           }).eq('id',r.id).eq('invoice_id',currentInvoice.id).eq('organization_id',ctx.organization.id).select('id').single();
           if(u.error)throw u.error;

@@ -50,3 +50,9 @@ Následně aplikuj `database/20261010141443_invoice_approval_queue_completion.sq
 Starší úlohy s již zaúčtovanou fakturou souhrn zobrazí jako dokončené bez zpětného zápisu. Počty a seznam používají stejný odvozený stav, vždy pro stejnou organizaci a provozovnu. Samotné `approved` se jako dokončené nepočítá. Schvalování po ztracené odpovědi ověří uložený stav; již zaúčtovaný doklad znovu nemění. Ověření před nasazením probíhá pouze v oddělené testovací databázi; fyzický iPhone a reálné dodavatelské faktury tím nejsou ověřené.
 
 Regrese fronty, jejího uživatelského toku a databázových přístupů jsou v `tests/pos-web` a spouštějí se pomocí `npm test --prefix tests/pos-web`.
+
+## Kontrola načtených částek
+
+Množství `1,000` a `1.000` znamená jeden kus; desetinná čísla a záporné vratky zůstávají zachované. Částka k úhradě má přednost před ostatními součty. Spotřební daň, základ daně a samostatný součet DPH se nikdy nepoužijí jako konečná cena. Rozporné celkové částky zůstanou nevyplněné.
+
+Neznámá sazba DPH zůstává nevybraná. Pokud z OCR není jasné, zda jednotková cena obsahuje DPH, zobrazí se jen jako nepřepočtená OCR cena s upozorněním. Schválení vyžaduje dodavatele, číslo a datum dokladu, vyplněné schvalované řádky a shodu jejich finančního součtu s fakturou. Započítávají se také ignorované obaly a služby; jejich částky zůstávají uložené bez naskladnění. Tolerance je nejvýše 1 Kč, případně 0,02 Kč na řádek u dokladů nad 50 řádků. Kontrola probíhá před prvním zápisem produktů, cen, historie nebo schválení.

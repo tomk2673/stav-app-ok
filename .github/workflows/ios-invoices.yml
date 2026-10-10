@@ -1,0 +1,60 @@
+name: PUB INVOICES iOS
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'pub_guru/*vision*'
+      - 'pub_guru/*capture*'
+      - 'pub_guru/photo-album-bridge.js'
+      - '.github/workflows/ios-invoices.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'pub_guru/*vision*'
+      - 'pub_guru/*capture*'
+      - 'pub_guru/photo-album-bridge.js'
+      - '.github/workflows/ios-invoices.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          cd ios
+          xcodegen generate
+      - name: Select available iPhone simulator
+        run: |
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/pub-invoices-simulators.json"
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json, os
+          with open(os.path.join(os.environ['RUNNER_TEMP'], 'pub-invoices-simulators.json')) as f:
+              devices = json.load(f)['devices']
+          iphones = [device for runtime, group in devices.items() if 'iOS' in runtime
+                     for device in group if device['name'].startswith('iPhone') and device['isAvailable']]
+          if not iphones:
+              raise SystemExit('No iPhone simulator is available')
+          print('PUB_INVOICES_SIMULATOR=' + iphones[0]['udid'])
+          PY
+      - name: Build and test native OCR and session migration
+        run: |
+          xcodebuild test -quiet -project ios/PubGuru.xcodeproj -scheme PubGuru \
+            -destination "platform=iOS Simulator,id=$PUB_INVOICES_SIMULATOR" \
+            -parallel-testing-enabled NO -resultBundlePath ios/TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pub-invoices-ios-test-results
+          path: ios/TestResults.xcresult
+          retention-days: 7

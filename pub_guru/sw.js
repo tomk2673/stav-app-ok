@@ -1,4 +1,4 @@
-const CACHE = 'pub-guru-shell-v7-pos';
+const CACHE = 'pub-guru-shell-v8-ios-ocr';
 const APP_SHELL = [
   './', './start.html', './index.html', './invoice-review.html', './closings.html', './styles.css', './app.js',
   './closings.js', './invoice-review.js', './backend.js', './roles.js', './navigation.js', './data-sync.js',

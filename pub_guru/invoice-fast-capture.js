@@ -189,7 +189,9 @@
 
   document.addEventListener('change', event => {
     const target = event.target;
-    if (!(target instanceof HTMLInputElement) || !['cameraFile', 'batchFiles'].includes(target.id)) return;
+    // Individual camera captures are read immediately by invoice-capture-v3.
+    // Only the explicit batch action bypasses OCR and saves sources to the queue.
+    if (!(target instanceof HTMLInputElement) || target.id !== 'batchFiles') return;
     const files = [...(target.files || [])];
     if (!files.length) return;
 
@@ -197,7 +199,7 @@
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    queueFiles(files, target.id === 'cameraFile' ? 'camera' : 'batch').catch(error => {
+    queueFiles(files, 'batch').catch(error => {
       console.error(error);
       setProgress('Uložení selhalo.', 0);
       toast(`Uložení dokladu selhalo: ${error.message}`, 7000);

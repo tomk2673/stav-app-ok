@@ -16,10 +16,32 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cz.pubguru.app
         PRODUCT_NAME: PUB GURU
+        PRODUCT_MODULE_NAME: PubGuru
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: PUB GURU
+        INFOPLIST_KEY_CFBundleDisplayName: PUB INVOICES
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: PUB GURU potřebuje vybrat fotografii faktury nebo uzávěrky.
         INFOPLIST_KEY_NSCameraUsageDescription: PUB GURU potřebuje fotoaparát pro skenování faktur a uzávěrek.
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+  PubGuruTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - PubGuruTests
+    dependencies:
+      - target: PubGuru
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PUB GURU.app/PUB GURU"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  PubGuru:
+    build:
+      targets:
+        PubGuru: all
+        PubGuruTests: [test]
+    test:
+      targets:
+        - PubGuruTests

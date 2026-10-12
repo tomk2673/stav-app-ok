@@ -1,64 +1,144 @@
 'use strict';
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const fs=require('node:fs');
-const path=require('node:path');
-const {JSDOM}=require('jsdom');
-const root=path.resolve(__dirname,'../../pub_guru');
 
-async function until(predicate){
-  for(let i=0;i<200;i++){
-    if(predicate())return;
-    await new Promise(resolve=>setTimeout(resolve,5));
-  }
-  throw new Error('Invoice review did not initialize');
-}
+const {harness}=require('./helpers/invoice-review.cjs');
 
-async function harness({invoice:invoicePatch={},lines:linePatches=[{}]}={}){
-  const dom=new JSDOM(fs.readFileSync(path.join(root,'invoice-review-v1.html'),'utf8'),{
-    url:'https://invoices.test/pub_guru/invoice-review-v1.html',runScripts:'outside-only'
+function input(h,selector,value){const e=h.w.document.querySelector(selector);e.value=value;e.dispatchEvent(new h.w.Event('input',{bubbles:true}));}
+
+test('printed discount survives approval without overwriting the unit price and learns effective purchase cost',async()=>{
+  const original={ocr_unit_gross:100,ocr_line_gross:900,parser_warning:'Sleva na řádku'};
+  const h=await harness({invoice:{total_amount_gross:900},lines:[{quantity:10,unit_price_net:100,unit_price_gross:100,
+    vat_rate:0,line_total_net:900,line_total_gross:900,original_values:original}]});
+  try{
+    assert.equal(h.w.document.querySelector('.linegross').value,'900');
+    assert.equal(h.w.PubGuruInvoiceReview.check().issues.length,0);
+    await h.post();
+    const line=h.tables.invoice_lines[0],audit=h.tables.audit_events.at(-1);
+    assert.equal(line.unit_price_gross,100);assert.equal(line.unit_price_net,100);assert.equal(line.line_total_gross,900);
+    assert.equal(h.tables.products[0].current_purchase_price_gross,90);
+    assert.equal(h.tables.purchase_price_history[0].unit_price_gross,90);
+    assert.deepEqual(line.original_values,original);
+    assert.equal(audit.before_data.lines[0].unit_price_gross,100);
+    assert.equal(audit.after_data.lines[0].adjustment_gross,-100);
+    assert.equal(audit.after_data.lines[0].effective_unit_gross,90);
+  }finally{h.dom.window.close();}
+});
+
+test('an edited discounted line total changes cost and totals while printed unit price remains intact',async()=>{
+  const h=await harness({invoice:{total_amount_gross:1089},lines:[{quantity:10,unit_price_net:100,unit_price_gross:121,
+    vat_rate:21,line_total_net:1000,line_total_gross:1210}]});
+  try{
+    input(h,'.linegross','1 089,00');
+    const c=h.w.PubGuruInvoiceReview.check();
+    assert.equal(c.issues.length,0);assert.equal(c.totalNet,900);assert.equal(c.vatTotal,189);
+    await h.post();
+    const l=h.tables.invoice_lines[0];assert.equal(l.unit_price_net,100);assert.equal(l.unit_price_gross,121);
+    assert.equal(l.line_total_net,900);assert.equal(l.line_total_gross,1089);
+    assert.equal(h.tables.purchase_price_history[0].unit_price_net,90);
+    assert.equal(h.tables.purchase_price_history[0].unit_price_gross,108.9);
+  }finally{h.dom.window.close();}
+});
+
+test('stored zero line totals are a full discount rather than a missing amount',async()=>{
+  const h=await harness({invoice:{total_amount_gross:0},lines:[{quantity:10,unit_price_gross:100,unit_price_net:100,
+    vat_rate:0,line_total_net:0,line_total_gross:0}]});
+  try{
+    assert.equal(h.w.document.querySelector('.linegross').value,'0');
+    assert.equal(h.w.document.getElementById('totalGross').value,'0');
+    await h.post();
+    assert.equal(h.invoice.status,'posted');assert.equal(h.tables.invoice_lines[0].unit_price_gross,100);
+    assert.equal(h.tables.invoice_lines[0].line_total_gross,0);assert.equal(h.tables.products[0].current_purchase_price_gross,0);
+  }finally{h.dom.window.close();}
+});
+
+test('stored net rounding is preserved and recalculation is an explicit action',async()=>{
+  const h=await harness({invoice:{total_amount_gross:1.03},lines:[{quantity:3,unit_price_net:0.29,unit_price_gross:0.34,
+    vat_rate:21,line_total_net:0.85,line_total_gross:1.03}]});
+  try{
+    assert.equal(h.w.PubGuruInvoiceReview.check().rows[0].lineNet,0.85);
+    input(h,'.qty','4');
+    assert.equal(h.w.PubGuruInvoiceReview.check().rows[0].lineGross,1.03,'editing qty cannot silently erase a printed total');
+    h.w.document.querySelector('.recalculate').click();
+    assert.equal(h.w.PubGuruInvoiceReview.check().rows[0].lineGross,1.36);
+    input(h,'#totalGross','1,36');await h.post();
+    assert.equal(h.tables.invoice_lines[0].line_total_gross,1.36);assert.equal(h.tables.invoice_lines[0].unit_price_net,0.29);
+  }finally{h.dom.window.close();}
+});
+
+test('a negative credit note posts signed amounts and leaves current purchase prices unchanged',async()=>{
+  const h=await harness({invoice:{total_amount_gross:-108.9},lines:[{quantity:-1,unit_price_net:100,unit_price_gross:121,
+    vat_rate:21,line_total_net:-90,line_total_gross:-108.9}]});
+  try{
+    assert.equal(h.w.PubGuruInvoiceReview.check().issues.length,0);
+    await h.post();
+    assert.equal(h.invoice.status,'posted');assert.equal(h.tables.invoice_lines[0].quantity,-1);
+    assert.equal(h.tables.invoice_lines[0].line_total_net,-90);assert.equal(h.tables.invoice_lines[0].line_total_gross,-108.9);
+    assert.equal(h.tables.purchase_price_history.length,0);
+    assert.equal(h.writes.filter(x=>x.table==='products').length,0);
+  }finally{h.dom.window.close();}
+});
+
+test('monetary dash input and fractional quantities use separate parsers in review',async()=>{
+  const h=await harness({invoice:{total_amount_gross:1500},lines:[{quantity:1.5,unit_price_net:1000,unit_price_gross:1000,vat_rate:0}]});
+  try{
+    input(h,'.gross','1.000,-');input(h,'.qty','1,5');input(h,'#totalGross','1 500,00');
+    assert.equal(h.w.PubGuruInvoiceReview.check().issues.length,0);
+    await h.post();assert.equal(h.tables.invoice_lines[0].quantity,1.5);assert.equal(h.tables.invoice_lines[0].unit_price_gross,1000);
+  }finally{h.dom.window.close();}
+});
+
+for(const [label,selector,value] of [['missing document amount','#totalGross',''],['invalid money','.gross','--100'],
+  ['currency as quantity','.qty','1.000,-'],['invalid printed total','.linegross','?'],['negative unit price','.gross','-121'],
+  ['return amount with positive qty','.linegross','-121'],['invalid package volume','.vol','0']]){
+  test(label+' blocks all mutations before posting',async()=>{
+    const h=await harness();try{input(h,selector,value);await h.post();assert.equal(h.writes.length,0);}finally{h.dom.window.close();}
   });
-  const w=dom.window,writes=[];
-  const invoice={id:'inv',organization_id:'org',venue_id:'venue',status:'review',supplier_name:'Test supplier',
-    invoice_number:'123456',issue_date:'2026-10-10',total_amount_gross:121,payment_status:'unpaid',...invoicePatch};
-  const tables={invoices:[invoice],invoice_lines:linePatches.map((patch,i)=>({id:'line-'+i,invoice_id:'inv',organization_id:'org',
-    raw_name:'Test vodka',product_id:'product',quantity:1,unit_price_net:100,unit_price_gross:121,vat_rate:21,status:'review',...patch})),
-    products:[{id:'product',organization_id:'org',name:'Test vodka',volume_ml:700,archived_at:null,aliases:[]}],
-    purchase_price_history:[],supplier_product_mappings:[],audit_events:[]};
-  w.console={error:assert.fail,warn(){}};
-  function from(table){
-    let action='select',payload,filters=[];
-    const query={
-      select(){return this;},eq(key,value){filters.push(row=>row[key]===value);return this;},
-      is(key,value){return this.eq(key,value);},in(key,values){filters.push(row=>values.includes(row[key]));return this;},
-      order(){return this;},limit(){return this;},
-      update(data){action='update';payload=data;return this;},
-      insert(data){action='insert';payload=data;return this;},upsert(data){return this.insert(data);},
-      single(){return execute(true);},maybeSingle(){return execute(false,true);},
-      then(resolve,reject){return execute().then(resolve,reject);}
-    };
-    async function execute(single=false,optional=false){
-      let rows=tables[table].filter(row=>filters.every(filter=>filter(row)));
-      if(action==='update'){
-        for(const row of rows)Object.assign(row,payload);
-        writes.push({table,action,payload});
-      }
-      if(action==='insert'){
-        const row={id:'new-'+writes.length,...payload};tables[table].push(row);rows=[row];
-        writes.push({table,action,payload});
-        if(table==='audit_events'&&payload.event_type==='invoice.posted')invoice.status='posted';
-      }
-      return {data:single||optional?(rows[0]?structuredClone(rows[0]):null):structuredClone(rows),error:null};
-    }
-    return query;
-  }
-  w.PubGuruBackend={loadContext:async()=>({organization:{id:'org'},venue:{id:'venue'},user:{id:'user'},role:'manager'}),client:{from}};
-  for(const name of ['invoice-review-v2.js','ai-accountant.js'])w.eval(fs.readFileSync(path.join(root,name),'utf8'));
-  await until(()=>w.document.querySelector('.queue-item')&&w.document.getElementById('postBtn').onclick);
-  w.document.querySelector('.queue-item').click();
-  await until(()=>w.document.querySelector('.review-line')&&w.document.getElementById('accountantChecks').textContent.includes('AI účetní'));
-  return {dom,w,tables,invoice,writes,async post(){await w.document.getElementById('postBtn').onclick();}};
 }
+
+test('ignored standalone discount and rounding amounts count without quantity or stock',async()=>{
+  const h=await harness({invoice:{total_amount_gross:100},lines:[{},
+    {raw_name:'Sleva dokladu',product_id:null,quantity:null,unit_price_net:null,unit_price_gross:null,vat_rate:0,line_total_net:-21.05,line_total_gross:-21.05,status:'ignored'},
+    {raw_name:'Zaokrouhlení',product_id:null,quantity:null,unit_price_net:null,unit_price_gross:null,vat_rate:0,line_total_net:0.05,line_total_gross:0.05,status:'ignored'}
+  ]});
+  try{
+    assert.equal(h.w.PubGuruInvoiceReview.check().issues.length,0);await h.post();
+    assert.equal(h.tables.invoice_lines[1].line_total_gross,-21.05);assert.equal(h.tables.invoice_lines[2].line_total_gross,0.05);
+    assert.equal(h.tables.purchase_price_history.length,1);
+  }finally{h.dom.window.close();}
+});
+
+test('missing VAT on an ignored financial line is not silently zero-rated',async()=>{
+  const h=await harness({lines:[{status:'ignored',vat_rate:null,line_total_gross:0}]});
+  try{await h.post();assert.equal(h.writes.length,0);assert.match(h.w.PubGuruInvoiceReview.check().issues.join(' '),/Doplň sazbu DPH/);}finally{h.dom.window.close();}
+});
+
+test('a zero-volume counted product can be received without inventing milliliters',async()=>{
+  const h=await harness({products:[{id:'product',organization_id:'org',name:'Přepravka',volume_ml:null,unit_mode:'counted',archived_at:null,aliases:[]}]});
+  try{await h.post();assert.equal(h.invoice.status,'posted');}finally{h.dom.window.close();}
+});
+
+test('repeated clicks and a stale already-posted invoice never learn prices or write a second audit',async()=>{
+  const h=await harness();
+  try{await Promise.all([h.post(),h.post()]);assert.equal(h.tables.purchase_price_history.length,1);assert.equal(h.tables.audit_events.length,1);}
+  finally{h.dom.window.close();}
+  const stale=await harness();
+  try{stale.invoice.status='posted';await stale.post();assert.equal(stale.writes.length,0);}finally{stale.dom.window.close();}
+});
+
+test('a captured net/gross VAT conflict is blocked rather than silently rewriting printed line amounts',async()=>{
+  const h=await harness({lines:[{line_total_net:90,line_total_gross:121}]});
+  try{await h.post();assert.equal(h.writes.length,0);assert.match(h.w.PubGuruInvoiceReview.check().issues.join(' '),/Základ a DPH nesedí/);}
+  finally{h.dom.window.close();}
+});
+
+test('a lost audit response reconciles posted status without another audit, price history or stock attempt',async()=>{
+  const h=await harness({writeHook:async({table,payload,invoice})=>{
+    if(table==='audit_events'&&payload.event_type==='invoice.posted'){invoice.status='posted';throw new Error('Lost response');}
+  }});
+  try{await h.post();await h.post();assert.equal(h.tables.audit_events.length,1);assert.equal(h.tables.purchase_price_history.length,1);}
+  finally{h.dom.window.close();}
+});
 
 test('missing VAT stays unselected and cannot write stock, history or approval',async()=>{
   const h=await harness({lines:[{vat_rate:null,unit_price_gross:null,original_values:{ocr_vat_rate:null}}]});

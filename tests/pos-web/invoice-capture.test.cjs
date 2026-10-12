@@ -74,7 +74,7 @@ async function harness({ payload = {}, visionOk = true, native = false, nativeFa
         : { requestId, text, confidence: 1 }));
     } } } };
   }
-  for (const name of ['native-vision-bridge.js', 'invoice-capture-v3.js', 'invoice-reading-guard.js']) {
+  for (const name of ['invoice-numbers.js', 'native-vision-bridge.js', 'invoice-capture-v3.js', 'invoice-reading-guard.js']) {
     w.eval(fs.readFileSync(path.join(root, name), 'utf8'));
   }
   await until(() => w.document.getElementById('invoiceFile').onchange, 'invoice capture initialized');
@@ -270,6 +270,8 @@ for(const [label,totalText,expected] of [
   ['gross before net summary','Celkem s DPH: 5.812,00\nCelkem bez DPH: 4803,31\nCelkem DPH: 1008,69',5812],
   ['amount due before excise','Celkem k úhradě: 5 812,00\nSpotřební daň obsažená v prodejní ceně celkem 629,20 Kč',5812],
   ['printed dash notation','K úhradě: 1000,-',1000],
+  ['dotted Czech dash notation','K úhradě: 5.812,-',5812],
+  ['dotted Czech dash notation on the next line','K úhradě:\n5.812,-',5812],
   ['conflicting totals','Celkem: 5 812,00\nCelkem: 6 000,00',null],
   ['excise is the only amount','Spotřební daň obsažená v prodejní ceně\ncelkem 629,20 Kč',null]
 ]){
@@ -333,5 +335,33 @@ test('the reading gate checks the current OCR text rather than a stale parsed to
     assert.equal(h.w.PubGuruInvoiceCapture.printedTotal(),null);
     assert.equal(h.w.document.getElementById('submitBtn').disabled,true);
     assert.equal(h.writes.length,0);
+  }finally{h.dom.window.close();}
+});
+
+test('dotted monetary unit prices and discounted totals persist while 1.000 quantity stays one',async()=>{
+  const text='Dodavatel: Test supplier\nČíslo dokladu: 123456\nCena/ks s DPH · DPH 0%\n'+
+    'Test vodka 1.000 ks 1.000,- 900,-\nCelkem: 900,-';
+  const h=await harness({serverVision:false,text});
+  try{
+    await h.capture();
+    assert.equal(h.w.document.querySelector('.qty').value,'1');
+    assert.equal(h.w.document.querySelector('.price').value,'1000.00');
+    await h.submit();
+    const line=h.writes.find(x=>x.table==='invoice_lines').data;
+    assert.equal(line.quantity,1);assert.equal(line.unit_price_net,1000);
+    assert.equal(line.line_total_gross,900);assert.equal(line.original_values.ocr_unit_gross,1000);
+  }finally{h.dom.window.close();}
+});
+
+test('ROJAL dotted dashed amounts retain VAT, printed unit price and discounted line amount',async()=>{
+  const text='ROJAL spol. s r.o.\nČíslo dokladu: 123456\nID zboží Název zboží\nAB-123 Test vodka\n'+
+    '21% 1,000 KS 1.000,- 900,-\nCelkem [CZK]: 900,-';
+  const h=await harness({serverVision:false,text});
+  try{
+    await h.capture();await h.submit();
+    const line=h.writes.find(x=>x.table==='invoice_lines').data;
+    assert.equal(line.quantity,1);assert.equal(line.vat_rate,21);
+    assert.equal(line.original_values.ocr_unit_gross,1000);assert.equal(line.line_total_gross,900);
+    assert.equal(line.unit_price_net,1000/1.21);
   }finally{h.dom.window.close();}
 });

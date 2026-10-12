@@ -75,7 +75,7 @@ test('a negative credit note posts signed amounts and leaves current purchase pr
     assert.equal(h.invoice.status,'posted');assert.equal(h.tables.invoice_lines[0].quantity,-1);
     assert.equal(h.tables.invoice_lines[0].line_total_net,-90);assert.equal(h.tables.invoice_lines[0].line_total_gross,-108.9);
     assert.equal(h.tables.purchase_price_history.length,0);
-    assert.equal(h.writes.filter(x=>x.table==='products').length,0);
+    assert.ok(h.writes.filter(x=>x.table==='products').every(x=>!Object.hasOwn(x.payload,'current_purchase_price')&&!Object.hasOwn(x.payload,'current_purchase_price_gross')));
   }finally{h.dom.window.close();}
 });
 

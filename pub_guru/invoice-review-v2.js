@@ -112,7 +112,14 @@ function reviewCheck(){
 window.PubGuruInvoiceReview={check:reviewCheck};
 async function createProduct(row){const key=`inv_${slug(row.raw)}_${crypto.randomUUID().slice(0,8)}`;const r=await db().from('products').insert({organization_id:ctx.organization.id,client_key:key,name:row.raw.trim()||'Nový produkt',volume_ml:row.vol||null,current_purchase_price:row.costNet,current_purchase_price_gross:row.costGross,calibration_status:'missing',aliases:[row.raw.trim()].filter(Boolean),updated_at:new Date().toISOString()}).select('id,client_key,name,volume_ml,current_purchase_price,current_purchase_price_gross,aliases').single();if(r.error)throw r.error;products.push(r.data);const a=await db().from('audit_events').insert({organization_id:ctx.organization.id,venue_id:ctx.venue.id,actor_user_id:ctx.user.id,event_type:'product.created_from_invoice',entity_type:'product',entity_id:r.data.id,after_data:{name:r.data.name,source_invoice:currentInvoice.id,volume_ml:row.vol}});if(a.error)throw a.error;return r.data.id}
 async function history(lineId,productId,row){const q=await db().from('purchase_price_history').select('id').eq('invoice_line_id',lineId).maybeSingle();if(q.error)throw q.error;if(!q.data){const x=await db().from('purchase_price_history').insert({organization_id:ctx.organization.id,venue_id:ctx.venue.id,product_id:productId,invoice_line_id:lineId,unit_price:row.costNet,unit_price_net:row.costNet,unit_price_gross:row.costGross,vat_rate:row.vat});if(x.error)throw x.error}}
-async function learnProduct(row){const p=products.find(x=>x.id===row.pid);if(!p)return;const alias=row.raw.trim();const aliases=[...new Set([...(Array.isArray(p.aliases)?p.aliases:[]),alias].filter(Boolean))];const u=await db().from('products').update({volume_ml:row.vol||p.volume_ml||null,current_purchase_price:row.costNet,current_purchase_price_gross:row.costGross,aliases,updated_at:new Date().toISOString()}).eq('id',row.pid);if(u.error)throw u.error;p.aliases=aliases;p.volume_ml=row.vol||p.volume_ml;p.current_purchase_price=row.costNet;p.current_purchase_price_gross=row.costGross}
+async function learnProduct(row){
+  const p=products.find(x=>x.id===row.pid);if(!p)return;
+  const aliases=[...new Set([...(Array.isArray(p.aliases)?p.aliases:[]),row.raw.trim()].filter(Boolean))];
+  const changes={volume_ml:row.vol||p.volume_ml||null,aliases,updated_at:new Date().toISOString()};
+  if(row.qty>0){changes.current_purchase_price=row.costNet;changes.current_purchase_price_gross=row.costGross;}
+  const u=await db().from('products').update(changes).eq('id',row.pid).eq('organization_id',ctx.organization.id);
+  if(u.error)throw u.error;Object.assign(p,changes);
+}
 async function learnSupplierMapping(row){if(!row.sourceCode||!row.pid||row.pid==='__new__')return false;const supplier=$('supplier').value.trim()||currentInvoice?.supplier_name||'';const payload={organization_id:ctx.organization.id,supplier_key:supplierKey(supplier),supplier_name:supplier||null,source_code:String(row.sourceCode).trim().toUpperCase(),raw_name:row.raw,normalized_raw_name:normalize(row.raw),product_id:row.pid,confidence:1,confirmed_by:ctx.user.id,updated_at:new Date().toISOString()};const r=await db().from('supplier_product_mappings').upsert(payload,{onConflict:'organization_id,supplier_key,source_code'});if(r.error)throw r.error;return true}
 function syncPaidDate(){const paid=['cash','card'].includes($('paymentMode').value);$('paidDateWrap').classList.toggle('hidden',!paid);if(paid&&!$('paidDate').value)$('paidDate').value=$('date').value||new Date().toISOString().slice(0,10)}
 async function savedInvoiceState(){
@@ -125,7 +132,7 @@ async function savedInvoiceState(){
 const finiteOrNull=v=>Number.isFinite(v)?v:null;
 function auditLine(r){return {id:r.id,product_id:r.status==='approved'?r.pid:null,status:r.status,quantity:finiteOrNull(r.qty),
   unit_price_net:r.net,unit_price_gross:finiteOrNull(r.gross),vat_rate:r.vat,line_total_net:r.lineNet,
-  line_total_gross:r.lineGross,adjustment_gross:r.adjustmentGross,effective_unit_net:finiteOrNull(r.costNet),effective_unit_gross:finiteOrNull(r.costGross)};}
+  line_total_gross:r.lineGross,adjustment_gross:r.adjustmentGross,volume_ml:finiteOrNull(r.vol),effective_unit_net:finiteOrNull(r.costNet),effective_unit_gross:finiteOrNull(r.costGross)};}
 async function post(){
   if(!currentInvoice||posting)return;
   const check=reviewCheck();if(check.issues.length)return toast(check.issues[0],7000);
@@ -150,7 +157,7 @@ async function post(){
           }).eq('id',r.id).eq('invoice_id',currentInvoice.id).eq('organization_id',ctx.organization.id).select('id').single();
           if(u.error)throw u.error;
           if(r.status==='approved'){
-            if(r.qty>0){await learnProduct(r);await history(r.id,r.pid,r);}
+            await learnProduct(r);if(r.qty>0)await history(r.id,r.pid,r);
             if(await learnSupplierMapping(r))learned++;
           }
         }

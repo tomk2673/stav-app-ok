@@ -60,8 +60,9 @@ test('fractional receipt, mixed VAT, ignored rounding and signed liquid return r
 test('credit note alone posts a negative liquid return and does not replace purchase cost',async()=>{
   const h=await review({total:-108.9,lines:[{quantity:-1,unit_price_net:100,unit_price_gross:121,vat_rate:21,line_total_net:-90,line_total_gross:-108.9}]});
   try{
+    h.w.document.querySelector('.vol').value='350';
     await h.post();const stock=(await h.db.query('select * from stock_movements')).rows[0];
-    assert.equal(stock.movement_type,'return');assert.equal(Number(stock.quantity_ml),-700);
+    assert.equal(stock.movement_type,'return');assert.equal(Number(stock.quantity_ml),-350,'confirmed package size reaches the server even on returns');
     assert.equal((await h.db.query('select status from invoices')).rows[0].status,'posted');
     assert.equal(Number((await h.db.query('select current_purchase_price_gross from products')).rows[0].current_purchase_price_gross),121);
     assert.equal((await h.db.query('select count(*)::int as n from purchase_price_history')).rows[0].n,0);

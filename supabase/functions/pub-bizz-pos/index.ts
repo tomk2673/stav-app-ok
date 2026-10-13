@@ -1,6 +1,7 @@
 import { createClient } from 'supabase';
 import './catalog.js';
 import './core.js';
+import './loyalty.js';
 import './server-domain.js';
 
 const C = (globalThis as any).POSCore;
@@ -24,7 +25,7 @@ async function stockFor(venue:any) {
 async function snapshot(venue:any, result:any=null, knownStock:any=null) {
   const [state,stock,issues] = await Promise.all([
     stateFor(venue),knownStock||stockFor(venue),
-    db.from('pos_stock_lines').select('*',{count:'exact'}).eq('venue_id',venue.id).in('status',['missing_recipe','shortage']).order('updated_at',{ascending:false}).limit(200)
+    db.from('pos_stock_lines').select('*',{count:'exact'}).eq('venue_id',venue.id).in('status',['missing_recipe','shortage','awaiting_stock']).order('updated_at',{ascending:false}).limit(200)
   ]);
   if(issues.error) throw issues.error;
   return {state,stock,issues:issues.data,issueCount:issues.count,result,role:venue.role,venue};
@@ -76,8 +77,10 @@ Deno.serve(async (req: Request) => {
       const s=await stateFor(venue);
       const payload=structuredClone(body.payload);
       if(body.type==='checkout') payload.operationId=body.requestId;
+      const receiptStock = body.type==='restoreReceipt' && uuid(payload.receiptId)
+        ? await checked(db.from('pos_stock_lines').select('line_id,status,recipe').eq('venue_id',venue.id).eq('receipt_id',payload.receiptId)) : [];
       let command:any;
-      try {command=Domain.run(s,body.type,payload,{id:user.id,role:venue.role},stock);}
+      try {command=Domain.run(s,body.type,payload,{id:user.id,role:venue.role},stock,new Date().toISOString(),receiptStock);}
       catch(e) {
         const already:any=await checked(db.from('pos_requests').select('request_hash,actor_id,result').eq('venue_id',venue.id).eq('request_id',body.requestId).maybeSingle());
         if(already?.request_hash===hash && already.actor_id===user.id) return reply(await snapshot(venue,already.result,stock));

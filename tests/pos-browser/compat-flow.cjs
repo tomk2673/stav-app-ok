@@ -152,8 +152,36 @@ async function flow(browser,base,width){
     // IndexedDB is used only for the explicitly separate local emergency backup.
     const local=await page.evaluate(async()=>{const s=await POSCloud.localBackup();return {orders:s.orders.length,receipts:s.receipts.length};});
     assert.equal(local.receipts,0);
+    await page.locator('[data-action="entryCount"][data-id="2"]').click();await page.locator('.product[data-action="add"]').first().click();
+    await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='3×');
+    await page.locator('[data-action="payCard"]').click();await page.locator('[data-payment-reset]').click();
+    assert.equal(await page.locator('#dialog-submit').isDisabled(),true);
+    await page.locator('.payment-item').first().click();await page.locator('[data-qty="1"]').click();
+    await page.locator('[name="cardConfirmed"]').check();await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
+    const corrected=f.state.receipts.at(-1);assert.equal(corrected.lines[0].quantity,1);assert.equal(f.state.orders[0].lines[0].quantity,2);
+    await page.locator('[data-action="payCash"]').click();await page.locator('#dialog .dialog-actions .close-dialog').click();
+    assert.equal(await page.locator('[data-action="paySplit"]').isDisabled(),false);
+    await page.locator('[data-action="paySplit"]').click();await page.locator('.payment-item').first().click();await page.locator('[data-qty="1"]').click();
+    await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
+    assert.equal(f.state.orders[0].lines[0].quantity,1);
+    const receiptsBefore=f.state.receipts.length, target=f.state.orders.find(o=>o.name==='Stůl 12');
+    await page.locator('[data-view="history"]').click();await page.locator('[data-action="restoreReceipt"][data-id="'+corrected.id+'"]').click();
+    assert.equal(f.state.receipts.length,receiptsBefore);
+    await page.locator('[name="targetOrderId"]').selectOption(target.id);await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
+    assert.equal(f.state.receipts.length,receiptsBefore);assert.equal(f.state.orders.find(o=>o.id===target.id).lines.length,0);
+    await page.locator('[data-action="restoreReceipt"][data-id="'+corrected.id+'"]').click();await page.locator('[name="correction"]').selectOption('restore');
+    await page.locator('[name="reason"]').fill('TEST ONLY');await page.locator('#dialog-submit').click();
+    assert.equal(f.state.receipts.length,receiptsBefore,'browser validity prevents unverified reversal');
+    await page.locator('[name="terminalReference"]').fill('TEST-TERM-123');await page.locator('[name="cardConfirmed"]').check();
+    const overflow=await page.evaluate(()=>document.querySelector('#dialog').scrollWidth>document.querySelector('#dialog').clientWidth);assert.equal(overflow,false,'correction dialog fits');
+    f.dropResponse();await page.locator('#dialog-submit').click();await page.locator('[data-action="retryPending"]').waitFor();
+    const correctionId=await page.evaluate(()=>POSCloud.pending.requestId);await page.reload();
+    await until(page,()=>window.POSCloud&&!POSCloud.pending&&document.querySelector('.receipt-head h2')?.textContent==='Stůl 12');
+    assert.equal(f.state.receipts.length,receiptsBefore+1);assert.equal(f.state.orders.find(o=>o.id===target.id).lines[0].quantity,1);
+    assert.equal(f.calls.filter(c=>c.requestId===correctionId).length,2,'lost correction response survives reload without a second refund');
+    assert.equal(await page.locator('#dialog').evaluate(el=>el.open),false);
     assert.deepEqual(errors,[]);
-    return {width,passed:true,steps:['password rejection','password login','401 refresh','session reload','open shift','table/customer search','12-piece keypad','quantity correction','partial card confirmation','paid product ranking','stable unpaid buttons','ranking reload','return to marking','durable ID reload/replay','cash payment','IndexedDB backup','layout']};
+    return {width,passed:true,steps:['password rejection','password login','401 refresh','session reload','open shift','table/customer search','12-piece keypad','quantity correction','partial card confirmation','paid product ranking','stable unpaid buttons','ranking reload','return to marking','durable ID reload/replay','cash payment','IndexedDB backup','layout','local full-to-split switch','back-to-split reservation','neutral assignment','terminal reference and confirmation','financial recovery after reload']};
   }finally{await context.close();}
 }
 async function failures(browser,base){

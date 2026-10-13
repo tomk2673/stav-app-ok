@@ -1,5 +1,8 @@
-const CACHE = 'pub-bizz-pos-shell-2.0.8';
-const SHELL = ['./', './index.html', './style.css', './compat.js', './catalog.js', './core.js', './storage.js', './app.js', './config.js', './cloud.js', './stock.js', './vendor/supabase-2.117.2.js', './icon.svg', './manifest.webmanifest'];
+const CACHE = 'pub-bizz-pos-shell-2.0.9';
+const SHELL = ['./index.html', './style.css', './compat.js', './catalog.js', './core.js', './storage.js', './app.js', './config.js', './cloud.js', './stock.js', './vendor/supabase-2.117.2.js', './icon.svg', './manifest.webmanifest'];
+// Safari rejects a followed/cached redirect returned for a manual navigation.
+// Keep the final HTML and its security headers, without the redirect URL list.
+const navigationResponse = response => response?.redirected ? new Response(response.body, {status:response.status, statusText:response.statusText, headers:response.headers}) : response;
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil((async () => {
   for (const key of await caches.keys()) if (key.startsWith('pub-bizz-pos-shell-') && key !== CACHE) await caches.delete(key);
@@ -10,9 +13,10 @@ self.addEventListener('fetch', event => {
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const hit = await cache.match(event.request, {ignoreSearch:true});
-    if (hit) return hit;
-    try { return await fetch(event.request); }
-    catch (e) { if (event.request.mode === 'navigate') return await cache.match('./index.html'); throw e; }
+    const navigation = event.request.mode === 'navigate';
+    if (hit) return navigation ? navigationResponse(hit) : hit;
+    try { const response = await fetch(event.request, navigation ? {redirect:'follow'} : undefined); return navigation ? navigationResponse(response) : response; }
+    catch (e) { if (navigation) { const fallback = await cache.match('./index.html'); if (fallback) return navigationResponse(fallback); } throw e; }
   })());
 });
 

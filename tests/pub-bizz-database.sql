@@ -14,7 +14,7 @@ begin
  values(org,venue,product,'manual_correction',1000,'POS test fixture',actor);
  recipe:=jsonb_build_object('mode','recipe','version',1,'components',jsonb_build_array(jsonb_build_object('productId',product,'quantity',40,'unit','ml')));
  l:=jsonb_build_object('id',line_id,'productId','test','name','Test portion','quantity',2,'stockRecipe',recipe);
- r:=jsonb_build_object('id',receipt,'venueId',venue,'kind','sale','at',now(),'number','TEST-1','lines',jsonb_build_array(l));
+ r:=jsonb_build_object('id',receipt,'venueId',venue,'kind','sale','at',now(),'number','TEST-1','total',11000,'cash',11000,'card',0,'rounding',0,'lines',jsonb_build_array(l));
  s:=jsonb_build_object('venueId',venue,'orders','[]'::jsonb,'revision',1);
  result:=public.pos_commit(venue,actor,request,'test-hash',0,'checkout',s,r);
  assert result->>'duplicate'='false','first request should commit';
@@ -34,7 +34,7 @@ begin
  -- One missing recipe is queued with no fabricated stock decrement.
  receipt:=gen_random_uuid();line_id:=gen_random_uuid();
  l:=jsonb_build_object('id',line_id,'productId','unmapped','name','Missing recipe','quantity',1,'stockRecipe',null);
- r:=jsonb_build_object('id',receipt,'venueId',venue,'kind','sale','at',now(),'number','TEST-2','lines',jsonb_build_array(l));
+ r:=jsonb_build_object('id',receipt,'venueId',venue,'kind','sale','at',now(),'number','TEST-2','total',5500,'cash',5500,'card',0,'rounding',0,'lines',jsonb_build_array(l));
  s:=jsonb_set(s,'{revision}','2');
  perform public.pos_commit(venue,actor,gen_random_uuid(),'missing',1,'checkout',s,r);
  assert exists(select 1 from public.pos_stock_lines where receipt_id=receipt and status='missing_recipe'),'missing mapping must remain visible';
@@ -50,7 +50,7 @@ begin
  assert failed,'duplicate stock resolution must fail';
  assert (select revision from public.pos_registers where venue_id=venue)=3,'failed stock operation rolls back register';
  -- Explicit restock returns the exact original decrement.
- r:=jsonb_build_object('id',refund,'venueId',venue,'kind','refund','at',now(),'number','TEST-3','refundOf',receipt,'reason','Returned unopened','restock',true,'lines','[]'::jsonb);
+ r:=jsonb_build_object('id',refund,'venueId',venue,'kind','refund','at',now(),'number','TEST-3','total',-5500,'cash',-5500,'card',0,'rounding',0,'refundOf',receipt,'reason','Returned unopened','restock',true,'lines','[]'::jsonb);
  s:=jsonb_set(s,'{revision}','4');
  perform public.pos_commit(venue,actor,gen_random_uuid(),'refund',3,'refund',s,r);
  assert (select sum(quantity_ml) from public.stock_movements where venue_id=venue)=920,'restock restores original quantity';
@@ -67,12 +67,12 @@ begin
  values(org,venue,product,'manual_correction',0,3,'POS counted fixture',actor);
  recipe:=jsonb_build_object('mode','recipe','components',jsonb_build_array(jsonb_build_object('productId',product,'quantity',1,'unit','ks')));
  l:=jsonb_build_object('id',line_id,'productId','test-counted','name','Counted portion','quantity',5,'stockRecipe',recipe);
- r:=jsonb_build_object('id',receipt,'venueId',venue,'kind','sale','at',now(),'number','TEST-COUNTED','lines',jsonb_build_array(l));
+ r:=jsonb_build_object('id',receipt,'venueId',venue,'kind','sale','at',now(),'number','TEST-COUNTED','total',27500,'cash',27500,'card',0,'rounding',0,'lines',jsonb_build_array(l));
  s:=jsonb_set(s,'{revision}','6');
  perform public.pos_commit(venue,actor,gen_random_uuid(),'counted',5,'checkout',s,r);
  assert exists(select 1 from public.stock_movements where venue_id=venue and product_id=product and quantity_units=-3 and untracked_units=2),'counted shortage must retain requested versus deducted quantity';
  assert exists(select 1 from public.pos_stock_lines where receipt_id=receipt and status='shortage'),'shortage must be visible';
- r:=jsonb_build_object('id',gen_random_uuid(),'venueId',venue,'kind','refund','at',now(),'number','TEST-COUNTED-REFUND','refundOf',receipt,'reason','Returned stock','restock',true);
+ r:=jsonb_build_object('id',gen_random_uuid(),'venueId',venue,'kind','refund','at',now(),'number','TEST-COUNTED-REFUND','total',-27500,'cash',-27500,'card',0,'rounding',0,'refundOf',receipt,'reason','Returned stock','restock',true);
  s:=jsonb_set(s,'{revision}','7');
  perform public.pos_commit(venue,actor,gen_random_uuid(),'counted-refund',6,'refund',s,r);
  assert (select sum(quantity_units) from public.stock_movements where venue_id=venue and product_id=product)=3,'refund cannot manufacture missing counted stock';

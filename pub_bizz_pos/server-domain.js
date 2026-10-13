@@ -2,11 +2,44 @@
 (function (root) {
   'use strict';
   const C = typeof module !== 'undefined' ? require('./core.js') : root.POSCore;
+  const L = typeof module !== 'undefined' ? require('./loyalty.js') : root.POSLoyalty;
   const manager = new Set(['owner', 'manager']);
-  const staffCommands = new Set(['openShift', 'newOrder', 'deleteOrder', 'mergeOrders', 'addLine', 'removeLine', 'setLineQuantity', 'beginPayment', 'cancelPayment', 'checkout', 'restoreReceipt', 'backup']);
-  const managerCommands = new Set(['product', 'archiveProduct', 'importProducts', 'refund', 'cashMovement', 'closeShift', 'settings', 'recipe', 'resolveStock']);
+  const staffCommands = new Set(['openShift', 'newOrder', 'deleteOrder', 'mergeOrders', 'addLine', 'removeLine', 'setLineQuantity', 'beginPayment', 'cancelPayment', 'checkout', 'reassignReceipt', 'backup', 'redeemReward']);
+  const managerCommands = new Set(['product', 'archiveProduct', 'importProducts', 'refund', 'restoreReceipt', 'cashMovement', 'closeShift', 'settings', 'recipe', 'resolveStock', 'loyaltyConfig']);
   const check = (ok, message) => { if (!ok) throw new Error(message); };
-  function run(state, type, payload, actor, stock, now = new Date().toISOString()) {
+  function restoredStockLines(sale, records) {
+    const result = {};
+    for (const line of sale?.lines || []) {
+      const record = records.find(x=>x.line_id===line.id);
+      const resolved = record?.recipe?.resolvedComponents;
+      if (!record?.recipe || !['posted','shortage','no_stock','awaiting_stock'].includes(record.status)) continue;
+      // Late resolveStock may have supplied the first real recipe after the sale.
+      if (!resolved?.length) {
+        result[line.id]=[{quantity:line.quantity,stockRecipe:structuredClone(record.recipe)}];
+        continue;
+      }
+      check(Array.isArray(resolved) && record.recipe.components?.length, 'Poškozená původní skladová receptura.');
+      const boundaries = new Set([0,line.quantity]), components=[];
+      for (const requested of record.recipe.components) {
+        let end=0;
+        const ranges=resolved.filter(x=>x.requestedProductId===requested.productId).map(x=>{
+          check(Number.isSafeInteger(x.portions) && x.portions>0 && x.unit===requested.unit && Number.isFinite(Number(x.quantity)) && Number(x.quantity)>0, 'Poškozený původní skladový odpis.');
+          const start=end;end+=x.portions;boundaries.add(end);
+          return {start,end,productId:x.productId,unit:x.unit,quantity:Number(x.quantity)/x.portions};
+        });
+        check(end===line.quantity, 'Nesedí původní skladový odpis.');components.push(ranges);
+      }
+      const points=[...boundaries].sort((a,b)=>a-b);
+      result[line.id]=points.slice(0,-1).map((start,i)=>({quantity:points[i+1]-start,stockRecipe:{
+        version:record.recipe.version,mode:'recipe',components:components.map(ranges=>{
+          const range=ranges.find(x=>x.start<=start&&x.end>start);
+          return {productId:range.productId,unit:range.unit,quantity:range.quantity};
+        })
+      }}));
+    }
+    return result;
+  }
+  function run(state, type, payload, actor, stock, now = new Date().toISOString(), receiptStock = []) {
     check(actor && ['owner', 'manager', 'staff'].includes(actor.role), 'Nemáš oprávnění měnit pokladnu.');
     check(staffCommands.has(type) || (manager.has(actor.role) && managerCommands.has(type)), 'Tuto operaci může provést vedoucí nebo majitel.');
     const p = structuredClone(payload || {}), s = structuredClone(state);
@@ -18,7 +51,16 @@
       check(order?.paymentLock && order.paymentLock.token===p.paymentToken, 'Účet není rezervovaný pro tuto platbu. Otevři platbu znovu.');
       check(order.paymentLock.actorId===actor.id || manager.has(actor.role), 'Platbu dokončuje jiná obsluha.');
     }
-    if (type === 'beginPayment') {
+    if(type==='loyaltyConfig'){
+      check(typeof p.enabled==='boolean'&&Number.isSafeInteger(p.threshold)&&p.threshold>=10000&&p.threshold<=100000,'Zadej částku od 100 do 1 000 Kč.');
+      s.loyalty||=L.initial();s.loyalty.enabled=p.enabled;s.loyalty.threshold=p.threshold;
+      result={enabled:p.enabled,threshold:p.threshold};
+    } else if(type==='redeemReward'){
+      const reward=s.loyalty?.rewards.find(x=>x.id===p.rewardId);
+      check(reward&&reward.status==='available'&&!reward.refunded,'Odměna není dostupná nebo už byla vydaná.');
+      check(p.fulfilled===true&&String(p.note||'').trim(),'Nejdřív splň odměnu a napiš skladbu nebo poznámku.');
+      reward.status='redeemed';reward.redeemedAt=now;reward.redeemedBy=actor.id;reward.note=String(p.note).trim().slice(0,160);result=structuredClone(reward);
+    } else if (type === 'beginPayment') {
       check(C.activeShift(s) && order?.lines.length, 'Účet nemá položky nebo není otevřená směna.');
       check(order.revision===p.revision, 'Účet se změnil. Otevři platbu znovu.');
       check(!order.paymentLock, 'Účet už je rezervovaný pro platbu. Nejdřív zkontroluj rozpracovanou platbu.');
@@ -43,8 +85,12 @@
         check(product, 'Skladová položka není dostupná.');
         check(c.unit === (product.unit_mode === 'counted' ? 'ks' : 'ml'), 'Jednotka nesouhlasí se skladem.');
         check(Number.isFinite(c.quantity) && c.quantity > 0 && c.quantity <= 1000000 && Math.abs(c.quantity * 1000 - Math.round(c.quantity * 1000)) < 0.000001, 'Zadej kladné množství na jednu porci, nejvýš tři desetinná místa.');
+        const alternatives=c.alternatives||[];
+        check(Array.isArray(alternatives)&&alternatives.length<=5, 'Lze nastavit nejvýš pět náhrad.');
+        check(new Set([c.productId,...alternatives]).size===alternatives.length+1, 'Náhrada se opakuje nebo je shodná se základní surovinou.');
+        for(const id of alternatives){const alt=stock.find(x=>x.id===id&&!x.archived_at);check(alt&&(alt.unit_mode==='counted'?'ks':'ml')===c.unit,'Náhrada musí být dostupná surovina se stejnou jednotkou.');}
       }
-      result = { version: (old?.version || 0) + 1, mode: p.mode, reason, components: components.map(c => ({productId:c.productId, quantity:c.quantity, unit:c.unit})), updatedAt:now, updatedBy:actor.id };
+      result = { version: (old?.version || 0) + 1, mode: p.mode, reason, selection:'available', components: components.map(c => ({productId:c.productId, quantity:c.quantity, unit:c.unit, alternatives:c.alternatives||[]})), updatedAt:now, updatedBy:actor.id };
       s.recipes[p.productId] = result;
     } else if (type === 'resolveStock') {
       const receipt = s.receipts.find(r => r.id === p.receiptId && r.kind === 'sale');
@@ -53,22 +99,28 @@
       check(!s.receipts.some(r => r.refundOf === receipt.id && r.restock), 'Zboží už bylo vrácené. Případnou opravu proveď v PUB GURU.');
       result = { receiptId: receipt.id, lineId: line.id, recipe: structuredClone(s.recipes[line.productId]) };
     } else {
-      result = C.execute(s, type, p, now);
+      // receiptStock is loaded by the authenticated Edge Function, never from command payload.
+      const restored = type==='restoreReceipt' ? restoredStockLines(s.receipts.find(r=>r.id===p.receiptId&&r.kind==='sale'),receiptStock) : undefined;
+      result = C.execute(s, type, p, now, restored);
       if (type === 'checkout' && result) {
         delete order.paymentLock;
         result.actorId = actor.id;
-        result.lines = result.lines.map(l => ({ ...l, stockRecipe: structuredClone(s.recipes[l.productId] || null) }));
+        result.lines = result.lines.map(l => ({ ...l, stockRecipe: structuredClone(Object.prototype.hasOwnProperty.call(l, 'stockRecipe') ? l.stockRecipe : s.recipes[l.productId] || null) }));
+        L.award(s,result,now);
       }
       if (type === 'refund' && result) {
         result.actorId = actor.id;
         result.restock = p.restock === true;
+        L.refund(s,result);
       }
       if (type === 'restoreReceipt' && result) {
         result.actorId = actor.id;
         result.restock = true;
+        L.refund(s,result);
       }
+      if (['refund', 'restoreReceipt'].includes(type) && result?.terminalConfirmation) result.terminalConfirmation.actorId = actor.id;
     }
-    if (['recipe','resolveStock','beginPayment','cancelPayment'].includes(type)) {
+    if (['recipe','resolveStock','beginPayment','cancelPayment','loyaltyConfig','redeemReward'].includes(type)) {
       s.revision++;
       s.audit.push({id:crypto.randomUUID(), at:now, type, actorId:actor.id, detail:p});
     } else if (s.audit.length) s.audit[s.audit.length - 1].actorId = actor.id;

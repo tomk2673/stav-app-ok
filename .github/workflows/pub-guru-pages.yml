@@ -49,9 +49,24 @@ jobs:
           npm ci --prefix tests/pos-web
           npm test --prefix tests/pos-web
 
+  service-worker-navigation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Browser dependencies
+        run: |
+          npm ci --prefix tests/pos-browser
+          node tests/pos-browser/node_modules/pwmodern/cli.js install --with-deps chromium webkit
+      - name: Safari and Chromium redirect recovery
+        run: npm run test:service-workers --prefix tests/pos-browser
+
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: test
+    needs: [test, service-worker-navigation]
     permissions:
       contents: read
       pages: write

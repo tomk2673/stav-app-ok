@@ -115,7 +115,9 @@ test('Pages deploys only main pushes or manual main runs after tests', () => {
   assert.match(workflow, /workflow_dispatch:/);
   const deploy = workflow.split(/^  deploy:\s*$/m)[1];
   assert.ok(deploy, 'Pages deployment job must exist');
-  assert.match(deploy, /^    needs: test\s*$/m);
+  const dependencies = deploy.match(/^    needs: (.+)$/m)?.[1].replace(/[\[\]]/g, '').split(',').map(value => value.trim());
+  assert.ok(dependencies?.includes('test'), 'Pages must wait for the application tests');
+  assert.ok(dependencies.includes('service-worker-navigation'), 'Pages must wait for Safari navigation tests');
   const condition = deploy.match(/^    if: (.+)$/m)?.[1];
   assert.ok(condition, 'Pages deployment must have an event and branch guard');
   for (const [event_name, ref, expected] of [

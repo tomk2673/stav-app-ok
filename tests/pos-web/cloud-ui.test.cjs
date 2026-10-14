@@ -42,12 +42,53 @@ async function harness(seed=state=>state,role='owner'){
    }
    return {ok:status===200,status,json:async()=>data};
   };
-  for(const name of ['catalog.js','core.js','storage.js','config.js','cloud.js','stock.js','app.js'])w.eval(fs.readFileSync(path.join(root,name),'utf8'));
+  for(const name of ['catalog.js','core.js','customer.js','storage.js','config.js','cloud.js','stock.js','app.js'])w.eval(fs.readFileSync(path.join(root,name),'utf8'));
   await until(()=>w.document.querySelector('.product'),'register open');
   const click=selector=>{const el=w.document.querySelector(selector);assert.ok(el,'Missing '+selector);el.click();};
   const submit=()=>w.document.querySelector('#dialog-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
   return {dom,w,click,submit,get server(){return server;},calls,drop(){dropNext=true;},disconnect(){dropBefore=true;},hold(){holdNext=true;},release(){release?.();},external(type,payload){server=D.run(server,type,payload,{id:user.id,role:'owner'},[]).state;}};
 }
+test('rename UI preserves the same account, updates search and survives a lost response once',{concurrency:false},async()=>{
+ const h=await harness(paidCorrectionSeed());try{
+  const id=h.server.orders.find(o=>o.name==='Stůl 1').id;
+  h.external('addLine',{orderId:id,productId:'agnis-2810',quantity:2});await h.w.POSCloud.refresh();
+  h.click('[data-action="account"][data-id="'+id+'"]');
+  const before=structuredClone(h.server),order=before.orders.find(o=>o.id===id);
+  h.click('[data-action="renameOrder"]');
+  assert.equal(h.w.document.querySelector('[name="name"]').value,'Stůl 1');
+  h.w.document.querySelector('[name="name"]').value='Stůl 2';h.submit();
+  await until(()=>/existuje/.test(h.w.document.querySelector('#dialog-error').textContent),'duplicate shown');
+  assert.deepEqual(h.server,before);
+  h.w.document.querySelector('[name="name"]').value='Petr';h.hold();h.submit();h.submit();
+  await until(()=>h.w.POSCloud.busy,'rename request in progress');h.release();
+  await until(()=>!h.w.document.querySelector('#dialog').open,'renamed');
+  assert.equal(h.server.orders.find(o=>o.id===id).name,'Petr');
+  assert.deepEqual(h.server.orders.find(o=>o.id===id).lines,order.lines);assert.deepEqual(h.server.receipts,before.receipts);
+  assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Petr');assert.equal(h.w.document.querySelector('#account-search').value,'Petr');
+  assert.equal(h.calls.filter(x=>x.type==='renameOrder'&&x.payload.name==='Petr').length,1);
+  h.click('[data-action="customerProfile"]');assert.match(h.w.document.querySelector('#dialog-body').textContent,/Věrnostní body/);h.click('#dialog .close-dialog');
+  h.click('[data-action="renameOrder"]');h.w.document.querySelector('[name="name"]').value='Petr Král';h.drop();h.submit();
+  await until(()=>h.w.POSCloud.pending&&!h.w.POSCloud.busy,'uncertain rename');
+  const request=h.w.POSCloud.pending.requestId;h.click('[data-action="retryPending"]');
+  await until(()=>!h.w.POSCloud.pending&&!h.w.POSCloud.busy,'rename verified');
+  assert.equal(h.server.orders.find(o=>o.id===id).name,'Petr Král');
+  assert.equal(h.server.audit.filter(x=>x.type==='renameOrder').length,2);assert.deepEqual(h.server.receipts,before.receipts);
+  assert.equal(h.calls.filter(x=>x.requestId===request).length,2);
+  assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Petr Král');
+  if(h.w.document.querySelector('#dialog').open)h.click('#dialog .close-dialog');
+  h.external('beginPayment',{orderId:id,revision:h.server.orders.find(o=>o.id===id).revision});await h.w.POSCloud.refresh();
+  assert.equal(h.w.document.querySelector('[data-action="renameOrder"]').disabled,true);
+  h.click('[data-action="account"][data-id="bar"]');assert.equal(h.w.document.querySelector('[data-action="renameOrder"]'),null);
+ }finally{h.dom.window.close();}
+});
+test('rename rejects an account changed by another device while the dialog stays open',{concurrency:false},async()=>{
+ const h=await harness(paidCorrectionSeed());try{
+  const id=h.server.orders.find(o=>o.name==='Stůl 1').id;h.click('[data-action="account"][data-id="'+id+'"]');
+  h.click('[data-action="renameOrder"]');h.w.document.querySelector('[name="name"]').value='Petr';
+  h.external('renameOrder',{orderId:id,revision:h.server.orders.find(o=>o.id===id).revision,name:'Jana'});const before=structuredClone(h.server);
+  h.submit();await until(()=>/změnil/.test(h.w.document.querySelector('#dialog-error').textContent),'stale name rejected');assert.deepEqual(h.server,before);
+ }finally{h.dom.window.close();}
+});
 test('online UI survives a lost response without adding an item twice and completes a reserved payment',{concurrency:false},async()=>{
   const h=await harness();try {
    h.click('[data-action="openShift"]');

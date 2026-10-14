@@ -11,6 +11,7 @@ Pokladna, faktury, sklad, inventury a uzávěrky jsou ve stejném repozitáři `
 5. Otevřít směnu, markovat na rychlý nebo pojmenovaný účet. Účty se obnovují každé 3 sekundy. Na telefonu je dole rychlé tlačítko k aktuálnímu účtu.
    - **Rychlý prodej je automatický**, když není vybraný stůl ani zákazník. Stačí zadat počet a klepnout na zboží. Vybraný pojmenovaný účet se zobrazí v poli pro stůl/zákazníka; vymazání pole přepne zpět na rychlý prodej a jeho původní položky zachová. Prázdné jméno v dialogu nového účtu také použije rychlý prodej bez vytváření dalšího účtu.
    - Po zaplacení celého účtu se pokladna automaticky vrátí k rychlému prodeji. Při částečné platbě zůstává vybraný účet se zbývajícími položkami. Totéž platí po ověření platby se ztracenou odpovědí.
+   - **Přejmenovat** u názvu účtu změní stůl nebo jméno hosta bez přesouvání položek. Zachová stejný účet, ceny, zaplacené části, návštěvu i zákaznické body a oblíbené nápoje. Staré doklady si ponechají původní název; zákaznický profil používá současný název stejného účtu. Prázdný či obsazený název neprojde. Rychlý prodej nelze přejmenovat a rozpracovanou platbu je nutné nejprve dokončit nebo uvolnit.
    - **Spojit účty** pod názvem účtu přesune všechny jeho položky na vybraný stůl nebo zákazníka. Dialog ukáže oba účty a společnou částku; po potvrzení se otevře cílový účet. Původní účet zůstane prázdný pro další použití. Shodné položky se sčítají, různé ceny, sazby DPH a skladové vazby zůstávají zachované. Rozpracovaná platba nebo změna kteréhokoli účtu během potvrzování spojení zablokuje. Spojení samo nevytváří tržbu ani skladový odpis a zapisuje se do auditu.
 6. Otevření platby rezervuje účet. Kartu zpracovat na samostatném terminálu a potom potvrdit. Po zavření dialogu zůstane rezervace, dokud obsluha zkontroluje stav platby a dokončí ji nebo účet uvolní. Terminál ani tiskárna nejsou přímo ovládané z webu.
 7. Prodej bez receptury zůstává v seznamu chybějících odpisů. Po nastavení receptury lze jednou provést odpis k původnímu prodeji. Inventura vidí počet čekajících odpisů.
@@ -30,6 +31,8 @@ Backend je nasazený v PUB GURU:
 - browser používá pouze veřejný publishable key z `config.js`. Service role zůstává v prostředí Edge Function.
 
 Při změně doménového kódu spustit z kořene `python3 pub_bizz_pos/sync-edge.py` a nasadit aktualizovaný obsah `supabase/functions/pub-bizz-pos`. Migrace v repozitáři odpovídají skutečně přiděleným verzím v databázi; původní PUB GURU schema je v adresáři `database`.
+
+Přejmenování vyžaduje migraci `20261014231114_pos_rename_order.sql` → aktualizovaný Edge bundle → web s PWA cache `2.0.12`. Migrace přidává příkaz pro obsluhu a kontroluje zachování položek, návštěv, plateb, dokladů a ostatních účtů. Zachovává stávající platební a skladové funkce i oprávnění RPC; nepřepisuje provozní data. Nový název a původní název se zapisují do auditu. Ztracená odpověď používá stávající obnovu stejného UUID.
 
 ## Integrita a oprávnění
 

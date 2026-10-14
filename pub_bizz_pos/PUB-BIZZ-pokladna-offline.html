@@ -17,7 +17,7 @@
 @media(max-width:630px){.mobile-bill{display:flex;position:fixed;bottom:12px;left:14px;right:14px;z-index:5;justify-content:space-between;gap:12px;align-items:center;border-radius:14px;background:var(--lime);color:var(--lime-text);padding:18px;box-shadow:0 4px 32px #0008;min-height:60px}.mobile-bill span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%;font-size:.85rem}.mobile-bill strong{white-space:nowrap}body{padding-bottom:90px}.receipt{scroll-margin-top:14px}.login-panel{margin:24px auto;padding:25px}.login-panel h1{font-size:2rem}.sync-warning{margin:0 14px 16px;flex-wrap:wrap}.recipe-row{grid-template-columns:minmax(0,1fr) 26px 36px}.recipe-row .field:first-child{grid-column:1/-1}.stock-issue{align-items:flex-start;flex-direction:column}.topbar nav{justify-content:flex-start}.topbar nav button{min-width:70px}.top-right .network{display:inline;font-size:.7rem}}
 @media print{.mobile-bill{display:none!important}body{padding-bottom:0}}
 
-.receipt-tools{padding:12px 21px 0}.merge-account{width:100%;min-height:48px;padding:12px 16px;border:1px solid #cdd5c8;border-radius:10px;background:#e6ebdf;color:#354c2d;font-weight:650}.merge-summary .summary-row>span{min-width:0;overflow-wrap:anywhere}.merge-summary .summary-row>strong{white-space:nowrap}.merge-summary p{overflow-wrap:anywhere;line-height:1.5}
+.receipt-tools{padding:12px 21px 0;display:flex;gap:8px}.receipt-tools>button{flex:1;min-width:0}.merge-account{width:100%;min-height:48px;padding:12px 16px;border:1px solid #cdd5c8;border-radius:10px;background:#e6ebdf;color:#354c2d;font-weight:650}.merge-summary .summary-row>span{min-width:0;overflow-wrap:anywhere}.merge-summary .summary-row>strong{white-space:nowrap}.merge-summary p{overflow-wrap:anywhere;line-height:1.5}
 
 .quantity-select{width:64px;height:56px;border:1px solid #d4ddce;border-radius:10px;background:#e6ebdf;color:#263222;text-align:center;font-size:1.15rem;font-weight:750}.selected-line select{width:82px;min-height:48px;padding:8px;border:1px solid #40503c;border-radius:8px;background:#111812;color:var(--text);font-weight:700;text-align:center}
 
@@ -244,6 +244,24 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
   .contextbar .save-state{max-width:none;min-width:0;text-align:left;font-size:.6875rem;line-height:18px}
   main{min-height:calc(100dvh - 90px)}
 }
+
+/* Customer profile stays out of the marking flow until explicitly opened. */
+.customer-profile-button{min-height:34px;padding:6px 10px;border-radius:9px;border:1px solid #53604b;background:#293324;color:var(--lime);font-size:.78rem;font-weight:750;white-space:nowrap}
+.customer-current{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;margin-bottom:14px;border:1px solid #66764d;border-radius:11px;background:#29351f}
+.customer-current span{color:#cbd8be;font-size:.82rem}.customer-current strong{color:var(--lime);font-size:1.1rem}
+.customer-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:15px}
+.customer-stats>div{padding:13px;border:1px solid var(--line);border-radius:10px;background:#222a26;min-width:0}
+.customer-stats span{display:block;color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.055em}
+.customer-stats strong{display:block;margin-top:7px;font-size:1.15rem;overflow-wrap:anywhere}
+.customer-rules{margin:0 0 14px}
+.customer-detail{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 14px;padding:10px 0 15px;color:var(--muted);font-size:.8rem}
+.customer-detail strong{color:var(--text)}
+.customer-profile h3{margin:5px 0 10px}
+.customer-drinks{max-height:290px}
+.customer-drinks table{min-width:0}
+.customer-drinks th,.customer-drinks td{padding:10px 11px}
+@media(max-width:630px){.customer-profile-button{padding:5px 8px;min-height:32px}.customer-stats{gap:7px}.customer-stats>div{padding:11px}.customer-stats strong{font-size:1.02rem}.customer-drinks{max-height:250px}}
+
 </style>
   <script>(function(root){'use strict';
 if(!root.globalThis) root.globalThis=root;
@@ -2906,6 +2924,16 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       check(clean(p.name), 'Zadej název účtu.');
       check(!s.orders.some(x => x.name.toLocaleLowerCase('cs') === clean(p.name).toLocaleLowerCase('cs')), 'Tento účet už existuje.');
       result = { id: uid(), name: clean(p.name), lines: [], revision: 0 }; s.orders.push(result);
+    } else if (type === 'renameOrder') {
+      const o = order();
+      check(o.id !== 'bar', 'Rychlý prodej nelze přejmenovat.');
+      check(!o.paymentLock, 'Nejdřív dokonči nebo uvolni rozpracovanou platbu.');
+      check(o.revision === p.revision, 'Účet se změnil. Znovu otevři přejmenování.');
+      check(typeof p.name === 'string' && p.name.trim().length > 0 && p.name.trim().length <= 120, 'Zadej název účtu do 120 znaků.');
+      const name = p.name.trim();
+      check(!s.orders.some(x => x.id !== o.id && x.name.toLocaleLowerCase('cs') === name.toLocaleLowerCase('cs')), 'Tento účet už existuje.');
+      result = { type, orderId: o.id, previousName: o.name, name, at: now };
+      o.name = name; o.revision++;
     } else if (type === 'deleteOrder') {
       const o = order(); check(o.id !== 'bar' && !o.lines.length, 'Smazat lze pouze prázdný pojmenovaný účet.'); s.orders = s.orders.filter(x => x.id !== o.id);
     } else if (type === 'mergeOrders') {
@@ -2926,8 +2954,12 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       }
       result = { type, orderId: target.id, name: target.name, sourceOrderId: source.id, sourceName: source.name,
         movedQuantity: source.lines.reduce((n, l) => n + l.quantity, 0), sourceTotal, total };
+      if (source.visitStartedAt && (!target.visitStartedAt || Date.parse(source.visitStartedAt) < Date.parse(target.visitStartedAt))) {
+        target.visitStartedAt = source.visitStartedAt;
+        if (!target.visitId) target.visitId = source.visitId;
+      }
       target.lines = merged; target.revision++;
-      source.lines = []; source.revision++;
+      source.lines = []; delete source.visitId; delete source.visitStartedAt; source.revision++;
     } else if (type === 'loadCatalog') {
       if (s.catalogVersion === catalog.version) return null;
       for (const item of catalog.products) {
@@ -2960,6 +2992,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       check(s.settings.vat !== 'payer' || pr.vatRate !== null, 'U této položky nejdřív nastav sazbu DPH v ceníku.');
       const quantity = p.quantity === undefined ? 1 : p.quantity;
       check(integer(quantity, 999) && quantity > 0, 'Vyber množství 1 až 999.');
+      if (o.id !== 'bar' && (!o.lines.length || !o.visitId || !o.visitStartedAt)) { o.visitId = uid(); o.visitStartedAt = now; }
       const line = o.lines.find(x => !own(x, 'stockRecipe') && x.productId === pr.id && x.price === pr.price && x.vatRate === pr.vatRate && x.name === pr.name && x.serving === pr.serving);
       check(!line || line.quantity + quantity <= 999, 'Limit množství je 999.');
       check(sum(o.lines) + pr.price * quantity <= 100000000, 'Překročen limit účtu.');
@@ -2968,7 +3001,9 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
     } else if (type === 'removeLine') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.'); check(clean(p.reason), 'Doplň důvod opravy.');
-      l.quantity--; o.lines = o.lines.filter(x => x.quantity > 0); o.revision++;
+      l.quantity--; o.lines = o.lines.filter(x => x.quantity > 0);
+      if (!o.lines.length) { delete o.visitId; delete o.visitStartedAt; }
+      o.revision++;
     } else if (type === 'setLineQuantity') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.');
       check(integer(p.quantity, 999) && p.quantity > 0, 'Vyber množství 1 až 999.');
@@ -2980,11 +3015,17 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       const lines = selectedLines(o, p.selected); const pay = payment(sum(lines), p.mode, p.received, p.splitCash);
       check(!pay.card || p.cardConfirmed === true, 'Nejdřív potvrď úspěšnou platbu na terminálu.');
       if (s.settings.vat === 'payer') check(lines.every(x => x.vatRate !== null), 'Na účtu chybí sazba DPH. Oprav položky před zaplacením.');
+      const visitId = o.visitId, visitStartedAt = o.visitStartedAt;
       s.sequence++;
-      result = { id: uid(), operationId: p.operationId, number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, kind: 'sale', at: now, shiftId: sh.id, orderId: o.id, orderName: o.name, deviceId: s.deviceId, venueId: s.venueId, operator: sh.operator, settings: { ...s.settings }, lines, ...pay };
-      s.receipts.push(result);
+      result = { id: uid(), operationId: p.operationId, number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, kind: 'sale', at: now, shiftId: sh.id, orderId: o.id, orderName: o.name, deviceId: s.deviceId, venueId: s.venueId, operator: sh.operator, settings: { ...s.settings }, lines, ...pay, ...(visitId && visitStartedAt ? { visitId, visitStartedAt } : {}) };
       for (const line of lines) o.lines.find(x => x.id === line.id).quantity -= line.quantity;
-      o.lines = o.lines.filter(x => x.quantity > 0); o.revision++;
+      o.lines = o.lines.filter(x => x.quantity > 0);
+      if (visitId && visitStartedAt && !o.lines.length) {
+        result.visitEndedAt = now;
+        result.visitDurationMinutes = Math.max(0, Math.round((Date.parse(now) - Date.parse(visitStartedAt)) / 60000));
+        delete o.visitId; delete o.visitStartedAt;
+      }
+      s.receipts.push(result); o.revision++;
     } else if (type === 'refund') {
       needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
       check(sale && sale.shiftId === sh.id, 'Vratku lze provést pouze k prodeji v právě otevřené směně.');
@@ -3011,7 +3052,9 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
           else merged.push({ ...restored, id: uid() });
         }
       }
-      check(sum(merged) <= 100000000, 'Po vrácení by účet překročil limit.'); target.lines = merged; target.revision++;
+      check(sum(merged) <= 100000000, 'Po vrácení by účet překročil limit.');
+      if (target.id !== 'bar' && !target.visitId) { target.visitId = sale.visitId || uid(); target.visitStartedAt = sale.visitStartedAt || now; }
+      target.lines = merged; target.revision++;
       s.sequence++; result = { ...sale, ...account, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0, restoredToOrderId: target.id, restoredToOrderName: target.name };
       s.receipts.push(result);
     } else if (type === 'reassignReceipt') {
@@ -3037,7 +3080,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     } else if (type === 'backup') s.lastBackup = now;
     else throw new Error('Neznámá operace.');
     s.revision++;
-    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : result?.receiptId || null, detail: structuredClone(p), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}), ...(type === 'reassignReceipt' ? { assignment: structuredClone(result) } : {}) });
+    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : result?.receiptId || null, detail: structuredClone(p), ...(type === 'renameOrder' ? { rename: structuredClone(result) } : {}), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}), ...(type === 'reassignReceipt' ? { assignment: structuredClone(result) } : {}) });
     return result;
   }
   function validate(s) {
@@ -3049,6 +3092,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     for (const p of s.products) check(typeof p.name === 'string' && typeof p.category === 'string' && (p.price === null || integer(p.price)), 'Poškozený ceník.');
     for (const o of s.orders) {
       check(typeof o.name === 'string' && integer(o.revision, 1000000000) && Array.isArray(o.lines), 'Poškozený účet.');
+      if (o.visitId !== undefined || o.visitStartedAt !== undefined) check(typeof o.visitId === 'string' && typeof o.visitStartedAt === 'string' && !Number.isNaN(Date.parse(o.visitStartedAt)), 'Poškozený čas návštěvy na účtu.');
       for (const l of o.lines) check(typeof l.id === 'string' && typeof l.name === 'string' && integer(l.price) && l.price > 0 && integer(l.quantity, 999) && l.quantity > 0, 'Neplatná položka v záloze.');
     }
     check(s.shifts.filter(x => !x.closedAt).length <= 1, 'Záloha obsahuje více otevřených směn.');
@@ -3059,6 +3103,8 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     for (const r of s.receipts) {
       check(['sale','refund'].includes(r.kind) && Array.isArray(r.lines) && r.lines.length && r.settings && typeof r.settings.venue === 'string' && s.shifts.some(x => x.id === r.shiftId), 'Poškozený doklad.');
       check([r.total,r.cash,r.card,r.rounding].every(Number.isSafeInteger) && r.total === r.cash + r.card, 'Nesedí součet dokladu.');
+      if (r.visitId !== undefined || r.visitStartedAt !== undefined) check(typeof r.visitId === 'string' && typeof r.visitStartedAt === 'string' && !Number.isNaN(Date.parse(r.visitStartedAt)), 'Poškozený začátek návštěvy na dokladu.');
+      if (r.visitEndedAt !== undefined || r.visitDurationMinutes !== undefined) check(typeof r.visitEndedAt === 'string' && !Number.isNaN(Date.parse(r.visitEndedAt)) && integer(r.visitDurationMinutes, 10000000), 'Poškozený konec návštěvy na dokladu.');
       for (const l of r.lines) check(integer(l.price) && integer(l.quantity, 999) && l.quantity > 0 && typeof l.name === 'string', 'Poškozená položka dokladu.');
       const sign = r.kind === 'sale' ? 1 : -1;
       check(sign * sum(r.lines) + r.rounding === r.total && sign * r.cash >= 0 && sign * r.card >= 0, 'Nesedí položky dokladu.');
@@ -3073,6 +3119,91 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
   if (typeof module !== 'undefined') module.exports = api; else root.POSCore = api;
 })(globalThis);
 
+
+/* Customer insights are derived from confirmed receipts; no separate customer ledger can drift out of sync. */
+(function(root){
+  'use strict';
+  const C = typeof module !== 'undefined' ? require('./core.js') : root.POSCore;
+  const POINT_VALUE = 1000; // 10 CZK in halere
+  const normalize = value => String(value ?? '').toLocaleLowerCase('cs').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const accountNumber = name => String(name ?? '').match(/^(?:st[ůu]l\s*#?\s*)?(\d+)\b/i)?.[1] || '';
+  const isCustomerName = name => {
+    const key = normalize(name);
+    return !!key && key !== 'rychly prodej' && !accountNumber(name);
+  };
+  const refundedIds = state => new Set((state.receipts || []).filter(r => r.kind === 'refund' && r.refundOf).map(r => r.refundOf));
+  function validSales(state) {
+    const refunded = refundedIds(state);
+    return (state.receipts || []).filter(r => r.kind === 'sale' && !refunded.has(r.id));
+  }
+  function receiptName(state, receipt) {
+    const account = C.receiptAccount(state, receipt);
+    return (state.orders || []).find(o => o.id === account.orderId)?.name || account.orderName;
+  }
+  function salesFor(state, name) {
+    const key = normalize(name);
+    return validSales(state).filter(r => normalize(receiptName(state, r)) === key);
+  }
+  function productCounts(state, name) {
+    const counts = new Map();
+    for (const receipt of salesFor(state, name)) for (const line of receipt.lines || []) {
+      counts.set(line.productId, (counts.get(line.productId) || 0) + line.quantity);
+    }
+    return counts;
+  }
+  function leaderboard(state) {
+    const spend = new Map(), names = new Map();
+    for (const receipt of validSales(state)) {
+      const name = receiptName(state, receipt);
+      if (!isCustomerName(name)) continue;
+      const key = normalize(name);
+      names.set(key, name);
+      spend.set(key, (spend.get(key) || 0) + receipt.total);
+    }
+    for (const order of state.orders || []) if (order.id !== 'bar' && isCustomerName(order.name)) {
+      const key = normalize(order.name);
+      names.set(key, order.name);
+      if (!spend.has(key)) spend.set(key, 0);
+    }
+    return [...names].map(([key,name]) => {
+      const total = spend.get(key) || 0;
+      return {key,name,spend:total,points:Math.floor(total / POINT_VALUE)};
+    }).sort((a,b) => b.points-a.points || b.spend-a.spend || a.name.localeCompare(b.name,'cs'));
+  }
+  function profile(state, name, currentOrder = null, now = new Date().toISOString()) {
+    const key = normalize(name), sales = salesFor(state, name);
+    const spend = sales.reduce((n,r) => n + r.total, 0);
+    const itemMap = new Map();
+    for (const receipt of sales) for (const line of receipt.lines || []) {
+      const id = line.productId || normalize(line.name+' '+(line.serving||''));
+      const row = itemMap.get(id) || {productId:line.productId||'',name:line.name,serving:line.serving||'',quantity:0,spend:0};
+      row.name=line.name;row.serving=line.serving||row.serving;row.quantity+=line.quantity;row.spend+=line.price*line.quantity;itemMap.set(id,row);
+    }
+    const items = [...itemMap.values()].sort((a,b) => b.quantity-a.quantity || b.spend-a.spend || a.name.localeCompare(b.name,'cs'));
+    const completed = new Map();
+    for (const receipt of state.receipts || []) {
+      if (receipt.kind !== 'sale' || normalize(receiptName(state, receipt)) !== key || !receipt.visitId || !receipt.visitEndedAt || !Number.isSafeInteger(receipt.visitDurationMinutes)) continue;
+      completed.set(receipt.visitId,{id:receipt.visitId,startedAt:receipt.visitStartedAt,endedAt:receipt.visitEndedAt,durationMinutes:receipt.visitDurationMinutes});
+    }
+    const visits = [...completed.values()].sort((a,b) => String(b.endedAt).localeCompare(String(a.endedAt)));
+    const visitIds = new Set(visits.map(v=>v.id));
+    const timedSpend = sales.filter(r=>visitIds.has(r.visitId)).reduce((n,r)=>n+r.total,0);
+    const totalMinutes = visits.reduce((n,v)=>n+v.durationMinutes,0);
+    const currentMinutes = currentOrder && normalize(currentOrder.name)===key && currentOrder.visitStartedAt
+      ? Math.max(0,Math.floor((Date.parse(now)-Date.parse(currentOrder.visitStartedAt))/60000)) : 0;
+    const board = leaderboard(state), rankIndex = board.findIndex(x=>x.key===key);
+    return {
+      name, spend, points:Math.floor(spend / POINT_VALUE), pointValueCzk:POINT_VALUE/100,
+      rank:rankIndex<0?null:rankIndex+1, competitors:board.length,
+      receiptCount:sales.length, itemCount:items.reduce((n,x)=>n+x.quantity,0), items,
+      visitCount:visits.length, totalMinutes, averageMinutes:visits.length?Math.round(totalMinutes/visits.length):0,
+      spendPerHour:totalMinutes?Math.round(timedSpend*60/totalMinutes):0, timedSpend,
+      currentMinutes, visits, lastAt:sales.reduce((latest,r)=>!latest||String(r.at)>String(latest)?r.at:latest,null)
+    };
+  }
+  const api={POINT_VALUE,normalize,accountNumber,isCustomerName,validSales,salesFor,productCounts,leaderboard,profile};
+  if(typeof module!=='undefined')module.exports=api;else root.POSCustomerInsights=api;
+})(globalThis);
 
 (function (root) {
   'use strict';
@@ -3152,7 +3283,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
 
 /* Shared online register; standalone HTML keeps the separate local emergency mode. */
 'use strict';
-const C = window.POSCore, Store = window.POSStore;
+const C = window.POSCore, Customer = window.POSCustomerInsights, Store = window.POSStore;
 const $ = s => document.querySelector(s);
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const E = escapeHTML;
@@ -3212,7 +3343,7 @@ function connection() {
   warning.hidden=!state||(!pending&&online);
   warning.innerHTML=pending?`<span><strong>Ověřujeme uloženou operaci.</strong> Platbu na terminálu neopakuj.</span>${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}`:'<span>Server není dostupný. Zobrazená data mohou být starší; placení vyžaduje spojení.</span>';
   if(state){$('#save-state').textContent=cloud.busy?'Ukládám na server…':pending?'Čeká na ověření':online?'Potvrzeno serverem':'Spojení přerušeno';$('#save-state').classList.toggle('error',!!pending||!online);}
-  const writeActions=['add','minus','restoreReceipt','newOrder','deleteOrder','mergeOrders','openShift','payCash','payCard','paySplit','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
+  const writeActions=['add','minus','restoreReceipt','newOrder','renameOrder','deleteOrder','mergeOrders','openShift','payCash','payCard','paySplit','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
   document.querySelectorAll('[data-action]').forEach(b=>{if(writeActions.includes(b.dataset.action)){const lock=!!pending&&!cloud.busy||!online;if(lock&&!b.disabled){b.disabled=true;b.dataset.connectionDisabled='true';}else if(!lock&&b.dataset.connectionDisabled){b.disabled=false;delete b.dataset.connectionDisabled;}}});
 }
 function render() {
@@ -3264,7 +3395,7 @@ function bindAccountSearch() {
   input.addEventListener('focus', () => { accountSearchOpen = true; if(!accountQuery&&current!=='bar')input.select(); renderAccountResults(); });
   input.addEventListener('input', e => {
     accountQuery = e.target.value; accountSearchOpen = true;
-    if(!accountQuery.trim()&&current!=='bar'){current='bar';renderPOSFast();}
+    if(!accountQuery.trim()&&current!=='bar'){current='bar';renderPOSFast();renderProducts();}
     renderAccountResults();
   });
   input.addEventListener('keydown', e => {
@@ -3281,6 +3412,7 @@ function updateEntryContext() {
   if($('#entry-account-name'))$('#entry-account-name').textContent=o.name;
   if($('#entry-account-total'))$('#entry-account-total').textContent=fmt(C.sum(o.lines));
   if($('#entry-quantity'))$('#entry-quantity').textContent=`${entryQuantity}×`;
+  const profileButton=document.querySelector('[data-action="customerProfile"]');if(profileButton)profileButton.hidden=!customerAccount(o);
   document.querySelectorAll('[data-action="entryCount"]').forEach(b=>{
     const active=Number(b.dataset.id)===entryQuantity;
     b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));
@@ -3294,18 +3426,19 @@ function selectAccount(id) {
   if(!state.orders.some(o=>o.id===id))return;
   current=id;entryQuantity=1;accountQuery='';accountSearchOpen=false;
   const input=$('#account-search');if(input){input.value=id==='bar'?'':getOrder().name;input.blur();}
-  renderPOSFast();renderAccountResults();
+  renderPOSFast();renderProducts();renderAccountResults();
 }
 function renderPOS() {
   const o=getOrder(),sh=C.activeShift(state),activeProducts=state.products.filter(x=>x.active),cats=['Vše',...new Set(activeProducts.map(x=>x.category))];
   const canMerge=sh&&o.lines.length&&!o.paymentLock&&state.orders.some(x=>x.id!==o.id&&!x.paymentLock);
   const canResume=!o.paymentLock||o.paymentLock.actorId===window.POSCloud?.user?.id||['owner','manager'].includes(window.POSCloud?.meta.role);
+  const customer=customerAccount(o);
   const accounts=state.orders.map(a=>`<button type="button" class="account ${a.id===o.id?'active':''}" data-action="account" data-id="${E(a.id)}" aria-pressed="${a.id===o.id}"><span class="account-number">${E(accountNumber(a)||'•')}</span><span class="account-name">${E(a.name)}<span class="account-amount">${a.lines.length?fmt(C.sum(a.lines)):'Prázdný účet'}</span></span></button>`).join('');
   const lines=o.lines.map(l=>`<div class="line"><div class="line-top"><span>${E(l.name)}${l.serving?`<small class="small"> · ${E(l.serving)}</small>`:''}</span><strong>${fmt(l.price*l.quantity)}</strong></div><div class="line-bottom"><span>${fmt(l.price)} / ks</span><div class="quantity"><button type="button" data-action="minus" data-id="${E(l.id)}" aria-label="Odebrat ${E(l.name)}">−</button><button type="button" class="quantity-tap" data-action="quantityPad" data-id="${E(l.id)}" aria-label="Množství ${E(l.name)}">${l.quantity}×</button><button type="button" data-action="add" data-id="${E(l.productId)}" aria-label="Přidat ${E(l.name)}">+</button></div></div></div>`).join('');
   return `<div class="pos-layout">
     <aside class="accounts"><div class="section-label"><span class="eyebrow">Otevřené účty</span><span class="badge">${state.orders.filter(x=>x.lines.length).length}</span></div>${accounts}${btn('+ Nový účet','newOrder','add-account')}</aside>
     <section class="catalog-area">
-      <div class="order-entry"><div class="entry-target"><span>Na účet</span><strong id="entry-account-name">${E(o.name)}</strong><span id="entry-account-total">${fmt(C.sum(o.lines))}</span></div>
+      <div class="order-entry"><div class="entry-target"><span>Na účet</span><strong id="entry-account-name">${E(o.name)}</strong><button type="button" class="customer-profile-button" data-action="customerProfile" aria-label="Detail zákazníka" ${customer?'':'hidden'}>Profil</button><span id="entry-account-total">${fmt(C.sum(o.lines))}</span></div>
         <div class="account-finder"><label class="sr-only" for="account-search">Stůl nebo zákazník; prázdné pole znamená rychlý prodej</label><input id="account-search" type="search" placeholder="Stůl / zákazník · prázdné = rychlý prodej" autocomplete="off" value="${E(accountQuery||(o.id==='bar'?'':o.name))}" aria-expanded="false" aria-controls="account-results"><div id="account-results" class="account-results" hidden></div></div>
         <div class="entry-counts" aria-label="Počet kusů pro další položku"><span>Počet</span>${[1,2,3,4,5].map(n=>btn(n,'entryCount',`entry-count ${n===entryQuantity?'active':''}`,`data-id="${n}" aria-pressed="${n===entryQuantity}"`)).join('')}${btn(`<strong id="entry-quantity">${entryQuantity}×</strong><small>Jiný počet</small>`,'entryQuantity','entry-calculator','aria-label="Zadat počet kusů na velké klávesnici"')}</div>
       </div>
@@ -3316,7 +3449,7 @@ function renderPOS() {
       <div class="categories" aria-label="Kategorie">${cats.map(c=>`<button type="button" class="category ${category===c?'active':''}" data-action="category" data-id="${E(c)}" aria-pressed="${category===c}">${E(c)}</button>`).join('')}</div>
       <div class="products" id="products"></div>
     </section>
-    <section class="receipt" aria-label="Aktuální účet"><div class="receipt-head"><div><h2>${E(o.name)}</h2><p>${o.lines.length?'Účet zůstává otevřený do zaplacení':'Připravený pro dalšího hosta'}</p></div><span class="receipt-number">${E(accountNumber(o)||'•')}</span></div><div class="receipt-tools">${btn('Spojit účty','mergeOrders','merge-account',canMerge?'':'disabled')}</div><div class="receipt-items">${lines||'<div class="receipt-empty"><span>≡</span><p>Účet je zatím prázdný.<br>Přidej první nápoj.</p></div>'}</div><div class="receipt-bottom"><div class="receipt-meta"><span>${o.lines.reduce((n,l)=>n+l.quantity,0)} ks na účtu</span>${o.id!=='bar'&&!o.lines.length?btn('Smazat účet','deleteOrder','splitbutton'):'<span>Ceny v Kč</span>'}</div><div class="receipt-total"><span>K zaplacení</span><strong>${fmt(C.sum(o.lines))}</strong></div><div class="payment-buttons">${btn('Hotově','payCash','paycash',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${btn('Kartou','payCard','paycard',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}</div>${btn('Rozdělit platbu / položky','paySplit','splitbutton',!sh||!o.lines.length||!canResume?'disabled':'')}</div></section>
+    <section class="receipt" aria-label="Aktuální účet"><div class="receipt-head"><div><h2>${E(o.name)}</h2><p>${o.lines.length?'Účet zůstává otevřený do zaplacení':'Připravený pro dalšího hosta'}</p></div><span class="receipt-number">${E(accountNumber(o)||'•')}</span></div><div class="receipt-tools">${o.id!=='bar'?btn('Přejmenovat','renameOrder','merge-account rename-account',o.paymentLock?'disabled':''):''}${btn('Spojit účty','mergeOrders','merge-account',canMerge?'':'disabled')}</div><div class="receipt-items">${lines||'<div class="receipt-empty"><span>≡</span><p>Účet je zatím prázdný.<br>Přidej první nápoj.</p></div>'}</div><div class="receipt-bottom"><div class="receipt-meta"><span>${o.lines.reduce((n,l)=>n+l.quantity,0)} ks na účtu</span>${o.id!=='bar'&&!o.lines.length?btn('Smazat účet','deleteOrder','splitbutton'):'<span>Ceny v Kč</span>'}</div><div class="receipt-total"><span>K zaplacení</span><strong>${fmt(C.sum(o.lines))}</strong></div><div class="payment-buttons">${btn('Hotově','payCash','paycash',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${btn('Kartou','payCard','paycard',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}</div>${btn('Rozdělit platbu / položky','paySplit','splitbutton',!sh||!o.lines.length||!canResume?'disabled':'')}</div></section>
   </div>`;
 }
 function quantityPickerHTML(name,initial,min=1,max=999,all=false) {
@@ -3359,6 +3492,37 @@ function quantityPad(lineId) {
     $('#dialog').close();try{await command('setLineQuantity',{orderId:o.id,lineId:l.id,quantity},true);}catch(err){toast(err.message||'Množství se nepodařilo změnit.',true);}
   });
 }
+function customerAccount(order) {
+  return !!Customer && order?.id !== 'bar' && Customer.isCustomerName(order?.name);
+}
+function durationText(minutes) {
+  if (!Number.isFinite(minutes) || minutes <= 0) return '—';
+  const h=Math.floor(minutes/60),m=Math.round(minutes%60);
+  return h ? `${h} h ${m} min` : `${m} min`;
+}
+function customerProfile() {
+  const o=getOrder(); if(!customerAccount(o))return;
+  const p=Customer.profile(state,o.name,o,new Date().toISOString());
+  const rows=p.items.map(x=>`<tr><td><strong>${E(x.name)}</strong>${x.serving?`<br><span class="muted small">${E(x.serving)}</span>`:''}</td><td class="amount">${x.quantity}×</td><td class="amount">${fmt(x.spend)}</td></tr>`).join('');
+  const rank=p.rank?`#${p.rank} z ${p.competitors}`:'—';
+  showDialog(o.name+` · zákazník`,`<div class="customer-profile">
+    ${p.currentMinutes?`<div class="customer-current"><span>Právě v baru</span><strong>${durationText(p.currentMinutes)}</strong></div>`:''}
+    <div class="customer-stats">
+      <div><span>Věrnostní body</span><strong>${p.points}</strong></div>
+      <div><span>Pořadí</span><strong>${rank}</strong></div>
+      <div><span>Celkem utraceno</span><strong>${fmt(p.spend)}</strong></div>
+      <div><span>Položek</span><strong>${p.itemCount}</strong></div>
+      <div><span>Návštěvy s časem</span><strong>${p.visitCount}</strong></div>
+      <div><span>Čas v baru</span><strong>${durationText(p.totalMinutes)}</strong></div>
+      <div><span>Průměr návštěvy</span><strong>${durationText(p.averageMinutes)}</strong></div>
+      <div><span>Útrata / hod.</span><strong>${p.totalMinutes?fmt(p.spendPerHour):'—'}</strong></div>
+    </div>
+    <p class="help customer-rules">1 bod za každých 10 Kč skutečně zaplacené útraty. Vratky se automaticky odečítají. Pořadí je podle bodů, ne podle množství alkoholu. Přesný čas se počítá jen u návštěv zahájených po nasazení této funkce.</p>
+    <div class="customer-detail"><span>Dokladů: <strong>${p.receiptCount}</strong></span><span>Poslední útrata: <strong>${p.lastAt?date(p.lastAt):'—'}</strong></span></div>
+    <h3>Co nejčastěji bere</h3>
+    <div class="table-wrap customer-drinks"><table><thead><tr><th>Položka</th><th class="amount">Počet</th><th class="amount">Útrata</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="empty">Po prvním zaplaceném dokladu se tu objeví statistika.</td></tr>'}</tbody></table></div>
+  </div>`,null);
+}
 function productSalesCounts() {
   // Receipts come from the shared confirmed state; never count taps or unpaid orders.
   // Cache per immutable receipt array so typing in search does not rescan history.
@@ -3374,9 +3538,9 @@ function productSalesCounts() {
 }
 function renderProducts() {
   const norm = normalizeSearch;
-  const counts = productSalesCounts();
+  const counts = productSalesCounts(), personal = customerAccount(getOrder()) ? Customer.productCounts(state,getOrder().name) : null;
   const products = state.products.filter(p => p.active && (query || category === 'Vše' || p.category === category) && norm(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(norm(query)))
-    .sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0));
+    .sort((a, b) => (personal?.get(b.id) || 0) - (personal?.get(a.id) || 0) || (counts.get(b.id) || 0) - (counts.get(a.id) || 0));
   $('#products').innerHTML = products.map(p => `<button class="product" style="--category:${colors[p.category] || '#a5c99a'}" data-action="add" data-id="${E(p.id)}"><span class="product-cat">${E(p.category)}${p.sourceCode ? ` · #${E(p.sourceCode)}` : ''}</span><span class="product-name">${E(p.name)}</span>${p.serving ? `<span class="product-serving">${E(p.serving)}</span>` : ''}<span class="product-price ${p.price === null ? 'unset' : ''}">${p.price === null ? (p.priceNote ? E(p.priceNote) + ' · zadat cenu' : 'Doplnit cenu') : fmt(p.price)}</span><span class="product-plus">+</span></button>`).join('') + `<button class="product quick-product" data-action="newProduct"><span>+</span>Nová položka</button>`;
 }
 function renderHistory() {
@@ -3407,6 +3571,15 @@ function openShift() {
 function finishMerge(result) {
   current = result.orderId; render();
   toast(`Účty spojené na ${result.name}.`);
+}
+function renameOrder() {
+  const o = structuredClone(getOrder());
+  if (o.id === 'bar' || o.paymentLock) return;
+  showDialog('Přejmenovat stůl / účet', field('Nový název stolu nebo jméno hosta', 'name', o.name, 'required maxlength="120" autocomplete="off"') + '<p class="help section-gap">Položky, zaplacené části a historie tohoto účtu zůstanou zachované.</p>', f => command('renameOrder', {orderId:o.id, revision:o.revision, name:f.get('name')}), 'Přejmenovat', result => {
+    current = result.orderId; accountQuery = ''; accountSearchOpen = false; render();
+    toast(`Účet přejmenovaný na ${result.name}.`);
+  });
+  const input = $('#dialog-form').elements.name; input.focus(); input.select();
 }
 function mergeOrders() {
   const source = structuredClone(getOrder());
@@ -3553,7 +3726,7 @@ function bulkProducts(){showDialog('Hromadně vložit ceník',`<p class="help">K
 const actions={
   quantityPad:id=>quantityPad(id),
   entryCount:id=>{entryQuantity=Number(id);updateEntryContext();},entryQuantity:entryQuantityPad,
-  account:id=>selectAccount(id),category:async id=>{category=id;query='';render();},openShift,mergeOrders,
+  account:id=>selectAccount(id),customerProfile,category:async id=>{category=id;query='';render();},openShift,renameOrder,mergeOrders,
   newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta (nepovinné)','name',accountQuery.trim(),'maxlength="120" placeholder="Bez vyplnění = rychlý prodej"'),f=>{
     const name=String(f.get('name')||'').trim();
     return name?command('newOrder',{name}):{id:'bar'};

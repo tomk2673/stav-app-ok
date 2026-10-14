@@ -34,7 +34,8 @@ async function until(page,predicate,arg){
     if(await page.evaluate(predicate,arg))return;
     await new Promise(r=>setTimeout(r,50));
   }
-  throw new Error('Timed out waiting for browser state: '+predicate.toString());
+  const diagnostic=await page.evaluate(()=>({dialogError:document.querySelector('#dialog-error')?.textContent,saveState:document.querySelector('#save-state')?.textContent,pending:!!window.POSCloud?.pending}));
+  throw new Error('Timed out waiting for browser state: '+predicate.toString()+' '+JSON.stringify(diagnostic));
 }
 function fixture(){
   const user={id:crypto.randomUUID(),email:'owner@example.test',aud:'authenticated',role:'authenticated',app_metadata:{provider:'email',providers:['email']},user_metadata:{},identities:[]};
@@ -49,7 +50,7 @@ function fixture(){
   const envelope=result=>({state:structuredClone(state),result,stock:[],issues:[],issueCount:0,role:'owner',venue});
   async function route(route){
     const request=route.request(),url=new URL(request.url()),method=request.method();
-    const headers={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'GET, POST, OPTIONS','content-type':'application/json'};
+    const headers={'access-control-allow-origin':'*','access-control-allow-headers':request.headers()['access-control-request-headers']||'authorization, apikey, content-type, x-client-info, x-supabase-api-version','access-control-allow-methods':'GET, POST, OPTIONS','content-type':'application/json'};
     const respond=(body,status=200)=>route.fulfill({status,headers,body:JSON.stringify(body)});
     if(method==='OPTIONS')return route.fulfill({status:204,headers});
     if(url.pathname==='/auth/v1/token'){
@@ -206,6 +207,9 @@ async function flow(browser,base,width){
     assert.equal(await page.locator('#dialog').evaluate(el=>el.open),false);
     assert.deepEqual(errors,[]);
     return {width,passed:true,steps:['password rejection','password login','401 refresh','session reload','open shift','table/customer search','12-piece keypad','quantity correction','partial card confirmation','paid product ranking','stable unpaid buttons','ranking reload','return to marking','durable ID reload/replay','cash payment','IndexedDB backup','layout','local full-to-split switch','back-to-split reservation','neutral assignment','terminal reference and confirmation','financial recovery after reload']};
+  }catch(error){
+    console.error(JSON.stringify({engine:browser.browserType().name(),width,requests:f.calls.map(c=>c.type),serverShifts:f.state.shifts.length}));
+    throw error;
   }finally{await context.close();}
 }
 async function failures(browser,base){

@@ -129,6 +129,7 @@ function updateEntryContext() {
   if($('#entry-account-name'))$('#entry-account-name').textContent=o.name;
   if($('#entry-account-total'))$('#entry-account-total').textContent=fmt(C.sum(o.lines));
   if($('#entry-quantity'))$('#entry-quantity').textContent=`${entryQuantity}×`;
+  const profileButton=document.querySelector('[data-action="customerProfile"]');if(profileButton)profileButton.hidden=!customerAccount(o);
   document.querySelectorAll('[data-action="entryCount"]').forEach(b=>{
     const active=Number(b.dataset.id)===entryQuantity;
     b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));
@@ -154,7 +155,7 @@ function renderPOS() {
   return `<div class="pos-layout">
     <aside class="accounts"><div class="section-label"><span class="eyebrow">Otevřené účty</span><span class="badge">${state.orders.filter(x=>x.lines.length).length}</span></div>${accounts}${btn('+ Nový účet','newOrder','add-account')}</aside>
     <section class="catalog-area">
-      <div class="order-entry"><div class="entry-target"><span>Na účet</span><strong id="entry-account-name">${E(o.name)}</strong>${customer?btn('Profil','customerProfile','customer-profile-button','aria-label="Detail zákazníka"'):''}<span id="entry-account-total">${fmt(C.sum(o.lines))}</span></div>
+      <div class="order-entry"><div class="entry-target"><span>Na účet</span><strong id="entry-account-name">${E(o.name)}</strong><button type="button" class="customer-profile-button" data-action="customerProfile" aria-label="Detail zákazníka" ${customer?'':'hidden'}>Profil</button><span id="entry-account-total">${fmt(C.sum(o.lines))}</span></div>
         <div class="account-finder"><label class="sr-only" for="account-search">Stůl nebo zákazník; prázdné pole znamená rychlý prodej</label><input id="account-search" type="search" placeholder="Stůl / zákazník · prázdné = rychlý prodej" autocomplete="off" value="${E(accountQuery||(o.id==='bar'?'':o.name))}" aria-expanded="false" aria-controls="account-results"><div id="account-results" class="account-results" hidden></div></div>
         <div class="entry-counts" aria-label="Počet kusů pro další položku"><span>Počet</span>${[1,2,3,4,5].map(n=>btn(n,'entryCount',`entry-count ${n===entryQuantity?'active':''}`,`data-id="${n}" aria-pressed="${n===entryQuantity}"`)).join('')}${btn(`<strong id="entry-quantity">${entryQuantity}×</strong><small>Jiný počet</small>`,'entryQuantity','entry-calculator','aria-label="Zadat počet kusů na velké klávesnici"')}</div>
       </div>

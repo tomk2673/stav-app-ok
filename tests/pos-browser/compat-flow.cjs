@@ -78,7 +78,9 @@ function fixture(){
   return {route,calls,get state(){return state;},rejectToken(){unauthorized=true;},dropResponse(){drop=true;}};
 }
 async function contextFor(browser,options={}){
-  const context=await browser.newContext({viewport:{width:options.width||1440,height:900},...options});
+  // Route-based Auth/Edge mocks must see every request. Service-worker routing
+  // is Chromium-only; real SW/cache/outage behavior has its own local test.
+  const context=await browser.newContext({serviceWorkers:'block',viewport:{width:options.width||1440,height:900},...options});
   // Fail every unexpected external request, even if a test inadvertently tries to leave the stub.
   await context.route('**/*',route=>{const url=new URL(route.request().url());return url.hostname==='127.0.0.1'||url.protocol==='file:'?route.continue():route.abort();});
   return context;

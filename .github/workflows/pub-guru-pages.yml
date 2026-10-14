@@ -60,9 +60,12 @@ jobs:
       - name: Browser dependencies
         run: |
           npm ci --prefix tests/pos-browser
+          npm ci --prefix tests/pos-web
           node tests/pos-browser/node_modules/pwmodern/cli.js install --with-deps chromium webkit
       - name: Safari and Chromium redirect recovery
         run: npm run test:service-workers --prefix tests/pos-browser
+      - name: Drive import, HEIC originals and review-only invoices
+        run: npm run test:drive-import --prefix tests/pos-browser
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -87,6 +90,7 @@ jobs:
           mkdir -p _site
           cp -R pub_guru _site/pub_guru
           cp -R pub_bizz_pos _site/pub_bizz_pos
+          cp -R integrations _site/integrations
           cp sw.js _site/
           cat > _site/index.html <<'HTML'
           <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PUB</title></head><body><script>location.replace('./pub_guru/start.html')</script><a href="./pub_guru/start.html">PUB INVOICES</a></body></html>

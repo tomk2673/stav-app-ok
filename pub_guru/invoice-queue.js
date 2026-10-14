@@ -7,6 +7,17 @@
 
   function status(message) { if($('queueStatus')) $('queueStatus').textContent=message; }
 
+  async function readableSource(file) {
+    if(!/image\/hei[cf]/i.test(file.type) && !/\.hei[cf]$/i.test(file.name))return file;
+    let timeout;
+    try {
+      return await Promise.race([
+        import('./invoice-source-files.mjs?v=20261014').then(module=>module.forReading(file)),
+        new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('Příprava HEIC se přerušila. Zkus čtení znovu po obnovení připojení.')),120000);})
+      ]);
+    } finally {clearTimeout(timeout);}
+  }
+
   async function command(action, extra={}) {
     const response=await db().rpc('invoice_capture_command',{
       p_action:action,p_organization_id:ctx.organization.id,p_venue_id:ctx.venue.id,...extra
@@ -100,7 +111,8 @@
           const file=new File([download.data],job.source_file_name || 'invoice',{
             type:job.mime_type || download.data.type
           });
-          const result=await capture.readQueued(file,job);
+          const readable=await readableSource(file);
+          const result=await capture.readQueued(readable,job);
           await command('complete',{...lease,p_result:result});
         } catch(error) {
           // Continue with the next invoice only after the failure is durably recorded.

@@ -28,6 +28,7 @@ async function fixture(mode='cash',mapped=true,substitutions=false){
  if(process.env.POS_STOCK_FIXTURE)await db.exec(fs.readFileSync(process.env.POS_STOCK_FIXTURE,'utf8'));
  if(substitutions)await db.exec(read('tests/fixtures/pub-bizz-stock-available.sql'));
  await db.exec(read(migration));
+ await db.exec(read('supabase/migrations/20261014231114_pos_rename_order.sql'));
  let s=C.initial();s.venueId=venue;
  await db.query('insert into pos_registers(venue_id,organization_id,state) values($1,$2,$3)',[venue,org,JSON.stringify(s)]);
  await db.exec(`insert into products(id,organization_id,name,unit_mode,volume_ml) values('${liquid}','${org}','TEST liquid','liquid',1000);
@@ -52,6 +53,28 @@ async function fixture(mode='cash',mapped=true,substitutions=false){
  const snapshot=async()=>({register:(await db.query('select state,revision from pos_registers')).rows,receipts:(await db.query('select id,payload from pos_receipts order by occurred_at,id')).rows,stock:(await db.query('select product_id,quantity_ml,quantity_units,untracked_units,source_type,source_id from stock_movements order by id')).rows,requests:(await db.query('select request_id from pos_requests order by request_id')).rows,audit:(await db.query('select event_type,after_data from audit_events order by id')).rows});
  return {db,org,venue,owner,staff,sale,target,liquid,counted,stock,run,commit,snapshot,get s(){return s;}};
 }
+test('SQL rename preserves a partial sale, rejects altered state, deduplicates requests and keeps RPC private',async()=>{
+ const f=await fixture('cash',true);try{
+  await f.run('addLine',{orderId:f.target.id,productId:'agnis-2810',quantity:2},f.staff);
+  const order=f.s.orders.find(o=>o.id===f.target.id),before=await f.snapshot();
+  const command=D.run(f.s,'renameOrder',{orderId:order.id,revision:order.revision,name:'Petr'},f.staff,[]);
+  for(const alter of [s=>s.orders.find(o=>o.id===order.id).lines[0].quantity++,s=>s.orders[0].name='Changed',s=>s.receipts[0].total++,s=>s.sequence++,s=>s.receiptAssignments.changed={},s=>s.orders.find(o=>o.id===order.id).visitStartedAt='2020-01-01T00:00:00Z',s=>s.audit[0].type='Changed']){
+   const state=structuredClone(command.state);alter(state);
+   await assert.rejects(f.commit('renameOrder',state,command.result,f.staff),/Rename must preserve/);assert.deepEqual(await f.snapshot(),before);
+  }
+  const request=crypto.randomUUID(),expected=f.s.revision;
+  assert.equal((await f.commit('renameOrder',command.state,command.result,f.staff,request,'rename-test',expected)).duplicate,false);
+  assert.equal((await f.commit('renameOrder',command.state,command.result,f.staff,request,'rename-test',expected)).duplicate,true);
+  assert.equal((await f.commit('renameOrder',command.state,command.result,f.staff,crypto.randomUUID(),'stale',expected)).conflict,true);
+  await assert.rejects(f.commit('renameOrder',command.state,command.result,f.staff,request,'changed',expected),/reused/);
+  const after=await f.snapshot();assert.deepEqual(after.receipts,before.receipts);assert.deepEqual(after.stock,before.stock);
+  assert.deepEqual(after.register[0].state.orders.find(o=>o.id===order.id),{...order,name:'Petr',revision:order.revision+1});
+  assert.deepEqual(after.audit.filter(x=>x.event_type==='pos.renameOrder').map(x=>x.after_data.rename),[command.result]);
+  await f.db.exec('reset role');await f.db.exec(read('supabase/migrations/20261014231114_pos_rename_order.sql'));
+  const grants=(await f.db.query("select has_function_privilege('authenticated','public.pos_commit(uuid,uuid,uuid,text,bigint,text,jsonb,jsonb)','execute') client,has_function_privilege('service_role','public.pos_commit(uuid,uuid,uuid,text,bigint,text,jsonb,jsonb)','execute') service")).rows[0];
+  assert.deepEqual(grants,{client:false,service:true});
+ }finally{await f.db.close();}
+});
 for(const mode of ['cash','card','split']){
  test('SQL '+mode+': manager guard, original-card terminal verification, idempotency and exact liquid/counted restock',async()=>{
   const f=await fixture(mode);try{

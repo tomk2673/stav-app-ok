@@ -15,7 +15,8 @@
     return (state.receipts || []).filter(r => r.kind === 'sale' && !refunded.has(r.id));
   }
   function receiptName(state, receipt) {
-    return C.receiptAccount(state, receipt).orderName;
+    const account = C.receiptAccount(state, receipt);
+    return (state.orders || []).find(o => o.id === account.orderId)?.name || account.orderName;
   }
   function salesFor(state, name) {
     const key = normalize(name);
@@ -59,7 +60,7 @@
     const items = [...itemMap.values()].sort((a,b) => b.quantity-a.quantity || b.spend-a.spend || a.name.localeCompare(b.name,'cs'));
     const completed = new Map();
     for (const receipt of state.receipts || []) {
-      if (receipt.kind !== 'sale' || normalize(receipt.orderName) !== key || !receipt.visitId || !receipt.visitEndedAt || !Number.isSafeInteger(receipt.visitDurationMinutes)) continue;
+      if (receipt.kind !== 'sale' || normalize(receiptName(state, receipt)) !== key || !receipt.visitId || !receipt.visitEndedAt || !Number.isSafeInteger(receipt.visitDurationMinutes)) continue;
       completed.set(receipt.visitId,{id:receipt.visitId,startedAt:receipt.visitStartedAt,endedAt:receipt.visitEndedAt,durationMinutes:receipt.visitDurationMinutes});
     }
     const visits = [...completed.values()].sort((a,b) => String(b.endedAt).localeCompare(String(a.endedAt)));

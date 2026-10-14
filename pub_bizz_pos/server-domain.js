@@ -4,7 +4,7 @@
   const C = typeof module !== 'undefined' ? require('./core.js') : root.POSCore;
   const L = typeof module !== 'undefined' ? require('./loyalty.js') : root.POSLoyalty;
   const manager = new Set(['owner', 'manager']);
-  const staffCommands = new Set(['openShift', 'newOrder', 'deleteOrder', 'mergeOrders', 'addLine', 'removeLine', 'setLineQuantity', 'beginPayment', 'cancelPayment', 'checkout', 'reassignReceipt', 'backup', 'redeemReward']);
+  const staffCommands = new Set(['openShift', 'newOrder', 'renameOrder', 'deleteOrder', 'mergeOrders', 'addLine', 'removeLine', 'setLineQuantity', 'beginPayment', 'cancelPayment', 'checkout', 'reassignReceipt', 'backup', 'redeemReward']);
   const managerCommands = new Set(['product', 'archiveProduct', 'importProducts', 'refund', 'restoreReceipt', 'cashMovement', 'closeShift', 'settings', 'recipe', 'resolveStock', 'loyaltyConfig']);
   const check = (ok, message) => { if (!ok) throw new Error(message); };
   function restoredStockLines(sale, records) {

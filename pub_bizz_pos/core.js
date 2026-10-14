@@ -72,6 +72,16 @@
       check(clean(p.name), 'Zadej název účtu.');
       check(!s.orders.some(x => x.name.toLocaleLowerCase('cs') === clean(p.name).toLocaleLowerCase('cs')), 'Tento účet už existuje.');
       result = { id: uid(), name: clean(p.name), lines: [], revision: 0 }; s.orders.push(result);
+    } else if (type === 'renameOrder') {
+      const o = order();
+      check(o.id !== 'bar', 'Rychlý prodej nelze přejmenovat.');
+      check(!o.paymentLock, 'Nejdřív dokonči nebo uvolni rozpracovanou platbu.');
+      check(o.revision === p.revision, 'Účet se změnil. Znovu otevři přejmenování.');
+      check(typeof p.name === 'string' && p.name.trim().length > 0 && p.name.trim().length <= 120, 'Zadej název účtu do 120 znaků.');
+      const name = p.name.trim();
+      check(!s.orders.some(x => x.id !== o.id && x.name.toLocaleLowerCase('cs') === name.toLocaleLowerCase('cs')), 'Tento účet už existuje.');
+      result = { type, orderId: o.id, previousName: o.name, name, at: now };
+      o.name = name; o.revision++;
     } else if (type === 'deleteOrder') {
       const o = order(); check(o.id !== 'bar' && !o.lines.length, 'Smazat lze pouze prázdný pojmenovaný účet.'); s.orders = s.orders.filter(x => x.id !== o.id);
     } else if (type === 'mergeOrders') {
@@ -218,7 +228,7 @@
     } else if (type === 'backup') s.lastBackup = now;
     else throw new Error('Neznámá operace.');
     s.revision++;
-    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : result?.receiptId || null, detail: structuredClone(p), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}), ...(type === 'reassignReceipt' ? { assignment: structuredClone(result) } : {}) });
+    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : result?.receiptId || null, detail: structuredClone(p), ...(type === 'renameOrder' ? { rename: structuredClone(result) } : {}), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}), ...(type === 'reassignReceipt' ? { assignment: structuredClone(result) } : {}) });
     return result;
   }
   function validate(s) {

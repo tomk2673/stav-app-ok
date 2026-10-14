@@ -60,7 +60,7 @@ function connection() {
   warning.hidden=!state||(!pending&&online);
   warning.innerHTML=pending?`<span><strong>Ověřujeme uloženou operaci.</strong> Platbu na terminálu neopakuj.</span>${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}`:'<span>Server není dostupný. Zobrazená data mohou být starší; placení vyžaduje spojení.</span>';
   if(state){$('#save-state').textContent=cloud.busy?'Ukládám na server…':pending?'Čeká na ověření':online?'Potvrzeno serverem':'Spojení přerušeno';$('#save-state').classList.toggle('error',!!pending||!online);}
-  const writeActions=['add','minus','restoreReceipt','newOrder','deleteOrder','mergeOrders','openShift','payCash','payCard','paySplit','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
+  const writeActions=['add','minus','restoreReceipt','newOrder','renameOrder','deleteOrder','mergeOrders','openShift','payCash','payCard','paySplit','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
   document.querySelectorAll('[data-action]').forEach(b=>{if(writeActions.includes(b.dataset.action)){const lock=!!pending&&!cloud.busy||!online;if(lock&&!b.disabled){b.disabled=true;b.dataset.connectionDisabled='true';}else if(!lock&&b.dataset.connectionDisabled){b.disabled=false;delete b.dataset.connectionDisabled;}}});
 }
 function render() {
@@ -166,7 +166,7 @@ function renderPOS() {
       <div class="categories" aria-label="Kategorie">${cats.map(c=>`<button type="button" class="category ${category===c?'active':''}" data-action="category" data-id="${E(c)}" aria-pressed="${category===c}">${E(c)}</button>`).join('')}</div>
       <div class="products" id="products"></div>
     </section>
-    <section class="receipt" aria-label="Aktuální účet"><div class="receipt-head"><div><h2>${E(o.name)}</h2><p>${o.lines.length?'Účet zůstává otevřený do zaplacení':'Připravený pro dalšího hosta'}</p></div><span class="receipt-number">${E(accountNumber(o)||'•')}</span></div><div class="receipt-tools">${btn('Spojit účty','mergeOrders','merge-account',canMerge?'':'disabled')}</div><div class="receipt-items">${lines||'<div class="receipt-empty"><span>≡</span><p>Účet je zatím prázdný.<br>Přidej první nápoj.</p></div>'}</div><div class="receipt-bottom"><div class="receipt-meta"><span>${o.lines.reduce((n,l)=>n+l.quantity,0)} ks na účtu</span>${o.id!=='bar'&&!o.lines.length?btn('Smazat účet','deleteOrder','splitbutton'):'<span>Ceny v Kč</span>'}</div><div class="receipt-total"><span>K zaplacení</span><strong>${fmt(C.sum(o.lines))}</strong></div><div class="payment-buttons">${btn('Hotově','payCash','paycash',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${btn('Kartou','payCard','paycard',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}</div>${btn('Rozdělit platbu / položky','paySplit','splitbutton',!sh||!o.lines.length||!canResume?'disabled':'')}</div></section>
+    <section class="receipt" aria-label="Aktuální účet"><div class="receipt-head"><div><h2>${E(o.name)}</h2><p>${o.lines.length?'Účet zůstává otevřený do zaplacení':'Připravený pro dalšího hosta'}</p></div><span class="receipt-number">${E(accountNumber(o)||'•')}</span></div><div class="receipt-tools">${o.id!=='bar'?btn('Přejmenovat','renameOrder','merge-account rename-account',o.paymentLock?'disabled':''):''}${btn('Spojit účty','mergeOrders','merge-account',canMerge?'':'disabled')}</div><div class="receipt-items">${lines||'<div class="receipt-empty"><span>≡</span><p>Účet je zatím prázdný.<br>Přidej první nápoj.</p></div>'}</div><div class="receipt-bottom"><div class="receipt-meta"><span>${o.lines.reduce((n,l)=>n+l.quantity,0)} ks na účtu</span>${o.id!=='bar'&&!o.lines.length?btn('Smazat účet','deleteOrder','splitbutton'):'<span>Ceny v Kč</span>'}</div><div class="receipt-total"><span>K zaplacení</span><strong>${fmt(C.sum(o.lines))}</strong></div><div class="payment-buttons">${btn('Hotově','payCash','paycash',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${btn('Kartou','payCard','paycard',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}</div>${btn('Rozdělit platbu / položky','paySplit','splitbutton',!sh||!o.lines.length||!canResume?'disabled':'')}</div></section>
   </div>`;
 }
 function quantityPickerHTML(name,initial,min=1,max=999,all=false) {
@@ -288,6 +288,15 @@ function openShift() {
 function finishMerge(result) {
   current = result.orderId; render();
   toast(`Účty spojené na ${result.name}.`);
+}
+function renameOrder() {
+  const o = structuredClone(getOrder());
+  if (o.id === 'bar' || o.paymentLock) return;
+  showDialog('Přejmenovat stůl / účet', field('Nový název stolu nebo jméno hosta', 'name', o.name, 'required maxlength="120" autocomplete="off"') + '<p class="help section-gap">Položky, zaplacené části a historie tohoto účtu zůstanou zachované.</p>', f => command('renameOrder', {orderId:o.id, revision:o.revision, name:f.get('name')}), 'Přejmenovat', result => {
+    current = result.orderId; accountQuery = ''; accountSearchOpen = false; render();
+    toast(`Účet přejmenovaný na ${result.name}.`);
+  });
+  const input = $('#dialog-form').elements.name; input.focus(); input.select();
 }
 function mergeOrders() {
   const source = structuredClone(getOrder());
@@ -434,7 +443,7 @@ function bulkProducts(){showDialog('Hromadně vložit ceník',`<p class="help">K
 const actions={
   quantityPad:id=>quantityPad(id),
   entryCount:id=>{entryQuantity=Number(id);updateEntryContext();},entryQuantity:entryQuantityPad,
-  account:id=>selectAccount(id),customerProfile,category:async id=>{category=id;query='';render();},openShift,mergeOrders,
+  account:id=>selectAccount(id),customerProfile,category:async id=>{category=id;query='';render();},openShift,renameOrder,mergeOrders,
   newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta (nepovinné)','name',accountQuery.trim(),'maxlength="120" placeholder="Bez vyplnění = rychlý prodej"'),f=>{
     const name=String(f.get('name')||'').trim();
     return name?command('newOrder',{name}):{id:'bar'};

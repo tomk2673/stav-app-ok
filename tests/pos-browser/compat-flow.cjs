@@ -112,6 +112,8 @@ async function flow(browser,base,width){
       assert.equal(await page.locator('#main-nav').isVisible(),false);
       await page.locator('#nav-toggle').click();await page.keyboard.press('Escape');
       assert.equal(await page.locator('#main-nav').isVisible(),false);
+      await page.locator('#nav-toggle').click();await page.locator('.topbar').click({position:{x:2,y:26}});
+      assert.equal(await page.locator('#main-nav').isVisible(),false,'header outside the menu also dismisses it');
       await page.locator('#nav-toggle').click();await page.mouse.click(2,90);
       assert.equal(await page.locator('#main-nav').isVisible(),false);
     }else assert.equal(await page.locator('#nav-toggle').isVisible(),false);

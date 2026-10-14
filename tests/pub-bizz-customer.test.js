@@ -27,8 +27,10 @@ test('receipt reassignment moves spend and favorites to the corrected customer',
   assert.equal(I.productCounts(s,'Jana').get('beer'),3);
 });
 test('ranking excludes tables and quick sale',()=>{
-  const s=state();s.receipts.push({id:'d',kind:'sale',orderId:'jana',orderName:'Jana',total:40000,at:'2026-10-12T00:00:00Z',lines:[{productId:'x',name:'X',price:40000,quantity:1}]});
-  const board=I.leaderboard(s);assert.deepEqual(board.map(x=>x.name),['Petr','Jana']);assert.equal(I.profile(s,'Petr').rank,1);
+  const s=state();
+  s.receipts.push({id:'d',kind:'sale',orderId:'jana',orderName:'Jana',total:40000,at:'2026-10-12T00:00:00Z',lines:[{productId:'x',name:'X',price:40000,quantity:1}]});
+  s.receipts.push({id:'table',kind:'sale',orderId:'5',orderName:'Stůl 5',total:200000,at:'2026-10-12T00:10:00Z',lines:[{productId:'beer',name:'Pivo',price:5000,quantity:40}]});
+  const board=I.leaderboard(s);assert.deepEqual(board.map(x=>x.name),['Jana','Petr']);assert.equal(I.profile(s,'Petr').rank,2);
 });
 test('exact visit time drives hours and spend per hour only for timed visits',()=>{
   const s=state(),p=I.profile(s,'Petr',{name:'Petr',visitStartedAt:'2026-10-12T21:00:00Z'},'2026-10-12T22:30:00Z');

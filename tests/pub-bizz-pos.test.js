@@ -37,3 +37,19 @@ test('invalid counts and accumulated limits do not change the order',()=>{
  f.apply('addLine',{orderId:'bar',productId:f.product.id,quantity:998});
  const before=JSON.stringify(f.s);assert.throws(()=>f.apply('addLine',{orderId:'bar',productId:f.product.id,quantity:1}),/999/);assert.equal(JSON.stringify(f.s),before);
 });
+
+test('named customer visit spans split payments and ends only after the final payment',()=>{
+  let s=C.initial();
+  const apply=(type,p,now)=>{const next=structuredClone(s);const result=C.execute(next,type,p,now);s=next;return result;};
+  apply('openShift',{opening:0,operator:'Test'},'2026-10-14T18:00:00.000Z');
+  const product=apply('product',{name:'Pivo',category:'Pivo',serving:'0,5 l',price:5000,vatRate:null},'2026-10-14T18:01:00.000Z');
+  const customer=apply('newOrder',{name:'Petr'},'2026-10-14T18:02:00.000Z');
+  apply('addLine',{orderId:customer.id,productId:product.id,quantity:2},'2026-10-14T19:00:00.000Z');
+  const order=()=>s.orders.find(x=>x.id===customer.id);
+  const firstLine=()=>order().lines[0];
+  const first=apply('checkout',{operationId:crypto.randomUUID(),orderId:customer.id,revision:order().revision,selected:[{id:firstLine().id,quantity:1}],mode:'cash',received:5000,splitCash:0,cardConfirmed:false},'2026-10-14T20:00:00.000Z');
+  assert.equal(first.visitStartedAt,'2026-10-14T19:00:00.000Z');assert.equal(first.visitEndedAt,undefined);assert.equal(order().lines.length,1);
+  const second=apply('checkout',{operationId:crypto.randomUUID(),orderId:customer.id,revision:order().revision,selected:[{id:firstLine().id,quantity:1}],mode:'cash',received:5000,splitCash:0,cardConfirmed:false},'2026-10-14T21:30:00.000Z');
+  assert.equal(second.visitId,first.visitId);assert.equal(second.visitDurationMinutes,150);assert.equal(second.visitEndedAt,'2026-10-14T21:30:00.000Z');
+  assert.equal(order().visitId,undefined);assert.equal(order().visitStartedAt,undefined);C.validate(s);
+});

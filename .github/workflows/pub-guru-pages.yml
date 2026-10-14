@@ -63,6 +63,8 @@ jobs:
           node tests/pos-browser/node_modules/pwmodern/cli.js install --with-deps chromium webkit
       - name: Safari and Chromium redirect recovery
         run: npm run test:service-workers --prefix tests/pos-browser
+      - name: Compact navigation and complete POS flows
+        run: POS_BROWSER_PROFILES=pwmodern/chromium,pwmodern/webkit npm test --prefix tests/pos-browser
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

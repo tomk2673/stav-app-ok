@@ -72,6 +72,10 @@ function render() {
   $('#shift-label').textContent = sh ? `Směna od ${date(sh.openedAt)} · ${sh.operator}` : 'Směna není otevřená';
   $('#save-state').textContent = window.POSCloud ? 'Potvrzeno serverem' : 'Uloženo v tomto zařízení'; $('#save-state').classList.remove('error');
   document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  const pageName = $('#main-nav .active').textContent;
+  $('#nav-current-view').textContent = pageName;
+  $('#nav-toggle').setAttribute('aria-label', 'Přepnout stránku: ' + pageName);
+  $('#nav-context').textContent = $('#venue').textContent + ' · ' + $('#shift-label').textContent;
   const templates = { pos: renderPOS, history: renderHistory, overview: renderOverview, catalog: renderCatalog, settings: renderSettings, stock:()=>POSStockUI.render(state) };
   $('#app').innerHTML = templates[view]();
   if (view === 'pos') {
@@ -421,10 +425,20 @@ const actions={
   localBackup:async()=>{const local=await POSCloud.localBackup();await downloadBackup(local,'PUB-BIZZ-stara-mistni-data');toast('Místní data připravená ke stažení.');},
   closeShift,backup,csv,bulkProducts,restore:()=>$('#restore-input').click()
 };
+function setNavigationOpen(open, focus = false) {
+  $('.topbar').classList.toggle('menu-open', open);
+  $('#nav-toggle').setAttribute('aria-expanded', String(open));
+  if (focus && window.innerWidth <= 630) $('#nav-toggle').focus();
+}
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && $('.topbar').classList.contains('menu-open')) { setNavigationOpen(false, true); e.preventDefault(); }
+});
 document.addEventListener('click',async e=>{
   if(accountSearchOpen&&!e.target.closest('.account-finder')){accountSearchOpen=false;renderAccountResults();}
+  if(e.target.closest('#nav-toggle')) { setNavigationOpen(!$('.topbar').classList.contains('menu-open')); return; }
+  if(!e.target.closest('#main-nav'))setNavigationOpen(false);
   const close=e.target.closest('.close-dialog');if(close){if(!submitting)$('#dialog').close();return;}
-  const tab=e.target.closest('[data-view]');if(tab){view=tab.dataset.view;render();return;}
+  const tab=e.target.closest('[data-view]');if(tab){view=tab.dataset.view;setNavigationOpen(false, true);render();return;}
   const b=e.target.closest('[data-action]');if(!b||b.disabled||!state)return;
   const action=actions[b.dataset.action];if(action)try{await action(b.dataset.id,b);}catch(err){toast(err.message||'Operace se nepodařila.',true);}
 });
@@ -438,7 +452,7 @@ window.addEventListener('pos-connection',connection);
 window.addEventListener('online',connection);window.addEventListener('offline',connection);
 async function refresh(){if(state){try{const next=await Store.read();if(next.revision!==state.revision){state=next;render();}}catch{toast('Nepodařilo se načíst uložená data.',true);}}}
 window.addEventListener('focus',refresh);
-window.addEventListener('resize',resizePOSWorkspace);
+window.addEventListener('resize',()=>{if(window.innerWidth>630)setNavigationOpen(false);resizePOSWorkspace();});
 (async()=>{
   document.querySelectorAll('[data-cloud]').forEach(x=>x.hidden=!window.POSCloud);
   try{

@@ -34,7 +34,8 @@ async function until(page,predicate,arg){
     if(await page.evaluate(predicate,arg))return;
     await new Promise(r=>setTimeout(r,50));
   }
-  throw new Error('Timed out waiting for browser state: '+predicate.toString());
+  const diagnostic=await page.evaluate(()=>({dialogError:document.querySelector('#dialog-error')?.textContent,saveState:document.querySelector('#save-state')?.textContent,pending:!!window.POSCloud?.pending}));
+  throw new Error('Timed out waiting for browser state: '+predicate.toString()+' '+JSON.stringify(diagnostic));
 }
 function fixture(){
   const user={id:crypto.randomUUID(),email:'owner@example.test',aud:'authenticated',role:'authenticated',app_metadata:{provider:'email',providers:['email']},user_metadata:{},identities:[]};
@@ -49,7 +50,7 @@ function fixture(){
   const envelope=result=>({state:structuredClone(state),result,stock:[],issues:[],issueCount:0,role:'owner',venue});
   async function route(route){
     const request=route.request(),url=new URL(request.url()),method=request.method();
-    const headers={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'GET, POST, OPTIONS','content-type':'application/json'};
+    const headers={'access-control-allow-origin':'*','access-control-allow-headers':request.headers()['access-control-request-headers']||'authorization, apikey, content-type, x-client-info, x-supabase-api-version','access-control-allow-methods':'GET, POST, OPTIONS','content-type':'application/json'};
     const respond=(body,status=200)=>route.fulfill({status,headers,body:JSON.stringify(body)});
     if(method==='OPTIONS')return route.fulfill({status:204,headers});
     if(url.pathname==='/auth/v1/token'){
@@ -77,10 +78,18 @@ function fixture(){
   return {route,calls,get state(){return state;},rejectToken(){unauthorized=true;},dropResponse(){drop=true;}};
 }
 async function contextFor(browser,options={}){
-  const context=await browser.newContext({viewport:{width:options.width||1440,height:900},...options});
+  // Route-based Auth/Edge mocks must see every request. Service-worker routing
+  // is Chromium-only; real SW/cache/outage behavior has its own local test.
+  const context=await browser.newContext({serviceWorkers:'block',viewport:{width:options.width||1440,height:900},...options});
   // Fail every unexpected external request, even if a test inadvertently tries to leave the stub.
   await context.route('**/*',route=>{const url=new URL(route.request().url());return url.hostname==='127.0.0.1'||url.protocol==='file:'?route.continue():route.abort();});
   return context;
+}
+async function navigate(page,view){
+  const button=page.locator('[data-view="'+view+'"]');
+  if(!await button.isVisible())await page.locator('#nav-toggle').click();
+  await button.click();
+  assert.equal(await page.locator('#nav-toggle').getAttribute('aria-expanded'),'false');
 }
 async function flow(browser,base,width){
   const mobile=browser.browserType().name()==='webkit'&&width<631;
@@ -99,6 +108,34 @@ async function flow(browser,base,width){
     assert.ok(await page.evaluate(()=>localStorage.getItem('sb-gnfqlfxuagcgjztaueot-auth-token')),'session uses the shared default key');
     const signins=f.calls.filter(c=>c.grant==='password').length;
     await page.reload();await page.locator('.product').first().waitFor();assert.equal(f.calls.filter(c=>c.grant==='password').length,signins,'reload restores the session');
+    const beforeNavigation=JSON.stringify(f.state);
+    const toolbarHeight=await page.evaluate(()=>document.querySelector('.topbar').getBoundingClientRect().height+document.querySelector('.contextbar').getBoundingClientRect().height);
+    if(width<=630){
+      assert.ok(toolbarHeight<=80,'phone chrome must leave space for the account');
+      assert.equal(await page.locator('#main-nav').isVisible(),false);
+      await page.locator('#account-search').fill('rychly');
+      assert.equal(await page.locator('#account-results').isVisible(),true);
+      await page.locator('#nav-toggle').click();
+      assert.equal(await page.locator('#account-results').isVisible(),false,'opening navigation closes account results');
+      await page.keyboard.press('Escape');
+      assert.equal(await page.locator('#account-results').isVisible(),false);
+      assert.equal(await page.locator('#account-search').inputValue(),'rychly','navigation preserves the typed customer query');
+      await page.locator('#account-search').click();
+      assert.equal(await page.locator('#account-results').isVisible(),true,'account search can reopen normally');
+      await page.locator('#account-search').fill('');await page.mouse.click(2,90);
+      await page.locator('#nav-toggle').click();await page.keyboard.press('Escape');
+      assert.equal(await page.locator('#main-nav').isVisible(),false);
+      await page.locator('#nav-toggle').click();await page.locator('.topbar').click({position:{x:2,y:26}});
+      assert.equal(await page.locator('#main-nav').isVisible(),false,'header outside the menu also dismisses it');
+      await page.locator('#nav-toggle').click();await page.mouse.click(2,90);
+      assert.equal(await page.locator('#main-nav').isVisible(),false);
+    }else assert.equal(await page.locator('#nav-toggle').isVisible(),false);
+    for(const name of ['history','overview','catalog','stock','settings','pos']){
+      await navigate(page,name);
+      assert.equal(await page.locator('#nav-current-view').textContent(),await page.locator('[data-view="'+name+'"]').textContent());
+    }
+    assert.equal(JSON.stringify(f.state),beforeNavigation,'navigation must preserve every account and payment');
+    console.log(JSON.stringify({width,toolbarHeight,allSixPages:true,menuCloses:true}));
     await page.locator('[data-action="openShift"]').click();await page.locator('[name="opening"]').fill('0');await page.locator('#dialog-submit').click();
     await until(page,()=>!document.querySelector('#dialog').open);assert.equal(f.state.shifts.length,1);
     for(const name of ['Stůl 12','Žaneta']){
@@ -165,7 +202,7 @@ async function flow(browser,base,width){
     await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
     assert.equal(f.state.orders[0].lines[0].quantity,1);
     const receiptsBefore=f.state.receipts.length, target=f.state.orders.find(o=>o.name==='Stůl 12');
-    await page.locator('[data-view="history"]').click();await page.locator('[data-action="restoreReceipt"][data-id="'+corrected.id+'"]').click();
+    await navigate(page,'history');await page.locator('[data-action="restoreReceipt"][data-id="'+corrected.id+'"]').click();
     assert.equal(f.state.receipts.length,receiptsBefore);
     await page.locator('[name="targetOrderId"]').selectOption(target.id);await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
     assert.equal(f.state.receipts.length,receiptsBefore);assert.equal(f.state.orders.find(o=>o.id===target.id).lines.length,0);
@@ -182,6 +219,9 @@ async function flow(browser,base,width){
     assert.equal(await page.locator('#dialog').evaluate(el=>el.open),false);
     assert.deepEqual(errors,[]);
     return {width,passed:true,steps:['password rejection','password login','401 refresh','session reload','open shift','table/customer search','12-piece keypad','quantity correction','partial card confirmation','paid product ranking','stable unpaid buttons','ranking reload','return to marking','durable ID reload/replay','cash payment','IndexedDB backup','layout','local full-to-split switch','back-to-split reservation','neutral assignment','terminal reference and confirmation','financial recovery after reload']};
+  }catch(error){
+    console.error(JSON.stringify({engine:browser.browserType().name(),width,requests:f.calls.map(c=>c.type),serverShifts:f.state.shifts.length}));
+    throw error;
   }finally{await context.close();}
 }
 async function failures(browser,base){

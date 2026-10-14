@@ -92,8 +92,12 @@
       }
       result = { type, orderId: target.id, name: target.name, sourceOrderId: source.id, sourceName: source.name,
         movedQuantity: source.lines.reduce((n, l) => n + l.quantity, 0), sourceTotal, total };
+      if (source.visitStartedAt && (!target.visitStartedAt || Date.parse(source.visitStartedAt) < Date.parse(target.visitStartedAt))) {
+        target.visitStartedAt = source.visitStartedAt;
+        if (!target.visitId) target.visitId = source.visitId;
+      }
       target.lines = merged; target.revision++;
-      source.lines = []; source.revision++;
+      source.lines = []; delete source.visitId; delete source.visitStartedAt; source.revision++;
     } else if (type === 'loadCatalog') {
       if (s.catalogVersion === catalog.version) return null;
       for (const item of catalog.products) {
@@ -126,6 +130,7 @@
       check(s.settings.vat !== 'payer' || pr.vatRate !== null, 'U této položky nejdřív nastav sazbu DPH v ceníku.');
       const quantity = p.quantity === undefined ? 1 : p.quantity;
       check(integer(quantity, 999) && quantity > 0, 'Vyber množství 1 až 999.');
+      if (o.id !== 'bar' && (!o.lines.length || !o.visitId || !o.visitStartedAt)) { o.visitId = uid(); o.visitStartedAt = now; }
       const line = o.lines.find(x => !own(x, 'stockRecipe') && x.productId === pr.id && x.price === pr.price && x.vatRate === pr.vatRate && x.name === pr.name && x.serving === pr.serving);
       check(!line || line.quantity + quantity <= 999, 'Limit množství je 999.');
       check(sum(o.lines) + pr.price * quantity <= 100000000, 'Překročen limit účtu.');
@@ -134,7 +139,9 @@
       check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
     } else if (type === 'removeLine') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.'); check(clean(p.reason), 'Doplň důvod opravy.');
-      l.quantity--; o.lines = o.lines.filter(x => x.quantity > 0); o.revision++;
+      l.quantity--; o.lines = o.lines.filter(x => x.quantity > 0);
+      if (!o.lines.length) { delete o.visitId; delete o.visitStartedAt; }
+      o.revision++;
     } else if (type === 'setLineQuantity') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.');
       check(integer(p.quantity, 999) && p.quantity > 0, 'Vyber množství 1 až 999.');
@@ -146,11 +153,17 @@
       const lines = selectedLines(o, p.selected); const pay = payment(sum(lines), p.mode, p.received, p.splitCash);
       check(!pay.card || p.cardConfirmed === true, 'Nejdřív potvrď úspěšnou platbu na terminálu.');
       if (s.settings.vat === 'payer') check(lines.every(x => x.vatRate !== null), 'Na účtu chybí sazba DPH. Oprav položky před zaplacením.');
+      const visitId = o.visitId, visitStartedAt = o.visitStartedAt;
       s.sequence++;
-      result = { id: uid(), operationId: p.operationId, number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, kind: 'sale', at: now, shiftId: sh.id, orderId: o.id, orderName: o.name, deviceId: s.deviceId, venueId: s.venueId, operator: sh.operator, settings: { ...s.settings }, lines, ...pay };
-      s.receipts.push(result);
+      result = { id: uid(), operationId: p.operationId, number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, kind: 'sale', at: now, shiftId: sh.id, orderId: o.id, orderName: o.name, deviceId: s.deviceId, venueId: s.venueId, operator: sh.operator, settings: { ...s.settings }, lines, ...pay, ...(visitId && visitStartedAt ? { visitId, visitStartedAt } : {}) };
       for (const line of lines) o.lines.find(x => x.id === line.id).quantity -= line.quantity;
-      o.lines = o.lines.filter(x => x.quantity > 0); o.revision++;
+      o.lines = o.lines.filter(x => x.quantity > 0);
+      if (visitId && visitStartedAt && !o.lines.length) {
+        result.visitEndedAt = now;
+        result.visitDurationMinutes = Math.max(0, Math.round((Date.parse(now) - Date.parse(visitStartedAt)) / 60000));
+        delete o.visitId; delete o.visitStartedAt;
+      }
+      s.receipts.push(result); o.revision++;
     } else if (type === 'refund') {
       needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
       check(sale && sale.shiftId === sh.id, 'Vratku lze provést pouze k prodeji v právě otevřené směně.');
@@ -177,7 +190,9 @@
           else merged.push({ ...restored, id: uid() });
         }
       }
-      check(sum(merged) <= 100000000, 'Po vrácení by účet překročil limit.'); target.lines = merged; target.revision++;
+      check(sum(merged) <= 100000000, 'Po vrácení by účet překročil limit.');
+      if (target.id !== 'bar' && !target.visitId) { target.visitId = sale.visitId || uid(); target.visitStartedAt = sale.visitStartedAt || now; }
+      target.lines = merged; target.revision++;
       s.sequence++; result = { ...sale, ...account, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0, restoredToOrderId: target.id, restoredToOrderName: target.name };
       s.receipts.push(result);
     } else if (type === 'reassignReceipt') {
@@ -215,6 +230,7 @@
     for (const p of s.products) check(typeof p.name === 'string' && typeof p.category === 'string' && (p.price === null || integer(p.price)), 'Poškozený ceník.');
     for (const o of s.orders) {
       check(typeof o.name === 'string' && integer(o.revision, 1000000000) && Array.isArray(o.lines), 'Poškozený účet.');
+      if (o.visitId !== undefined || o.visitStartedAt !== undefined) check(typeof o.visitId === 'string' && typeof o.visitStartedAt === 'string' && !Number.isNaN(Date.parse(o.visitStartedAt)), 'Poškozený čas návštěvy na účtu.');
       for (const l of o.lines) check(typeof l.id === 'string' && typeof l.name === 'string' && integer(l.price) && l.price > 0 && integer(l.quantity, 999) && l.quantity > 0, 'Neplatná položka v záloze.');
     }
     check(s.shifts.filter(x => !x.closedAt).length <= 1, 'Záloha obsahuje více otevřených směn.');
@@ -225,6 +241,8 @@
     for (const r of s.receipts) {
       check(['sale','refund'].includes(r.kind) && Array.isArray(r.lines) && r.lines.length && r.settings && typeof r.settings.venue === 'string' && s.shifts.some(x => x.id === r.shiftId), 'Poškozený doklad.');
       check([r.total,r.cash,r.card,r.rounding].every(Number.isSafeInteger) && r.total === r.cash + r.card, 'Nesedí součet dokladu.');
+      if (r.visitId !== undefined || r.visitStartedAt !== undefined) check(typeof r.visitId === 'string' && typeof r.visitStartedAt === 'string' && !Number.isNaN(Date.parse(r.visitStartedAt)), 'Poškozený začátek návštěvy na dokladu.');
+      if (r.visitEndedAt !== undefined || r.visitDurationMinutes !== undefined) check(typeof r.visitEndedAt === 'string' && !Number.isNaN(Date.parse(r.visitEndedAt)) && integer(r.visitDurationMinutes, 10000000), 'Poškozený konec návštěvy na dokladu.');
       for (const l of r.lines) check(integer(l.price) && integer(l.quantity, 999) && l.quantity > 0 && typeof l.name === 'string', 'Poškozená položka dokladu.');
       const sign = r.kind === 'sale' ? 1 : -1;
       check(sign * sum(r.lines) + r.rounding === r.total && sign * r.cash >= 0 && sign * r.card >= 0, 'Nesedí položky dokladu.');

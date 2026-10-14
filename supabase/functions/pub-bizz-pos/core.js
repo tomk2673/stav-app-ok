@@ -6,6 +6,17 @@
   const check = (ok, message) => { if (!ok) throw new Error(message); };
   const integer = (x, max = 100000000) => Number.isSafeInteger(x) && x >= 0 && x <= max;
   const clean = (s, max = 120) => String(s || '').trim().slice(0, max);
+  const own = (o, key) => Object.prototype.hasOwnProperty.call(o, key);
+  const sameLine = (a, b) => ['productId', 'sourceCode', 'stockProductId', 'name', 'serving', 'price', 'vatRate'].every(k => a[k] === b[k])
+    && own(a, 'stockRecipe') === own(b, 'stockRecipe') && JSON.stringify(a.stockRecipe) === JSON.stringify(b.stockRecipe);
+  const receiptAccount = (s, r) => own(s.receiptAssignments || {}, r.id) ? s.receiptAssignments[r.id] : { orderId: r.orderId, orderName: r.orderName };
+  function refundVerification(sale, p, now) {
+    check(clean(p.reason), 'Doplň důvod vratky.');
+    if (!sale.card) return null;
+    check(p.cardConfirmed === true, 'Potvrď vrácení karetní platby na terminálu.');
+    check(typeof p.terminalReference === 'string' && p.terminalReference.trim().length > 0 && p.terminalReference.length <= 120, 'Doplň číslo storna nebo vratky z terminálu.');
+    return { method: 'manual', confirmed: true, reference: p.terminalReference.trim(), at: now };
+  }
   function money(value) {
     const s = String(value).trim().replace(/\s/g, '').replace(',', '.');
     check(/^\d{1,7}(\.\d{1,2})?$/.test(s), 'Zadej platnou částku, nejvýš dvě desetinná místa.');
@@ -16,7 +27,7 @@
     return { schema: 1, deviceId: uid(), venueId: uid(), revision: 0, sequence: 0, catalogVersion: catalog.version,
       settings: { venue: 'ZTRACENÝ BAR', company: '', address: '', ico: '', dic: '', vat: 'unknown', operator: 'Obsluha' },
       products: structuredClone(catalog.products),
-      orders: [{ id: 'bar', name: 'Rychlý prodej', lines: [], revision: 0 }], shifts: [], receipts: [], audit: [], lastBackup: null };
+      orders: [{ id: 'bar', name: 'Rychlý prodej', lines: [], revision: 0 }], shifts: [], receipts: [], receiptAssignments: {}, audit: [], lastBackup: null };
   }
   const activeShift = s => s.shifts.find(x => !x.closedAt);
   function totals(s, shiftId) {
@@ -48,7 +59,7 @@
     check(integer(received) && received >= cash, 'Přijatá hotovost je nižší než částka k úhradě.');
     return { total, cash, card, received, change: received - cash, rounding: total - raw, mode };
   }
-  function execute(s, type, p = {}, now = new Date().toISOString()) {
+  function execute(s, type, p = {}, now = new Date().toISOString(), restoredLines) {
     let result = null;
     const sh = activeShift(s);
     const needShift = () => { check(sh, 'Nejdřív otevři směnu.'); return sh; };
@@ -74,9 +85,8 @@
       const sourceTotal = sum(source.lines), total = sourceTotal + sum(target.lines);
       check(integer(total) && total > 0, 'Spojený účet překračuje limit.');
       const merged = structuredClone(target.lines);
-      const fields = ['productId', 'sourceCode', 'stockProductId', 'name', 'serving', 'price', 'vatRate'];
       for (const line of source.lines) {
-        const same = merged.find(x => fields.every(k => x[k] === line[k]) && x.quantity + line.quantity <= 999);
+        const same = merged.find(x => sameLine(x, line) && x.quantity + line.quantity <= 999);
         if (same) same.quantity += line.quantity;
         else merged.push({ ...structuredClone(line), id: merged.some(x => x.id === line.id) ? uid() : line.id });
       }
@@ -116,7 +126,7 @@
       check(s.settings.vat !== 'payer' || pr.vatRate !== null, 'U této položky nejdřív nastav sazbu DPH v ceníku.');
       const quantity = p.quantity === undefined ? 1 : p.quantity;
       check(integer(quantity, 999) && quantity > 0, 'Vyber množství 1 až 999.');
-      const line = o.lines.find(x => x.productId === pr.id && x.price === pr.price && x.vatRate === pr.vatRate && x.name === pr.name && x.serving === pr.serving);
+      const line = o.lines.find(x => !own(x, 'stockRecipe') && x.productId === pr.id && x.price === pr.price && x.vatRate === pr.vatRate && x.name === pr.name && x.serving === pr.serving);
       check(!line || line.quantity + quantity <= 999, 'Limit množství je 999.');
       check(sum(o.lines) + pr.price * quantity <= 100000000, 'Překročen limit účtu.');
       if (line) line.quantity += quantity;
@@ -144,24 +154,42 @@
     } else if (type === 'refund') {
       needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
       check(sale && sale.shiftId === sh.id, 'Vratku lze provést pouze k prodeji v právě otevřené směně.');
-      check(!s.receipts.some(x => x.refundOf === sale.id), 'Tento doklad už má vratku.'); check(clean(p.reason), 'Doplň důvod vratky.');
-      check(!sale.card || p.cardConfirmed, 'Potvrď vrácení karetní platby na terminálu.');
-      s.sequence++; result = { ...sale, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0 };
+      check(!s.receipts.some(x => x.refundOf === sale.id), 'Tento doklad už má vratku.');
+      const terminalConfirmation = refundVerification(sale, p, now);
+      s.sequence++; result = { ...sale, ...receiptAccount(s, sale), id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0 };
       s.receipts.push(result);
     } else if (type === 'restoreReceipt') {
       needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
       check(sale && sale.shiftId === sh.id, 'Na stůl lze vrátit pouze doklad z právě otevřené směny.');
       check(!s.receipts.some(x => x.refundOf === sale.id), 'Tento doklad už byl stornovaný nebo vrácený.');
-      const target = s.orders.find(x => x.id === sale.orderId); check(target, 'Původní stůl už neexistuje.');
+      const terminalConfirmation = refundVerification(sale, p, now), account = receiptAccount(s, sale);
+      const target = s.orders.find(x => x.id === account.orderId); check(target, 'Původní stůl už neexistuje.');
       check(!target.paymentLock, 'Na původním stole právě probíhá platba.');
+      const merged = structuredClone(target.lines);
       for (const item of sale.lines) {
-        const line = target.lines.find(x => x.productId === item.productId && x.price === item.price && x.vatRate === item.vatRate && x.name === item.name && x.serving === item.serving);
-        if (line) { check(line.quantity + item.quantity <= 999, 'Po vrácení by množství položky překročilo limit.'); line.quantity += item.quantity; }
-        else target.lines.push({ ...structuredClone(item), id: uid() });
+        // The server may split a historically substituted line into its actual stock recipes.
+        const parts = restoredLines?.[item.id] || [item];
+        check(parts.reduce((n,x) => n+x.quantity,0) === item.quantity, 'Nesedí původní skladový odpis.');
+        for (const part of parts) {
+          const restored = { ...structuredClone(item), ...structuredClone(part) };
+          const line = merged.find(x => sameLine(x, restored));
+          if (line) { check(line.quantity + restored.quantity <= 999, 'Po vrácení by množství položky překročilo limit.'); line.quantity += restored.quantity; }
+          else merged.push({ ...restored, id: uid() });
+        }
       }
-      check(sum(target.lines) <= 100000000, 'Po vrácení by účet překročil limit.'); target.revision++;
-      s.sequence++; result = { ...sale, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: 'Chybně evidovaná platba – vráceno na stůl', total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0, restoredToOrderId: target.id };
+      check(sum(merged) <= 100000000, 'Po vrácení by účet překročil limit.'); target.lines = merged; target.revision++;
+      s.sequence++; result = { ...sale, ...account, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0, restoredToOrderId: target.id, restoredToOrderName: target.name };
       s.receipts.push(result);
+    } else if (type === 'reassignReceipt') {
+      needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
+      check(sale && sale.shiftId === sh.id && !s.receipts.some(x => x.refundOf === sale.id), 'Přiřadit lze pouze platný prodej z právě otevřené směny.');
+      const target = s.orders.find(x => x.id === p.targetOrderId), previous = receiptAccount(s, sale);
+      check(target, 'Cílový stůl už neexistuje.');
+      check(previous.orderId === p.previousOrderId, 'Přiřazení dokladu se změnilo. Otevři opravu znovu.');
+      check(target.id !== previous.orderId, 'Doklad už je přiřazený k tomuto stolu.');
+      check(clean(p.reason), 'Doplň důvod opravy.');
+      result = { type, receiptId: sale.id, orderId: target.id, orderName: target.name, previousOrderId: previous.orderId, previousOrderName: previous.orderName, reason: clean(p.reason), at: now };
+      s.receiptAssignments = { ...s.receiptAssignments, [sale.id]: { orderId: target.id, orderName: target.name, at: now } };
     } else if (type === 'cashMovement') {
       needShift(); check(Number.isSafeInteger(p.amount) && Math.abs(p.amount) <= 100000000 && p.amount !== 0, 'Neplatná částka.'); check(clean(p.reason), 'Doplň důvod pohybu hotovosti.');
       sh.movements.push({ id: uid(), at: now, amount: p.amount, reason: clean(p.reason) });
@@ -175,7 +203,7 @@
     } else if (type === 'backup') s.lastBackup = now;
     else throw new Error('Neznámá operace.');
     s.revision++;
-    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : null, detail: structuredClone(p), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}) });
+    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : result?.receiptId || null, detail: structuredClone(p), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}), ...(type === 'reassignReceipt' ? { assignment: structuredClone(result) } : {}) });
     return result;
   }
   function validate(s) {
@@ -201,9 +229,13 @@
       const sign = r.kind === 'sale' ? 1 : -1;
       check(sign * sum(r.lines) + r.rounding === r.total && sign * r.cash >= 0 && sign * r.card >= 0, 'Nesedí položky dokladu.');
     }
+    if (s.receiptAssignments !== undefined) {
+      check(s.receiptAssignments && typeof s.receiptAssignments === 'object' && !Array.isArray(s.receiptAssignments), 'Poškozené přiřazení dokladů.');
+      for (const [id, a] of Object.entries(s.receiptAssignments)) check(s.receipts.some(r => r.id === id && r.kind === 'sale') && a && typeof a.orderId === 'string' && typeof a.orderName === 'string' && typeof a.at === 'string', 'Poškozené přiřazení dokladu.');
+    }
     return s;
   }
-  const api = { initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines };
+  const api = { initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines, receiptAccount };
   if (typeof module !== 'undefined') module.exports = api; else root.POSCore = api;
 })(globalThis);
 

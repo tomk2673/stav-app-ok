@@ -240,6 +240,29 @@ test('interruption before audit keeps review pending; retry completes without an
   }finally{await db.close();}
 });
 
+test('direct posted updates cannot forge completion, even with the manager actor or a historical posting audit',async()=>{
+  const db=await setup({posting:true});
+  try{
+    const id=await reviewInvoice(db);await approve(db,id);
+    const before=await snapshot(db);
+    await assert.rejects(db.query("update invoices set status='posted',approved_by=$2,approved_at=now() where id=$1",[id,uid]),/audited posting path/);
+    assert.deepEqual(await snapshot(db),before);
+    // A pre-existing audit row must never authorize a direct client transition.
+    await db.exec('reset role; alter table audit_events disable trigger trg_finalize_invoice_from_audit;');
+    await postAudit(db,id);
+    await db.exec('alter table audit_events enable trigger trg_finalize_invoice_from_audit; set role authenticated;');
+    const historical=await snapshot(db);
+    await assert.rejects(db.query("update invoices set status='posted',approved_by=$2,approved_at=now() where id=$1",[id,uid]),/audited posting path/);
+    assert.deepEqual(await snapshot(db),historical);
+    await assert.rejects(db.query(`insert into audit_events(organization_id,venue_id,actor_user_id,event_type,entity_type,entity_id)
+      values ($1,$2,$3,'invoice.posted','invoice',$4)`,[org,otherVenue,uid,id]),/audited posting path/);
+    assert.deepEqual(await snapshot(db),historical,'historical valid audit cannot authorize a mismatched new audit');
+    assert.equal((await command(db,'summary')).counts.review,1);
+    await postAudit(db,id);
+    assert.equal((await snapshot(db)).stock,1);assert.equal((await snapshot(db)).job_status,'done');
+  }finally{await db.close();}
+});
+
 test('failed stock validation rolls back posting audit and never completes a review job',async()=>{
   const db=await setup({posting:true});
   try{

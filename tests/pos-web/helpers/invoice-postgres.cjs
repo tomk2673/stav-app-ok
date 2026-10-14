@@ -5,7 +5,7 @@ const {PGlite}=require('@electric-sql/pglite');
 const database=path.resolve(__dirname,'../../../database');
 const ids={user:'10000000-0000-4000-8000-000000000001',org:'20000000-0000-4000-8000-000000000001',
   venue:'30000000-0000-4000-8000-000000000001',product:'40000000-0000-4000-8000-000000000001',
-  invoice:'50000000-0000-4000-8000-000000000001',otherOrg:'20000000-0000-4000-8000-000000000002'};
+  invoice:'50000000-0000-4000-8000-000000000001',job:'60000000-0000-4000-8000-000000000001',otherOrg:'20000000-0000-4000-8000-000000000002'};
 
 async function setup({total=1089,lines=[{quantity:10,unit_price_net:100,unit_price_gross:121,vat_rate:21,
   line_total_net:900,line_total_gross:1089}],counted=false}={}){
@@ -19,6 +19,11 @@ async function setup({total=1089,lines=[{quantity:10,unit_price_net:100,unit_pri
     '002_product_client_key.sql','003_lock_financial_records.sql','005_product_runtime_fields.sql',
     '006_atomic_invoice_posting_guard.sql','007_immutable_stock_ledger.sql','008_tighten_invoice_closing_role_guards.sql',
     '20260901_invoice_line_vat_fields.sql','20260902_invoice_gross_and_payment_tracking.sql','20260904025648_counted_inventory_backend.sql']){
+    await db.exec(fs.readFileSync(path.join(database,name),'utf8'));
+  }
+  const queue=fs.readFileSync(path.join(database,'20260902_invoice_capture_background_queue.sql'),'utf8');
+  await db.exec(queue.slice(0,queue.indexOf('insert into storage.buckets')));
+  for(const name of ['20261010033954_invoice_capture_queue_worker.sql','20261010141443_invoice_approval_queue_completion.sql']){
     await db.exec(fs.readFileSync(path.join(database,name),'utf8'));
   }
   await db.exec(`insert into auth.users values ('${ids.user}');
@@ -36,6 +41,9 @@ async function setup({total=1089,lines=[{quantity:10,unit_price_net:100,unit_pri
       l.unit_price_gross??null,l.vat_rate??null,l.line_total_net??null,l.line_total_gross??null,l.status||'review',
       JSON.stringify({ocr_qty:l.quantity,ocr_unit_gross:l.unit_price_gross,ocr_line_gross:l.line_total_gross,source_code:null,index:i})]);
   }
+  await db.query(`insert into invoice_capture_jobs(id,organization_id,venue_id,created_by,source_path,source_fingerprint,status,result)
+    values ($1,$2,$3,$4,'test/invoice.jpg','source-once','review',$5)`,[
+    ids.job,ids.org,ids.venue,ids.user,JSON.stringify({invoice_id:ids.invoice,status:'review',duplicate:false})]);
   await db.exec(`select set_config('request.jwt.claim.sub','${ids.user}',false);set role authenticated;`);
   return {db,ids};
 }

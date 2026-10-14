@@ -30,6 +30,12 @@ test('UI discounted approval uses real PostgreSQL: VAT, effective cost, stock, a
     assert.equal(audits.length,1);assert.equal(audits[0].after_data.total_net,900);assert.equal(audits[0].after_data.vat_total,189);
     assert.equal(audits[0].after_data.lines[0].adjustment_gross,-121);
     assert.equal((await h.db.query('select status from invoices')).rows[0].status,'posted');
+    const summary=(await h.db.query("select public.invoice_capture_command('summary',$1,$2) as result",[ids.org,ids.venue])).rows[0].result;
+    assert.equal(summary.counts.review,undefined);assert.equal(summary.counts.done,1);
+    assert.equal(summary.jobs[0].status,'done');
+    assert.equal(h.w.document.querySelector('#queueCount').textContent,'0');
+    assert.equal(h.w.document.querySelectorAll('.queue-item').length,0);
+    assert.equal((await h.db.query("select count(*)::int as n from audit_events where event_type='invoice.capture_queue_completed'")).rows[0].n,1);
     await assert.rejects(h.db.query('update invoices set total_amount_gross=1 where id=$1',[ids.invoice]),/immutable/);
     await assert.rejects(h.db.query('delete from stock_movements'),/permission denied/);
     await assert.rejects(h.db.query('insert into purchase_price_history(organization_id,product_id,invoice_line_id,unit_price) values ($1,$2,$3,1)',
@@ -121,6 +127,7 @@ test('a failed audit/stock transaction rolls back the signed movements and leave
     assert.equal((await db.query('select count(*)::int as n from stock_movements')).rows[0].n,0,'earlier receipt is rolled back too');
     assert.equal((await db.query('select count(*)::int as n from audit_events')).rows[0].n,0);
     assert.equal((await db.query('select status from invoices')).rows[0].status,'approved');
+    assert.equal((await db.query('select status from invoice_capture_jobs')).rows[0].status,'review');
     await db.exec('reset role;drop trigger trg_test_reject_return on stock_movements;set role authenticated;');
     await db.query(`insert into audit_events(organization_id,venue_id,actor_user_id,event_type,entity_type,entity_id)
       values ($1,$2,$3,'invoice.posted','invoice',$4)`,[ids.org,ids.venue,ids.user,ids.invoice]);

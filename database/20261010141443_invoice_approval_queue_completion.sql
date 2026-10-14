@@ -16,6 +16,20 @@ begin
      or new.approved_by is distinct from actor then
     raise exception 'Invoice queue posting access denied' using errcode='42501';
   end if;
+  -- Only the nested audit finalizer may set posted. Row values or an old audit
+  -- alone cannot authorize a client UPDATE; raising here rolls that UPDATE back.
+  -- The finalizer writes stock before updating the invoice in this transaction.
+  if pg_catalog.pg_trigger_depth() < 2 or old.status <> 'approved'
+     or new.organization_id is distinct from old.organization_id
+     or new.venue_id is distinct from old.venue_id
+     or not exists (
+       select 1 from public.audit_events a
+       where a.event_type='invoice.posted' and a.entity_type='invoice' and a.entity_id=new.id
+         and a.organization_id=new.organization_id and a.venue_id=new.venue_id
+         and a.actor_user_id=actor and a.xmin=pg_catalog.pg_current_xact_id()::xid
+     ) then
+    raise exception 'Invoice requires the audited posting path' using errcode='42501';
+  end if;
 
   with completed as (
     update public.invoice_capture_jobs j

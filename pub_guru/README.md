@@ -47,6 +47,10 @@ Před nasazením webu aplikuj `database/20261010033954_invoice_capture_queue_wor
 
 Následně aplikuj `database/20261010141443_invoice_approval_queue_completion.sql` před aktualizací webu. Schvalování nejprve uloží mezistav `approved`; audit `invoice.posted` potom atomicky zaúčtuje sklad, změní fakturu na `posted` a dokončí její úlohu jako `done`. Selhání kteréhokoli z těchto kroků vrátí celou poslední transakci a úloha zůstane ke kontrole. Dokončení fronty má vlastní audit a neuděluje uživatelům přímé právo měnit úlohy. Samotná migrace nepřepisuje existující finanční ani skladová data.
 
+Přechod na `posted` je povolený jen uvnitř auditního triggeru ze stavu `approved`, se shodnou organizací, provozovnou a schvalujícím. Přímý `UPDATE` s podvrženým `approved_by` nebo starším auditem selže a vrátí celou transakci. Integrace zachovává opravu navigace Safari a všechny změny pokladny z PR #32 a #33.
+
+`npm run test:invoices --prefix tests/pos-browser` vyžaduje také závislosti z `tests/pos-web` a Chromium/WebKit. Testuje skutečné schválení přes rozhraní a izolovaný PostgreSQL s RLS, frontou a skladovými triggery při 390, 820 a 1440 px. Externí požadavky jsou zachycené; testy nemají přístup ke skutečným transakcím.
+
 Starší úlohy s již zaúčtovanou fakturou souhrn zobrazí jako dokončené bez zpětného zápisu. Počty a seznam používají stejný odvozený stav, vždy pro stejnou organizaci a provozovnu. Samotné `approved` se jako dokončené nepočítá. Schvalování po ztracené odpovědi ověří uložený stav; již zaúčtovaný doklad znovu nemění. Ověření před nasazením probíhá pouze v oddělené testovací databázi; fyzický iPhone a reálné dodavatelské faktury tím nejsou ověřené.
 
 Regrese fronty, jejího uživatelského toku a databázových přístupů jsou v `tests/pos-web` a spouštějí se pomocí `npm test --prefix tests/pos-web`.

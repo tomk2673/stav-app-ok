@@ -222,6 +222,28 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
   .receipt{height:var(--pos-height,calc(100dvh - 185px));max-height:var(--pos-height,calc(100dvh - 185px))}
   .accounts{max-height:var(--pos-height,calc(100dvh - 185px))}
 }
+
+/* A single compact toolbar on every phone page; the full navigation opens on demand. */
+.nav-toggle,.nav-context{display:none}
+@media(max-width:630px){
+  .topbar{position:sticky;top:0;z-index:12;flex-wrap:nowrap;min-height:52px;height:auto;gap:8px;padding:calc(4px + env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) 4px max(12px,env(safe-area-inset-left));background:var(--bg)}
+  .topbar .brand{min-width:0;gap:0;flex:none}
+  .topbar .brand>span:last-child{display:none}
+  .topbar .brandmark{width:28px;height:28px;border-radius:8px;font-size:1.25rem}
+  .nav-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:1;min-width:0;min-height:44px;padding:8px 12px;background:var(--raised);color:var(--text);border:1px solid var(--line);border-radius:10px;font-size:.9375rem;font-weight:700}
+  .topbar .top-right{gap:6px;margin-left:0}
+  .topbar .network{display:inline-block;width:8px;font-size:0}
+  .topbar .network::before{width:8px;height:8px;margin:0}
+  .topbar .iconbutton{width:44px;height:44px}
+  .topbar nav{display:none;position:absolute;top:100%;left:8px;right:8px;width:auto;order:initial;max-height:calc(100dvh - 110px);overflow-y:auto;padding:8px;background:var(--raised);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px #0008}
+  .topbar.menu-open nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  .topbar nav button{min-width:0;min-height:44px;padding:10px 8px;font-size:.9375rem}
+  .nav-context{display:block;grid-column:1/-1;padding:6px 8px;color:var(--muted);font-size:.75rem;overflow-wrap:anywhere}
+  .contextbar{min-height:24px;padding:3px 12px;align-items:center}
+  .contextbar>div:first-child{display:none}
+  .contextbar .save-state{max-width:none;min-width:0;text-align:left;font-size:.6875rem;line-height:18px}
+  main{min-height:calc(100dvh - 90px)}
+}
 </style>
   <script>(function(root){'use strict';
 if(!root.globalThis) root.globalThis=root;
@@ -295,7 +317,8 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
 <body>
   <header class="topbar">
     <a class="brand" href="./" aria-label="PUB POS pokladna"><span class="brandmark">P<span>·</span></span><span>PUB<span class="brand-light">POS</span><small>POKLADNA</small></span></a>
-    <nav aria-label="Hlavní navigace"><button data-view="pos" class="active">Pokladna</button><button data-view="history">Doklady</button><button data-view="overview">Směna</button><button data-view="catalog">Ceník</button><button data-view="stock" data-cloud>Sklad</button><button data-view="settings">Nastavení</button></nav>
+    <button type="button" id="nav-toggle" class="nav-toggle" aria-expanded="false" aria-controls="main-nav" aria-label="Přepnout stránku: Pokladna"><span id="nav-current-view">Pokladna</span><span aria-hidden="true">▾</span></button>
+    <nav id="main-nav" aria-label="Hlavní navigace"><button data-view="pos" class="active">Pokladna</button><button data-view="history">Doklady</button><button data-view="overview">Směna</button><button data-view="catalog">Ceník</button><button data-view="stock" data-cloud>Sklad</button><button data-view="settings">Nastavení</button><span id="nav-context" class="nav-context"></span></nav>
     <div class="top-right"><span id="network" class="network">Místní pokladna</span><button id="fullscreen" class="iconbutton" aria-label="Celá obrazovka" title="Celá obrazovka">⛶</button></div>
   </header>
   <div class="contextbar"><div><strong id="venue">ZTRACENÝ BAR</strong><span class="context-divider">/</span><span id="shift-label">Načítám data…</span></div><div class="save-state" id="save-state" role="status">Otevírám úložiště</div></div>
@@ -3201,6 +3224,10 @@ function render() {
   $('#shift-label').textContent = sh ? `Směna od ${date(sh.openedAt)} · ${sh.operator}` : 'Směna není otevřená';
   $('#save-state').textContent = window.POSCloud ? 'Potvrzeno serverem' : 'Uloženo v tomto zařízení'; $('#save-state').classList.remove('error');
   document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  const pageName = $('#main-nav .active').textContent;
+  $('#nav-current-view').textContent = pageName;
+  $('#nav-toggle').setAttribute('aria-label', 'Přepnout stránku: ' + pageName);
+  $('#nav-context').textContent = $('#venue').textContent + ' · ' + $('#shift-label').textContent;
   const templates = { pos: renderPOS, history: renderHistory, overview: renderOverview, catalog: renderCatalog, settings: renderSettings, stock:()=>POSStockUI.render(state) };
   $('#app').innerHTML = templates[view]();
   if (view === 'pos') {
@@ -3550,10 +3577,20 @@ const actions={
   localBackup:async()=>{const local=await POSCloud.localBackup();await downloadBackup(local,'PUB-BIZZ-stara-mistni-data');toast('Místní data připravená ke stažení.');},
   closeShift,backup,csv,bulkProducts,restore:()=>$('#restore-input').click()
 };
+function setNavigationOpen(open, focus = false) {
+  $('.topbar').classList.toggle('menu-open', open);
+  $('#nav-toggle').setAttribute('aria-expanded', String(open));
+  if (focus && window.innerWidth <= 630) $('#nav-toggle').focus();
+}
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && $('.topbar').classList.contains('menu-open')) { setNavigationOpen(false, true); e.preventDefault(); }
+});
 document.addEventListener('click',async e=>{
+  if(e.target.closest('#nav-toggle')) { setNavigationOpen(!$('.topbar').classList.contains('menu-open')); return; }
+  if(!e.target.closest('.topbar'))setNavigationOpen(false);
   if(accountSearchOpen&&!e.target.closest('.account-finder')){accountSearchOpen=false;renderAccountResults();}
   const close=e.target.closest('.close-dialog');if(close){if(!submitting)$('#dialog').close();return;}
-  const tab=e.target.closest('[data-view]');if(tab){view=tab.dataset.view;render();return;}
+  const tab=e.target.closest('[data-view]');if(tab){view=tab.dataset.view;setNavigationOpen(false, true);render();return;}
   const b=e.target.closest('[data-action]');if(!b||b.disabled||!state)return;
   const action=actions[b.dataset.action];if(action)try{await action(b.dataset.id,b);}catch(err){toast(err.message||'Operace se nepodařila.',true);}
 });
@@ -3567,7 +3604,7 @@ window.addEventListener('pos-connection',connection);
 window.addEventListener('online',connection);window.addEventListener('offline',connection);
 async function refresh(){if(state){try{const next=await Store.read();if(next.revision!==state.revision){state=next;render();}}catch{toast('Nepodařilo se načíst uložená data.',true);}}}
 window.addEventListener('focus',refresh);
-window.addEventListener('resize',resizePOSWorkspace);
+window.addEventListener('resize',()=>{if(window.innerWidth>630)setNavigationOpen(false);resizePOSWorkspace();});
 (async()=>{
   document.querySelectorAll('[data-cloud]').forEach(x=>x.hidden=!window.POSCloud);
   try{

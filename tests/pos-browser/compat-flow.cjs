@@ -82,6 +82,12 @@ async function contextFor(browser,options={}){
   await context.route('**/*',route=>{const url=new URL(route.request().url());return url.hostname==='127.0.0.1'||url.protocol==='file:'?route.continue():route.abort();});
   return context;
 }
+async function navigate(page,view){
+  const button=page.locator('[data-view="'+view+'"]');
+  if(!await button.isVisible())await page.locator('#nav-toggle').click();
+  await button.click();
+  assert.equal(await page.locator('#nav-toggle').getAttribute('aria-expanded'),'false');
+}
 async function flow(browser,base,width){
   const mobile=browser.browserType().name()==='webkit'&&width<631;
   const context=await contextFor(browser,{width,...(mobile?{isMobile:true,hasTouch:true}:{})}),f=fixture(),errors=[];
@@ -99,6 +105,22 @@ async function flow(browser,base,width){
     assert.ok(await page.evaluate(()=>localStorage.getItem('sb-gnfqlfxuagcgjztaueot-auth-token')),'session uses the shared default key');
     const signins=f.calls.filter(c=>c.grant==='password').length;
     await page.reload();await page.locator('.product').first().waitFor();assert.equal(f.calls.filter(c=>c.grant==='password').length,signins,'reload restores the session');
+    const beforeNavigation=JSON.stringify(f.state);
+    const toolbarHeight=await page.evaluate(()=>document.querySelector('.topbar').getBoundingClientRect().height+document.querySelector('.contextbar').getBoundingClientRect().height);
+    if(width<=630){
+      assert.ok(toolbarHeight<=80,'phone chrome must leave space for the account');
+      assert.equal(await page.locator('#main-nav').isVisible(),false);
+      await page.locator('#nav-toggle').click();await page.keyboard.press('Escape');
+      assert.equal(await page.locator('#main-nav').isVisible(),false);
+      await page.locator('#nav-toggle').click();await page.mouse.click(2,90);
+      assert.equal(await page.locator('#main-nav').isVisible(),false);
+    }else assert.equal(await page.locator('#nav-toggle').isVisible(),false);
+    for(const name of ['history','overview','catalog','stock','settings','pos']){
+      await navigate(page,name);
+      assert.equal(await page.locator('#nav-current-view').textContent(),await page.locator('[data-view="'+name+'"]').textContent());
+    }
+    assert.equal(JSON.stringify(f.state),beforeNavigation,'navigation must preserve every account and payment');
+    console.log(JSON.stringify({width,toolbarHeight,allSixPages:true,menuCloses:true}));
     await page.locator('[data-action="openShift"]').click();await page.locator('[name="opening"]').fill('0');await page.locator('#dialog-submit').click();
     await until(page,()=>!document.querySelector('#dialog').open);assert.equal(f.state.shifts.length,1);
     for(const name of ['Stůl 12','Žaneta']){
@@ -165,7 +187,7 @@ async function flow(browser,base,width){
     await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
     assert.equal(f.state.orders[0].lines[0].quantity,1);
     const receiptsBefore=f.state.receipts.length, target=f.state.orders.find(o=>o.name==='Stůl 12');
-    await page.locator('[data-view="history"]').click();await page.locator('[data-action="restoreReceipt"][data-id="'+corrected.id+'"]').click();
+    await navigate(page,'history');await page.locator('[data-action="restoreReceipt"][data-id="'+corrected.id+'"]').click();
     assert.equal(f.state.receipts.length,receiptsBefore);
     await page.locator('[name="targetOrderId"]').selectOption(target.id);await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
     assert.equal(f.state.receipts.length,receiptsBefore);assert.equal(f.state.orders.find(o=>o.id===target.id).lines.length,0);

@@ -144,8 +144,10 @@ async function flow(browser,base,width){
     }
     await page.locator('#account-search').fill('12');await page.locator('#account-results [data-action="account"]').first().click();
     assert.equal(await page.locator('.receipt-head h2').textContent(),'Stůl 12');
+    assert.equal(await page.locator('[data-action="customerProfile"]').isVisible(),false,'numbered table has no customer profile');
     await page.locator('#account-search').fill('zaneta');await page.locator('#account-results [data-action="account"]').first().click();
     assert.equal(await page.locator('.receipt-head h2').textContent(),'Žaneta');
+    assert.equal(await page.locator('[data-action="customerProfile"]').isVisible(),true,'named customer exposes profile on demand');
     assert.equal(await page.locator('#account-search').inputValue(),'Žaneta');
     await page.locator('#account-search').fill('');
     assert.equal(await page.locator('.receipt-head h2').textContent(),'Rychlý prodej','empty customer means quick sale');
@@ -164,6 +166,11 @@ async function flow(browser,base,width){
     await page.locator('[data-payment-mode="card"]').click();await page.locator('#dialog-submit').click();assert.equal(f.state.receipts.length,0,'terminal confirmation required');
     await page.locator('[name="cardConfirmed"]').check();await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
     assert.equal(f.state.receipts[0].lines[0].quantity,2);assert.ok(f.state.receipts[0].card>0);
+    await page.locator('[data-action="customerProfile"]').click();
+    assert.equal(await page.locator('#dialog-title').textContent(),'Žaneta · zákazník');
+    assert.match(await page.locator('#dialog-body').textContent(),/Věrnostní body/);
+    assert.match(await page.locator('#dialog-body').textContent(),/Co nejčastěji bere/);
+    await page.locator('#dialog .close-dialog').first().click();
     assert.equal(await page.locator('.product[data-action="add"]').first().getAttribute('data-id'),markedProduct,'confirmed paid pieces move the product to the top');
     const order=f.state.orders.find(o=>o.name==='Žaneta');assert.equal(order.lines[0].quantity,3);
     assert.equal(await page.locator('.receipt-head h2').textContent(),'Žaneta','partial payment preserves the selected customer');

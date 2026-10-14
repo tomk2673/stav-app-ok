@@ -1,6 +1,6 @@
 /* Shared online register; standalone HTML keeps the separate local emergency mode. */
 'use strict';
-const C = window.POSCore, Store = window.POSStore;
+const C = window.POSCore, Customer = window.POSCustomerInsights, Store = window.POSStore;
 const $ = s => document.querySelector(s);
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const E = escapeHTML;
@@ -112,7 +112,7 @@ function bindAccountSearch() {
   input.addEventListener('focus', () => { accountSearchOpen = true; if(!accountQuery&&current!=='bar')input.select(); renderAccountResults(); });
   input.addEventListener('input', e => {
     accountQuery = e.target.value; accountSearchOpen = true;
-    if(!accountQuery.trim()&&current!=='bar'){current='bar';renderPOSFast();}
+    if(!accountQuery.trim()&&current!=='bar'){current='bar';renderPOSFast();renderProducts();}
     renderAccountResults();
   });
   input.addEventListener('keydown', e => {
@@ -129,6 +129,7 @@ function updateEntryContext() {
   if($('#entry-account-name'))$('#entry-account-name').textContent=o.name;
   if($('#entry-account-total'))$('#entry-account-total').textContent=fmt(C.sum(o.lines));
   if($('#entry-quantity'))$('#entry-quantity').textContent=`${entryQuantity}×`;
+  const profileButton=document.querySelector('[data-action="customerProfile"]');if(profileButton)profileButton.hidden=!customerAccount(o);
   document.querySelectorAll('[data-action="entryCount"]').forEach(b=>{
     const active=Number(b.dataset.id)===entryQuantity;
     b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));
@@ -142,18 +143,19 @@ function selectAccount(id) {
   if(!state.orders.some(o=>o.id===id))return;
   current=id;entryQuantity=1;accountQuery='';accountSearchOpen=false;
   const input=$('#account-search');if(input){input.value=id==='bar'?'':getOrder().name;input.blur();}
-  renderPOSFast();renderAccountResults();
+  renderPOSFast();renderProducts();renderAccountResults();
 }
 function renderPOS() {
   const o=getOrder(),sh=C.activeShift(state),activeProducts=state.products.filter(x=>x.active),cats=['Vše',...new Set(activeProducts.map(x=>x.category))];
   const canMerge=sh&&o.lines.length&&!o.paymentLock&&state.orders.some(x=>x.id!==o.id&&!x.paymentLock);
   const canResume=!o.paymentLock||o.paymentLock.actorId===window.POSCloud?.user?.id||['owner','manager'].includes(window.POSCloud?.meta.role);
+  const customer=customerAccount(o);
   const accounts=state.orders.map(a=>`<button type="button" class="account ${a.id===o.id?'active':''}" data-action="account" data-id="${E(a.id)}" aria-pressed="${a.id===o.id}"><span class="account-number">${E(accountNumber(a)||'•')}</span><span class="account-name">${E(a.name)}<span class="account-amount">${a.lines.length?fmt(C.sum(a.lines)):'Prázdný účet'}</span></span></button>`).join('');
   const lines=o.lines.map(l=>`<div class="line"><div class="line-top"><span>${E(l.name)}${l.serving?`<small class="small"> · ${E(l.serving)}</small>`:''}</span><strong>${fmt(l.price*l.quantity)}</strong></div><div class="line-bottom"><span>${fmt(l.price)} / ks</span><div class="quantity"><button type="button" data-action="minus" data-id="${E(l.id)}" aria-label="Odebrat ${E(l.name)}">−</button><button type="button" class="quantity-tap" data-action="quantityPad" data-id="${E(l.id)}" aria-label="Množství ${E(l.name)}">${l.quantity}×</button><button type="button" data-action="add" data-id="${E(l.productId)}" aria-label="Přidat ${E(l.name)}">+</button></div></div></div>`).join('');
   return `<div class="pos-layout">
     <aside class="accounts"><div class="section-label"><span class="eyebrow">Otevřené účty</span><span class="badge">${state.orders.filter(x=>x.lines.length).length}</span></div>${accounts}${btn('+ Nový účet','newOrder','add-account')}</aside>
     <section class="catalog-area">
-      <div class="order-entry"><div class="entry-target"><span>Na účet</span><strong id="entry-account-name">${E(o.name)}</strong><span id="entry-account-total">${fmt(C.sum(o.lines))}</span></div>
+      <div class="order-entry"><div class="entry-target"><span>Na účet</span><strong id="entry-account-name">${E(o.name)}</strong><button type="button" class="customer-profile-button" data-action="customerProfile" aria-label="Detail zákazníka" ${customer?'':'hidden'}>Profil</button><span id="entry-account-total">${fmt(C.sum(o.lines))}</span></div>
         <div class="account-finder"><label class="sr-only" for="account-search">Stůl nebo zákazník; prázdné pole znamená rychlý prodej</label><input id="account-search" type="search" placeholder="Stůl / zákazník · prázdné = rychlý prodej" autocomplete="off" value="${E(accountQuery||(o.id==='bar'?'':o.name))}" aria-expanded="false" aria-controls="account-results"><div id="account-results" class="account-results" hidden></div></div>
         <div class="entry-counts" aria-label="Počet kusů pro další položku"><span>Počet</span>${[1,2,3,4,5].map(n=>btn(n,'entryCount',`entry-count ${n===entryQuantity?'active':''}`,`data-id="${n}" aria-pressed="${n===entryQuantity}"`)).join('')}${btn(`<strong id="entry-quantity">${entryQuantity}×</strong><small>Jiný počet</small>`,'entryQuantity','entry-calculator','aria-label="Zadat počet kusů na velké klávesnici"')}</div>
       </div>
@@ -207,6 +209,37 @@ function quantityPad(lineId) {
     $('#dialog').close();try{await command('setLineQuantity',{orderId:o.id,lineId:l.id,quantity},true);}catch(err){toast(err.message||'Množství se nepodařilo změnit.',true);}
   });
 }
+function customerAccount(order) {
+  return !!Customer && order?.id !== 'bar' && Customer.isCustomerName(order?.name);
+}
+function durationText(minutes) {
+  if (!Number.isFinite(minutes) || minutes <= 0) return '—';
+  const h=Math.floor(minutes/60),m=Math.round(minutes%60);
+  return h ? `${h} h ${m} min` : `${m} min`;
+}
+function customerProfile() {
+  const o=getOrder(); if(!customerAccount(o))return;
+  const p=Customer.profile(state,o.name,o,new Date().toISOString());
+  const rows=p.items.map(x=>`<tr><td><strong>${E(x.name)}</strong>${x.serving?`<br><span class="muted small">${E(x.serving)}</span>`:''}</td><td class="amount">${x.quantity}×</td><td class="amount">${fmt(x.spend)}</td></tr>`).join('');
+  const rank=p.rank?`#${p.rank} z ${p.competitors}`:'—';
+  showDialog(o.name+` · zákazník`,`<div class="customer-profile">
+    ${p.currentMinutes?`<div class="customer-current"><span>Právě v baru</span><strong>${durationText(p.currentMinutes)}</strong></div>`:''}
+    <div class="customer-stats">
+      <div><span>Věrnostní body</span><strong>${p.points}</strong></div>
+      <div><span>Pořadí</span><strong>${rank}</strong></div>
+      <div><span>Celkem utraceno</span><strong>${fmt(p.spend)}</strong></div>
+      <div><span>Položek</span><strong>${p.itemCount}</strong></div>
+      <div><span>Návštěvy s časem</span><strong>${p.visitCount}</strong></div>
+      <div><span>Čas v baru</span><strong>${durationText(p.totalMinutes)}</strong></div>
+      <div><span>Průměr návštěvy</span><strong>${durationText(p.averageMinutes)}</strong></div>
+      <div><span>Útrata / hod.</span><strong>${p.totalMinutes?fmt(p.spendPerHour):'—'}</strong></div>
+    </div>
+    <p class="help customer-rules">1 bod za každých 10 Kč skutečně zaplacené útraty. Vratky se automaticky odečítají. Pořadí je podle bodů, ne podle množství alkoholu. Přesný čas se počítá jen u návštěv zahájených po nasazení této funkce.</p>
+    <div class="customer-detail"><span>Dokladů: <strong>${p.receiptCount}</strong></span><span>Poslední útrata: <strong>${p.lastAt?date(p.lastAt):'—'}</strong></span></div>
+    <h3>Co nejčastěji bere</h3>
+    <div class="table-wrap customer-drinks"><table><thead><tr><th>Položka</th><th class="amount">Počet</th><th class="amount">Útrata</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="empty">Po prvním zaplaceném dokladu se tu objeví statistika.</td></tr>'}</tbody></table></div>
+  </div>`,null);
+}
 function productSalesCounts() {
   // Receipts come from the shared confirmed state; never count taps or unpaid orders.
   // Cache per immutable receipt array so typing in search does not rescan history.
@@ -222,9 +255,9 @@ function productSalesCounts() {
 }
 function renderProducts() {
   const norm = normalizeSearch;
-  const counts = productSalesCounts();
+  const counts = productSalesCounts(), personal = customerAccount(getOrder()) ? Customer.productCounts(state,getOrder().name) : null;
   const products = state.products.filter(p => p.active && (query || category === 'Vše' || p.category === category) && norm(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(norm(query)))
-    .sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0));
+    .sort((a, b) => (personal?.get(b.id) || 0) - (personal?.get(a.id) || 0) || (counts.get(b.id) || 0) - (counts.get(a.id) || 0));
   $('#products').innerHTML = products.map(p => `<button class="product" style="--category:${colors[p.category] || '#a5c99a'}" data-action="add" data-id="${E(p.id)}"><span class="product-cat">${E(p.category)}${p.sourceCode ? ` · #${E(p.sourceCode)}` : ''}</span><span class="product-name">${E(p.name)}</span>${p.serving ? `<span class="product-serving">${E(p.serving)}</span>` : ''}<span class="product-price ${p.price === null ? 'unset' : ''}">${p.price === null ? (p.priceNote ? E(p.priceNote) + ' · zadat cenu' : 'Doplnit cenu') : fmt(p.price)}</span><span class="product-plus">+</span></button>`).join('') + `<button class="product quick-product" data-action="newProduct"><span>+</span>Nová položka</button>`;
 }
 function renderHistory() {
@@ -401,7 +434,7 @@ function bulkProducts(){showDialog('Hromadně vložit ceník',`<p class="help">K
 const actions={
   quantityPad:id=>quantityPad(id),
   entryCount:id=>{entryQuantity=Number(id);updateEntryContext();},entryQuantity:entryQuantityPad,
-  account:id=>selectAccount(id),category:async id=>{category=id;query='';render();},openShift,mergeOrders,
+  account:id=>selectAccount(id),customerProfile,category:async id=>{category=id;query='';render();},openShift,mergeOrders,
   newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta (nepovinné)','name',accountQuery.trim(),'maxlength="120" placeholder="Bez vyplnění = rychlý prodej"'),f=>{
     const name=String(f.get('name')||'').trim();
     return name?command('newOrder',{name}):{id:'bar'};

@@ -113,6 +113,16 @@ async function flow(browser,base,width){
     if(width<=630){
       assert.ok(toolbarHeight<=80,'phone chrome must leave space for the account');
       assert.equal(await page.locator('#main-nav').isVisible(),false);
+      await page.locator('#account-search').fill('rychly');
+      assert.equal(await page.locator('#account-results').isVisible(),true);
+      await page.locator('#nav-toggle').click();
+      assert.equal(await page.locator('#account-results').isVisible(),false,'opening navigation closes account results');
+      await page.keyboard.press('Escape');
+      assert.equal(await page.locator('#account-results').isVisible(),false);
+      assert.equal(await page.locator('#account-search').inputValue(),'rychly','navigation preserves the typed customer query');
+      await page.locator('#account-search').click();
+      assert.equal(await page.locator('#account-results').isVisible(),true,'account search can reopen normally');
+      await page.locator('#account-search').fill('');await page.mouse.click(2,90);
       await page.locator('#nav-toggle').click();await page.keyboard.press('Escape');
       assert.equal(await page.locator('#main-nav').isVisible(),false);
       await page.locator('#nav-toggle').click();await page.locator('.topbar').click({position:{x:2,y:26}});

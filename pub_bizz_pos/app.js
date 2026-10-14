@@ -434,9 +434,9 @@ document.addEventListener('keydown', e => {
   if(e.key === 'Escape' && $('.topbar').classList.contains('menu-open')) { setNavigationOpen(false, true); e.preventDefault(); }
 });
 document.addEventListener('click',async e=>{
+  if(accountSearchOpen&&!e.target.closest('.account-finder')){accountSearchOpen=false;renderAccountResults();}
   if(e.target.closest('#nav-toggle')) { setNavigationOpen(!$('.topbar').classList.contains('menu-open')); return; }
   if(!e.target.closest('#main-nav'))setNavigationOpen(false);
-  if(accountSearchOpen&&!e.target.closest('.account-finder')){accountSearchOpen=false;renderAccountResults();}
   const close=e.target.closest('.close-dialog');if(close){if(!submitting)$('#dialog').close();return;}
   const tab=e.target.closest('[data-view]');if(tab){view=tab.dataset.view;setNavigationOpen(false, true);render();return;}
   const b=e.target.closest('[data-action]');if(!b||b.disabled||!state)return;

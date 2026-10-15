@@ -97,7 +97,7 @@
       const line = receipt?.lines.find(l => l.id === p.lineId);
       check(line && s.recipes[line.productId], 'Nejdřív nastav recepturu prodané položky.');
       check(!s.receipts.some(r => r.refundOf === receipt.id && r.restock), 'Zboží už bylo vrácené. Případnou opravu proveď v PUB GURU.');
-      result = { receiptId: receipt.id, lineId: line.id, recipe: structuredClone(s.recipes[line.productId]) };
+      result = { receiptId: receipt.id, lineId: line.id, recipe: C.recipeForLine(line, s.recipes[line.productId]) };
     } else {
       // receiptStock is loaded by the authenticated Edge Function, never from command payload.
       const restored = type==='restoreReceipt' ? restoredStockLines(s.receipts.find(r=>r.id===p.receiptId&&r.kind==='sale'),receiptStock) : undefined;
@@ -105,7 +105,7 @@
       if (type === 'checkout' && result) {
         delete order.paymentLock;
         result.actorId = actor.id;
-        result.lines = result.lines.map(l => ({ ...l, stockRecipe: structuredClone(Object.prototype.hasOwnProperty.call(l, 'stockRecipe') ? l.stockRecipe : s.recipes[l.productId] || null) }));
+        result.lines = result.lines.map(l => ({ ...l, stockRecipe: Object.prototype.hasOwnProperty.call(l, 'stockRecipe') ? structuredClone(l.stockRecipe) : C.recipeForLine(l, s.recipes[l.productId] || null) }));
         L.award(s,result,now);
       }
       if (type === 'refund' && result) {

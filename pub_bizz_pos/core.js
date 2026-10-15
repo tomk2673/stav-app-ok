@@ -7,9 +7,48 @@
   const integer = (x, max = 100000000) => Number.isSafeInteger(x) && x >= 0 && x <= max;
   const clean = (s, max = 120) => String(s || '').trim().slice(0, max);
   const own = (o, key) => Object.prototype.hasOwnProperty.call(o, key);
-  const sameLine = (a, b) => ['productId', 'sourceCode', 'stockProductId', 'name', 'serving', 'price', 'vatRate'].every(k => a[k] === b[k])
+  const sameLine = (a, b) => ['productId', 'sourceCode', 'stockProductId', 'name', 'serving', 'price', 'vatRate', 'servingMl', 'baseServingMl'].every(k => a[k] === b[k])
     && own(a, 'stockRecipe') === own(b, 'stockRecipe') && JSON.stringify(a.stockRecipe) === JSON.stringify(b.stockRecipe);
   const receiptAccount = (s, r) => own(s.receiptAssignments || {}, r.id) ? s.receiptAssignments[r.id] : { orderId: r.orderId, orderName: r.orderName };
+  const shotCategories = new Set(['Destiláty','Likéry','Rumy','Whisky','Brandy']);
+  function shotVolumeMl(product) {
+    if (!product || (!shotCategories.has(product.category) && product.category !== 'Koktejly')) return null;
+    if (/(?:lahev|láhev|bottle|s\s+(?:colou|kolou|džusem|dzusem|tonikem|tonicem|limonádou))/i.test(product.name)) return null;
+    const serving = String(product.serving || '').trim();
+    const parse = text => {
+      const m = text.match(/^(?:0[.,]0([24])\s*l?|([24])\s*cl|([24])0\s*ml)$/i);
+      return m ? Number(m[1] || m[2] || m[3]) * 10 : null;
+    };
+    if (serving) return parse(serving);
+    const suffix = String(product.name).match(/(?:0[.,]0[24]\s*l?|\b[24]\s*cl|\b[24]0\s*ml)\s*$/i);
+    if (suffix) return parse(suffix[0].trim());
+    // The supplied Agnis spirits list uses a standard 4cl shot, including old
+    // labels ending in OCR "0,041" and named promotions without a portion.
+    // Never infer a portion for a custom item (e.g. a debt in this category).
+    const imported = catalog.products.find(p => p.id === product.id);
+    return imported && shotCategories.has(product.category) && imported.name === product.name && imported.category === product.category ? 40 : null;
+  }
+  function smallShot(product) {
+    const baseServingMl = shotVolumeMl(product);
+    if (!baseServingMl) return null;
+    const baseName = product.name.replace(/(?:0\.)?0[.,]0[24](?:\s*l|1)?\s*$|\s*\b[24]\s*cl\s*$|\s*\b[24]0\s*ml\s*$/i, '').trim();
+    return {name:baseName + ' · 2 cl', serving:'', servingMl:20, baseServingMl,
+      price:baseServingMl === 20 ? product.price : product.smallShotPrice ?? (product.price === null ? null : Math.round(product.price / 2))};
+  }
+  function recipeForLine(line, recipe) {
+    const result = structuredClone(recipe);
+    if (line.servingMl !== 20 || !result || result.mode === 'no_stock') return result;
+    check([20,40].includes(line.baseServingMl), 'Chybí původní velikost panáku.');
+    check(result.mode === 'recipe' && Array.isArray(result.components) && result.components.length > 0
+      && result.components.every(c => c.unit === 'ml' && Number.isFinite(c.quantity) && c.quantity > 0)
+      && Math.abs(result.components.reduce((n,c) => n + c.quantity, 0) - line.baseServingMl) < 0.000001,
+      `Pro 2cl panák nastav recepturu běžné ${line.baseServingMl / 10}cl porce v mililitrech.`);
+    result.components = result.components.map(c => ({...c,quantity:Math.round(c.quantity * 20 / line.baseServingMl * 1000000) / 1000000}));
+    return result;
+  }
+  function validatePortion(line) {
+    if (line.servingMl !== undefined || line.baseServingMl !== undefined) check(line.servingMl === 20 && [20,40].includes(line.baseServingMl), 'Poškozená velikost porce.');
+  }
   function refundVerification(sale, p, now) {
     check(clean(p.reason), 'Doplň důvod vratky.');
     if (!sale.card) return null;
@@ -130,7 +169,9 @@
       check(integer(p.price) && p.price > 0, 'Cena musí být vyšší než nula.');
       check(p.vatRate === null || (Number.isFinite(p.vatRate) && p.vatRate >= 0 && p.vatRate <= 100), 'Neplatná sazba DPH.');
       const old = s.products.find(x => x.id === p.id);
-      result = { id: old?.id || uid(), sourceCode: old?.sourceCode || '', priceNote: '', name: clean(p.name), category: clean(p.category, 40) || 'Ostatní', serving: clean(p.serving, 40), price: p.price, vatRate: p.vatRate, active: p.active !== false, stockProductId: clean(p.stockProductId) };
+      const smallShotPrice = own(p, 'smallShotPrice') ? p.smallShotPrice : old?.smallShotPrice ?? null;
+      check(smallShotPrice === null || (integer(smallShotPrice) && smallShotPrice > 0), 'Cena 2cl panáku musí být kladná částka.');
+      result = { id: old?.id || uid(), sourceCode: old?.sourceCode || '', priceNote: '', name: clean(p.name), category: clean(p.category, 40) || 'Ostatní', serving: clean(p.serving, 40), price: p.price, vatRate: p.vatRate, active: p.active !== false, stockProductId: clean(p.stockProductId), smallShotPrice };
       if (old) Object.assign(old, result); else s.products.push(result);
     } else if (type === 'archiveProduct') {
       const product = s.products.find(x => x.id === p.id); check(product, 'Položka neexistuje.'); product.active = false;
@@ -140,12 +181,16 @@
       check(s.settings.vat !== 'payer' || pr.vatRate !== null, 'U této položky nejdřív nastav sazbu DPH v ceníku.');
       const quantity = p.quantity === undefined ? 1 : p.quantity;
       check(integer(quantity, 999) && quantity > 0, 'Vyber množství 1 až 999.');
-      if (o.id !== 'bar' && (!o.lines.length || !o.visitId || !o.visitStartedAt)) { o.visitId = uid(); o.visitStartedAt = now; }
-      const line = o.lines.find(x => !own(x, 'stockRecipe') && x.productId === pr.id && x.price === pr.price && x.vatRate === pr.vatRate && x.name === pr.name && x.serving === pr.serving);
+      check(p.servingMl === undefined || p.servingMl === 20, 'Vyber běžnou porci nebo 2 cl.');
+      const portion = p.servingMl === 20 ? smallShot(pr) : {name:pr.name,serving:pr.serving,price:pr.price};
+      check(portion && integer(portion.price) && portion.price > 0, 'Tuto položku nelze prodat jako 2cl panák. Doplň skutečnou porci a cenu.');
+      const nextLine = {productId:pr.id,sourceCode:pr.sourceCode || '',stockProductId:pr.stockProductId,vatRate:pr.vatRate,...portion};
+      const line = o.lines.find(x => sameLine(x,nextLine));
       check(!line || line.quantity + quantity <= 999, 'Limit množství je 999.');
-      check(sum(o.lines) + pr.price * quantity <= 100000000, 'Překročen limit účtu.');
+      check(sum(o.lines) + portion.price * quantity <= 100000000, 'Překročen limit účtu.');
+      if (o.id !== 'bar' && (!o.lines.length || !o.visitId || !o.visitStartedAt)) { o.visitId = uid(); o.visitStartedAt = now; }
       if (line) line.quantity += quantity;
-      else o.lines.push({ id: uid(), productId: pr.id, sourceCode: pr.sourceCode || '', stockProductId: pr.stockProductId, name: pr.name, serving: pr.serving, price: pr.price, vatRate: pr.vatRate, quantity });
+      else o.lines.push({id:uid(),...nextLine,quantity});
       check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
     } else if (type === 'removeLine') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.'); check(clean(p.reason), 'Doplň důvod opravy.');
@@ -237,11 +282,11 @@
     check(s.settings && typeof s.settings.venue === 'string' && ['unknown', 'payer', 'nonpayer'].includes(s.settings.vat) && integer(s.sequence) && integer(s.revision, 1000000000), 'Poškozená záloha.');
     for (const collection of [s.products, s.orders, s.shifts, s.receipts]) check(collection.every(x => x && typeof x.id === 'string') && new Set(collection.map(x => x.id)).size === collection.length, 'Neplatné identifikátory v záloze.');
     check(s.orders.some(o => o.id === 'bar'), 'Chybí účet rychlého prodeje.');
-    for (const p of s.products) check(typeof p.name === 'string' && typeof p.category === 'string' && (p.price === null || integer(p.price)), 'Poškozený ceník.');
+    for (const p of s.products) check(typeof p.name === 'string' && typeof p.category === 'string' && (p.price === null || integer(p.price)) && (p.smallShotPrice == null || (integer(p.smallShotPrice) && p.smallShotPrice > 0)), 'Poškozený ceník.');
     for (const o of s.orders) {
       check(typeof o.name === 'string' && integer(o.revision, 1000000000) && Array.isArray(o.lines), 'Poškozený účet.');
       if (o.visitId !== undefined || o.visitStartedAt !== undefined) check(typeof o.visitId === 'string' && typeof o.visitStartedAt === 'string' && !Number.isNaN(Date.parse(o.visitStartedAt)), 'Poškozený čas návštěvy na účtu.');
-      for (const l of o.lines) check(typeof l.id === 'string' && typeof l.name === 'string' && integer(l.price) && l.price > 0 && integer(l.quantity, 999) && l.quantity > 0, 'Neplatná položka v záloze.');
+      for (const l of o.lines) { check(typeof l.id === 'string' && typeof l.name === 'string' && integer(l.price) && l.price > 0 && integer(l.quantity, 999) && l.quantity > 0, 'Neplatná položka v záloze.'); validatePortion(l); }
     }
     check(s.shifts.filter(x => !x.closedAt).length <= 1, 'Záloha obsahuje více otevřených směn.');
     for (const sh of s.shifts) {
@@ -253,7 +298,7 @@
       check([r.total,r.cash,r.card,r.rounding].every(Number.isSafeInteger) && r.total === r.cash + r.card, 'Nesedí součet dokladu.');
       if (r.visitId !== undefined || r.visitStartedAt !== undefined) check(typeof r.visitId === 'string' && typeof r.visitStartedAt === 'string' && !Number.isNaN(Date.parse(r.visitStartedAt)), 'Poškozený začátek návštěvy na dokladu.');
       if (r.visitEndedAt !== undefined || r.visitDurationMinutes !== undefined) check(typeof r.visitEndedAt === 'string' && !Number.isNaN(Date.parse(r.visitEndedAt)) && integer(r.visitDurationMinutes, 10000000), 'Poškozený konec návštěvy na dokladu.');
-      for (const l of r.lines) check(integer(l.price) && integer(l.quantity, 999) && l.quantity > 0 && typeof l.name === 'string', 'Poškozená položka dokladu.');
+      for (const l of r.lines) { check(integer(l.price) && integer(l.quantity, 999) && l.quantity > 0 && typeof l.name === 'string', 'Poškozená položka dokladu.'); validatePortion(l); }
       const sign = r.kind === 'sale' ? 1 : -1;
       check(sign * sum(r.lines) + r.rounding === r.total && sign * r.cash >= 0 && sign * r.card >= 0, 'Nesedí položky dokladu.');
     }
@@ -263,7 +308,7 @@
     }
     return s;
   }
-  const api = { initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines, receiptAccount };
+  const api = { initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines, receiptAccount, shotVolumeMl, smallShot, recipeForLine };
   if (typeof module !== 'undefined') module.exports = api; else root.POSCore = api;
 })(globalThis);
 

@@ -109,7 +109,13 @@
       check(!s.orders.some(x => x.id !== o.id && x.name.toLocaleLowerCase('cs') === name.toLocaleLowerCase('cs')), 'Tento účet už existuje.');
       result = { type, orderId: o.id, previousName: o.name, name, at: now };
       o.name = name;
-      if(o.customerId||customerLike(name))ensureCustomer(s,o,now);
+      if(customerLike(name)){
+        const customer=ensureCustomer(s,o,now);
+        if(customerLike(result.previousName)&&!customer.aliases.some(a=>normalizeCustomerName(a)===normalizeCustomerName(result.previousName)))customer.aliases.push(result.previousName);
+      } else if(o.customerId) {
+        check(creditBalance(s,o.customerId)===0,'Zákazníka s kreditem nelze změnit na stůl. Nejdřív kredit vyčerpej nebo vrať.');
+        delete o.customerId;
+      }
       o.revision++;
     } else if (type === 'deleteOrder') {
       const o = order(); check(o.id !== 'bar' && !o.lines.length, 'Smazat lze pouze prázdný pojmenovaný účet.'); s.orders = s.orders.filter(x => x.id !== o.id);

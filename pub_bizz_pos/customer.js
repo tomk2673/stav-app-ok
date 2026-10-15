@@ -53,7 +53,7 @@
     const spend = sales.reduce((n,r) => n + r.total, 0);
     const itemMap = new Map();
     for (const receipt of sales) for (const line of receipt.lines || []) {
-      const id = line.productId || normalize(line.name+' '+(line.serving||''));
+      const id = JSON.stringify([line.productId || normalize(line.name),line.servingMl || 0,line.serving || '']);
       const row = itemMap.get(id) || {productId:line.productId||'',name:line.name,serving:line.serving||'',quantity:0,spend:0};
       row.name=line.name;row.serving=line.serving||row.serving;row.quantity+=line.quantity;row.spend+=line.price*line.quantity;itemMap.set(id,row);
     }

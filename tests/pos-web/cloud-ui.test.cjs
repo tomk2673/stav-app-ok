@@ -48,6 +48,53 @@ async function harness(seed=state=>state,role='owner'){
   const submit=()=>w.document.querySelector('#dialog-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
   return {dom,w,click,submit,get server(){return server;},calls,drop(){dropNext=true;},disconnect(){dropBefore=true;},hold(){holdNext=true;},release(){release?.();},external(type,payload){server=D.run(server,type,payload,{id:user.id,role:'owner'},[]).state;}};
 }
+test('2cl toggle marks real piece counts, keeps plus/quantity edits small and splits only selected small shots',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});return s;});try{
+  h.click('[data-action="category"][data-id="Pivo"]');const search=h.w.document.querySelector('#search');search.value='Radegast';search.dispatchEvent(new h.w.Event('input'));
+  h.click('[data-action="smallShot"]');assert.equal(h.w.document.querySelector('[data-action="smallShot"]').getAttribute('aria-pressed'),'true');
+  assert.match(h.w.document.querySelector('#entry-count-label').textContent,/2 cl/);assert.equal(h.w.document.querySelector('.product[data-id="agnis-50"]'),null);
+  h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-id="agnis-2810"]');
+  await until(()=>h.server.orders[0].lines.length===1,'three small shots');
+  const small=h.server.orders[0].lines[0];assert.equal(small.quantity,3);assert.equal(small.price,2750);assert.equal(small.servingMl,20);
+  assert.equal(h.calls.filter(c=>c.type==='addLine').length,1);assert.equal(h.w.document.querySelector('#entry-quantity').textContent,'1×');
+  h.click('[data-action="smallShot"]');h.click('.line [data-action="add"]');
+  await until(()=>h.server.orders[0].lines[0].quantity===4,'small plus');assert.equal(h.server.orders[0].lines.length,1);
+  h.click('.product[data-id="agnis-2810"]');await until(()=>h.server.orders[0].lines.length===2,'regular shot');
+  assert.equal(h.server.orders[0].lines[1].price,5500);assert.equal(h.server.orders[0].lines[1].quantity,1);
+  h.click('[data-action="quantityPad"][data-id="'+small.id+'"]');h.click('[data-qty="5"]');await until(()=>h.server.orders[0].lines[0].quantity===5,'five small shots');
+  h.click('[data-action="paySplit"]');await until(()=>h.w.document.querySelector('.payment-item'),'split ready');h.click('.payment-item');h.click('[data-qty="2"]');h.click('[data-payment-mode="card"]');
+  h.w.document.querySelector('[name="cardConfirmed"]').checked=true;h.submit();
+  await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'two small paid');
+  assert.equal(h.server.receipts[0].total,5500);assert.equal(h.server.receipts[0].lines[0].servingMl,20);assert.equal(h.server.receipts[0].lines[0].quantity,2);
+  assert.equal(h.server.orders[0].lines[0].quantity,3);assert.equal(h.server.orders[0].lines[1].quantity,1);
+ }finally{h.dom.window.close();}
+});
+test('2cl lost response replays the same portion and UUID without creating more shots',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});return s;});try{
+  h.click('[data-action="smallShot"]');h.click('[data-action="entryCount"][data-id="3"]');h.drop();h.click('.product[data-id="agnis-2810"]');
+  await until(()=>h.w.POSCloud.pending&&!h.w.POSCloud.busy,'uncertain small shots');const id=h.w.POSCloud.pending.requestId;
+  assert.equal(h.w.POSCloud.pending.payload.servingMl,20);h.click('[data-action="retryPending"]');
+  await until(()=>!h.w.POSCloud.pending&&!h.w.POSCloud.busy,'small shots verified');
+  assert.equal(h.server.orders[0].lines.length,1);assert.equal(h.server.orders[0].lines[0].quantity,3);assert.equal(h.server.orders[0].lines[0].price,2750);
+  assert.equal(h.calls.filter(c=>c.requestId===id).length,2);assert.equal(h.server.audit.filter(a=>a.type==='addLine').length,1);
+ }finally{h.dom.window.close();}
+});
+test('manager can set a separate 2cl price without changing the standard price',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});return s;});try{
+  h.click('[data-view="catalog"]');h.click('[data-action="editProduct"][data-id="agnis-2810"]');
+  h.w.document.querySelector('[name="smallShotPrice"]').value='30';h.submit();await until(()=>!h.w.document.querySelector('#dialog').open,'small price saved');
+  assert.equal(h.server.products.find(p=>p.id==='agnis-2810').price,5500);assert.equal(h.server.products.find(p=>p.id==='agnis-2810').smallShotPrice,3000);
+  h.click('[data-view="pos"]');h.click('[data-action="smallShot"]');assert.match(h.w.document.querySelector('.product[data-id="agnis-2810"] .product-price').textContent,/30/);
+  h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-id="agnis-2810"]');await until(()=>h.server.orders[0].lines.length===1,'custom small shots');assert.equal(C.sum(h.server.orders[0].lines),9000);
+ }finally{h.dom.window.close();}
+});
+test('setting a missing standard price retains the selected small size and count',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});s.products.find(p=>p.id==='agnis-2810').price=null;return s;});try{
+  h.click('[data-action="smallShot"]');h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-id="agnis-2810"]');
+  h.w.document.querySelector('[name="price"]').value='70';h.submit();await until(()=>h.server.orders[0].lines.length===1,'priced small shots');
+  assert.equal(h.server.orders[0].lines[0].servingMl,20);assert.equal(h.server.orders[0].lines[0].quantity,3);assert.equal(h.server.orders[0].lines[0].price,3500);
+ }finally{h.dom.window.close();}
+});
 test('rename UI preserves the same account, updates search and survives a lost response once',{concurrency:false},async()=>{
  const h=await harness(paidCorrectionSeed());try{
   const id=h.server.orders.find(o=>o.name==='Stůl 1').id;

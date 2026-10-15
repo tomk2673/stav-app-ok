@@ -25,8 +25,8 @@ async function fixture(mode='cash',mapped=true,substitutions=false){
  for(const file of ['20260925174410_pub_bizz_shared_register.sql','20260925174607_pub_bizz_payment_reservations.sql','20260927030252_pub_bizz_merge_orders.sql','20261001080000_pos_fast_split_restore_receipt.sql','20261003211245_fix_pos_merge_command_recovery.sql'])await db.exec(read('supabase/migrations/'+file));
  if(process.env.POS_COMMIT_FIXTURE)await db.exec(fs.readFileSync(process.env.POS_COMMIT_FIXTURE,'utf8'));
  if(process.env.POS_STOCK_SUPPORT)await db.exec(fs.readFileSync(process.env.POS_STOCK_SUPPORT,'utf8'));
- if(process.env.POS_STOCK_FIXTURE)await db.exec(fs.readFileSync(process.env.POS_STOCK_FIXTURE,'utf8'));
  if(substitutions)await db.exec(read('tests/fixtures/pub-bizz-stock-available.sql'));
+ if(process.env.POS_STOCK_FIXTURE)await db.exec(fs.readFileSync(process.env.POS_STOCK_FIXTURE,'utf8'));
  await db.exec(read(migration));
  await db.exec(read('supabase/migrations/20261014231114_pos_rename_order.sql'));
  let s=C.initial();s.venueId=venue;
@@ -53,6 +53,42 @@ async function fixture(mode='cash',mapped=true,substitutions=false){
  const snapshot=async()=>({register:(await db.query('select state,revision from pos_registers')).rows,receipts:(await db.query('select id,payload from pos_receipts order by occurred_at,id')).rows,stock:(await db.query('select product_id,quantity_ml,quantity_units,untracked_units,source_type,source_id from stock_movements order by id')).rows,requests:(await db.query('select request_id from pos_requests order by request_id')).rows,audit:(await db.query('select event_type,after_data from audit_events order by id')).rows});
  return {db,org,venue,owner,staff,sale,target,liquid,counted,stock,run,commit,snapshot,get s(){return s;}};
 }
+test('SQL 2cl partial payment deducts exactly 20ml per piece and restoration/re-sale never halves stock twice',async()=>{
+ const f=await fixture('cash',false,true);try{
+  await f.run('recipe',{productId:'agnis-2810',version:0,mode:'recipe',components:[{productId:f.liquid,unit:'ml',quantity:40}]});
+  const id=f.target.id;
+  await f.run('addLine',{orderId:id,productId:'agnis-2810',quantity:3,servingMl:20},f.staff);
+  await f.run('addLine',{orderId:id,productId:'agnis-2810',quantity:2},f.staff);
+  const order=()=>f.s.orders.find(o=>o.id===id),small=order().lines.find(l=>l.servingMl===20);
+  const lock=(await f.run('beginPayment',{orderId:id,revision:order().revision},f.staff)).result;
+  const sale=(await f.run('checkout',{orderId:id,revision:order().revision,paymentToken:lock.token,operationId:crypto.randomUUID(),selected:[{id:small.id,quantity:2}],mode:'card',received:0,cardConfirmed:true},f.staff)).result;
+  assert.equal(sale.total,5500);assert.equal(sale.lines[0].quantity,2);assert.equal(sale.lines[0].stockRecipe.components[0].quantity,20);
+  const deducted=(await f.db.query("select sum(quantity_ml)::text as ml from stock_movements where source_id=$1 and movement_type='sale'",[sale.id])).rows[0];assert.equal(deducted.ml,'-40');
+  assert.equal(order().lines.find(l=>l.id===small.id).quantity,1);assert.equal(order().lines.find(l=>!l.servingMl).quantity,2);
+  await f.run('restoreReceipt',{receiptId:sale.id,reason:'TEST 2cl',cardConfirmed:true,terminalReference:'TEST-2CL-REFUND'});
+  const restored=order().lines.find(l=>l.stockRecipe);assert.equal(restored.quantity,2);assert.equal(restored.stockRecipe.components[0].quantity,20);assert.equal(restored.servingMl,20);
+  const product=f.s.products.find(p=>p.id==='agnis-2810');
+  await f.run('product',{...product,price:8000,serving:'0,02 l'});
+  await f.run('recipe',{productId:product.id,version:1,mode:'recipe',components:[{productId:f.liquid,unit:'ml',quantity:20}]});
+  const again=(await f.run('beginPayment',{orderId:id,revision:order().revision},f.staff)).result;
+  const resold=(await f.run('checkout',{orderId:id,revision:order().revision,paymentToken:again.token,operationId:crypto.randomUUID(),selected:[{id:restored.id,quantity:2}],mode:'card',received:0,cardConfirmed:true},f.staff)).result;
+  assert.equal(resold.total,5500);assert.equal(resold.lines[0].stockRecipe.components[0].quantity,20);
+  assert.equal((await f.db.query("select sum(quantity_ml)::text as ml from stock_movements where source_id=$1 and movement_type='sale'",[resold.id])).rows[0].ml,'-40');
+  assert.deepEqual((await f.db.query('select payload from pos_receipts where id=$1',[sale.id])).rows[0].payload,sale);
+ }finally{await f.db.close();}
+});
+test('SQL 2cl missing-recipe sale later resolves exactly its own portion once',async()=>{
+ const f=await fixture('cash',false);try{
+  const id=f.target.id;await f.run('addLine',{orderId:id,productId:'agnis-2810',quantity:3,servingMl:20},f.staff);
+  const o=f.s.orders.find(o=>o.id===id),lock=(await f.run('beginPayment',{orderId:id,revision:o.revision},f.staff)).result;
+  const sale=(await f.run('checkout',{orderId:id,revision:o.revision,paymentToken:lock.token,operationId:crypto.randomUUID(),selected:o.lines.map(l=>({id:l.id,quantity:l.quantity})),mode:'card',received:0,cardConfirmed:true},f.staff)).result;
+  assert.equal((await f.db.query('select status from pos_stock_lines where receipt_id=$1',[sale.id])).rows[0].status,'missing_recipe');
+  await f.run('recipe',{productId:'agnis-2810',version:0,mode:'recipe',components:[{productId:f.liquid,unit:'ml',quantity:40}]});
+  await f.run('resolveStock',{receiptId:sale.id,lineId:sale.lines[0].id});
+  const before=await f.snapshot();assert.equal((await f.db.query("select sum(quantity_ml)::text as ml from stock_movements where source_id=$1 and movement_type='sale'",[sale.id])).rows[0].ml,'-60');
+  await assert.rejects(f.run('resolveStock',{receiptId:sale.id,lineId:sale.lines[0].id}),/already processed/);assert.deepEqual(await f.snapshot(),before);
+ }finally{await f.db.close();}
+});
 test('SQL rename preserves a partial sale, rejects altered state, deduplicates requests and keeps RPC private',async()=>{
  const f=await fixture('cash',true);try{
   await f.run('addLine',{orderId:f.target.id,productId:'agnis-2810',quantity:2},f.staff);

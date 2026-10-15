@@ -244,6 +244,35 @@ async function flow(browser,base,width){
     throw error;
   }finally{await context.close();}
 }
+async function smallShotFlow(browser,base,width){
+ const mobile=browser.browserType().name()==='webkit'&&width<631;
+ const context=await contextFor(browser,{width,...(mobile?{isMobile:true,hasTouch:true}:{})}),f=fixture();
+ await context.route(api+'/**',f.route);const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ try{
+  await page.goto(base+'/pub_bizz_pos/index.html');await page.locator('[name="email"]').fill('owner@example.test');await page.locator('[name="password"]').fill('test-password');await page.locator('#login-form button').click();
+  await page.locator('[data-action="openShift"]').click();await page.locator('[name="opening"]').fill('0');await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
+  await page.locator('#account-search').fill('Malé panáky');await page.locator('#account-results [data-action="newOrder"]').click();await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
+  const id=f.state.orders.find(o=>o.name==='Malé panáky').id;
+  await page.locator('[data-action="smallShot"]').click();await page.locator('[data-action="entryCount"][data-id="3"]').click();
+  assert.equal(await page.locator('[data-action="smallShot"]').getAttribute('aria-pressed'),'true');assert.equal(await page.locator('.product[data-id="agnis-50"]').count(),0);
+  const rect=await page.locator('[data-action="smallShot"]').boundingBox();assert.ok(rect.width>=64&&rect.height>=44,'2cl switch is a usable touch target');
+  if(process.env.POS_SMALL_SHOT_SCREENSHOTS){fs.mkdirSync(process.env.POS_SMALL_SHOT_SCREENSHOTS,{recursive:true});await page.locator('.order-entry').screenshot({path:path.join(process.env.POS_SMALL_SHOT_SCREENSHOTS,browser.browserType().name()+'-'+width+'-entry.png')});}
+  await page.locator('.product[data-id="agnis-2810"]').click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='3×');
+  const small=f.state.orders.find(o=>o.id===id).lines[0];assert.equal(small.servingMl,20);assert.equal(small.quantity,3);assert.equal(small.price,2750);assert.match(small.name,/2 cl/);
+  if(process.env.POS_SMALL_SHOT_SCREENSHOTS)await page.locator('.receipt').screenshot({path:path.join(process.env.POS_SMALL_SHOT_SCREENSHOTS,browser.browserType().name()+'-'+width+'-bill.png')});
+  await page.locator('[data-action="smallShot"]').click();await page.locator('.line [data-action="add"]').click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='4×');
+  await page.locator('.product[data-id="agnis-2810"]').click();await until(page,()=>document.querySelectorAll('.quantity-tap').length===2);
+  assert.equal(f.state.orders.find(o=>o.id===id).lines[1].price,5500);
+  await page.locator('[data-action="paySplit"]').click();await page.locator('.payment-item').filter({hasText:'2 cl'}).click();await page.locator('[data-qty="2"]').click();
+  await page.locator('[data-payment-mode="card"]').click();await page.locator('[name="cardConfirmed"]').check();await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
+  assert.equal(f.state.receipts[0].total,5500);assert.equal(f.state.receipts[0].lines[0].quantity,2);assert.equal(f.state.receipts[0].lines[0].servingMl,20);
+  await page.reload();await page.locator('#account-search').fill('Malé panáky');await page.locator('#account-results [data-action="account"]').click();
+  await page.locator('.line [data-action="add"]').first().click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='3×');
+  const remaining=f.state.orders.find(o=>o.id===id).lines;assert.equal(remaining[0].quantity,3);assert.equal(remaining[0].price,2750);assert.equal(remaining[1].quantity,1);
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'2cl controls do not overflow');assert.deepEqual(errors,[]);
+  return {width,threeSmallShots:true,plusKeepsSize:true,splitKeepsRemainder:true,reloadKeepsSize:true};
+ }finally{await context.close();}
+}
 async function failures(browser,base){
   for(const mode of ['sdk','app','storage','quota','api']){
     const context=await contextFor(browser);try{
@@ -277,7 +306,7 @@ async function failures(browser,base){
       const browser=await require(profile.module)[profile.engine].launch(options);
       try{
         const result={browser:profile.name,version:browser.version(),os:process.platform,flows:[]};
-        for(const width of profile.widths){result.flows.push(await flow(browser,base,width));console.log(profile.name+' '+width+'px: flow passed');}
+        for(const width of profile.widths){result.flows.push({...await flow(browser,base,width),smallShots:await smallShotFlow(browser,base,width)});console.log(profile.name+' '+width+'px: flow passed');}
         result.failures=await failures(browser,base);results.push(result);console.log(JSON.stringify(result));
       }finally{await browser.close();}
     }

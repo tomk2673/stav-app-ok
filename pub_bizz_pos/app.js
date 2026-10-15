@@ -9,7 +9,7 @@ const inputMoney = n => String(n / 100).replace('.', ',');
 const date = d => new Date(d).toLocaleString('cs-CZ', {timeZone:'Europe/Prague', day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
 const colors = {'Pivo':'#f1c986','Destiláty':'#b1bcf3','Nealko':'#8acbb6','Víno':'#dbabd6','Koktejly':'#efaa91','Likéry':'#b6c49f','Rumy':'#daba8b','Whisky':'#e2b46a','Brandy':'#e3aa9e','Teplé nápoje':'#c6ba91','Snacks':'#98b8df'};
 let state, view = 'pos', current = 'bar', category = 'Vše', query = '', toastTimer, submitting = false;
-let accountQuery = '', accountSearchOpen = false, entryQuantity = 1;
+let accountQuery = '', accountSearchOpen = false, entryQuantity = 1, entryServingMl;
 let salesHistory, salesCounts;
 const normalizeSearch = value => String(value).toLocaleLowerCase('cs').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 const getOrder = () => state.orders.find(x => x.id === current) || state.orders[0];
@@ -129,6 +129,9 @@ function updateEntryContext() {
   if($('#entry-account-name'))$('#entry-account-name').textContent=o.name;
   if($('#entry-account-total'))$('#entry-account-total').textContent=fmt(C.sum(o.lines));
   if($('#entry-quantity'))$('#entry-quantity').textContent=`${entryQuantity}×`;
+  const portionButton=document.querySelector('[data-action="smallShot"]');
+  if(portionButton){portionButton.classList.toggle('active',entryServingMl===20);portionButton.setAttribute('aria-pressed',String(entryServingMl===20));}
+  if($('#entry-count-label'))$('#entry-count-label').textContent=entryServingMl===20?'Počet malých panáků · 2 cl':'Počet';
   const profileButton=document.querySelector('[data-action="customerProfile"]');if(profileButton)profileButton.hidden=!customerAccount(o);
   document.querySelectorAll('[data-action="entryCount"]').forEach(b=>{
     const active=Number(b.dataset.id)===entryQuantity;
@@ -146,18 +149,18 @@ function selectAccount(id) {
   renderPOSFast();renderProducts();renderAccountResults();
 }
 function renderPOS() {
-  const o=getOrder(),sh=C.activeShift(state),activeProducts=state.products.filter(x=>x.active),cats=['Vše',...new Set(activeProducts.map(x=>x.category))];
+  const o=getOrder(),sh=C.activeShift(state),activeProducts=state.products.filter(x=>x.active&&(entryServingMl!==20||C.smallShot(x))),cats=['Vše',...new Set(activeProducts.map(x=>x.category))];
   const canMerge=sh&&o.lines.length&&!o.paymentLock&&state.orders.some(x=>x.id!==o.id&&!x.paymentLock);
   const canResume=!o.paymentLock||o.paymentLock.actorId===window.POSCloud?.user?.id||['owner','manager'].includes(window.POSCloud?.meta.role);
   const customer=customerAccount(o);
   const accounts=state.orders.map(a=>`<button type="button" class="account ${a.id===o.id?'active':''}" data-action="account" data-id="${E(a.id)}" aria-pressed="${a.id===o.id}"><span class="account-number">${E(accountNumber(a)||'•')}</span><span class="account-name">${E(a.name)}<span class="account-amount">${a.lines.length?fmt(C.sum(a.lines)):'Prázdný účet'}</span></span></button>`).join('');
-  const lines=o.lines.map(l=>`<div class="line"><div class="line-top"><span>${E(l.name)}${l.serving?`<small class="small"> · ${E(l.serving)}</small>`:''}</span><strong>${fmt(l.price*l.quantity)}</strong></div><div class="line-bottom"><span>${fmt(l.price)} / ks</span><div class="quantity"><button type="button" data-action="minus" data-id="${E(l.id)}" aria-label="Odebrat ${E(l.name)}">−</button><button type="button" class="quantity-tap" data-action="quantityPad" data-id="${E(l.id)}" aria-label="Množství ${E(l.name)}">${l.quantity}×</button><button type="button" data-action="add" data-id="${E(l.productId)}" aria-label="Přidat ${E(l.name)}">+</button></div></div></div>`).join('');
+  const lines=o.lines.map(l=>`<div class="line"><div class="line-top"><span>${E(l.name)}${l.serving?`<small class="small"> · ${E(l.serving)}</small>`:''}</span><strong>${fmt(l.price*l.quantity)}</strong></div><div class="line-bottom"><span>${fmt(l.price)} / ks</span><div class="quantity"><button type="button" data-action="minus" data-id="${E(l.id)}" aria-label="Odebrat ${E(l.name)}">−</button><button type="button" class="quantity-tap" data-action="quantityPad" data-id="${E(l.id)}" aria-label="Množství ${E(l.name)}">${l.quantity}×</button><button type="button" data-action="add" data-id="${E(l.productId)}" data-serving-ml="${l.servingMl||''}" aria-label="Přidat ${E(l.name)}">+</button></div></div></div>`).join('');
   return `<div class="pos-layout">
     <aside class="accounts"><div class="section-label"><span class="eyebrow">Otevřené účty</span><span class="badge">${state.orders.filter(x=>x.lines.length).length}</span></div>${accounts}${btn('+ Nový účet','newOrder','add-account')}</aside>
     <section class="catalog-area">
       <div class="order-entry"><div class="entry-target"><span>Na účet</span><strong id="entry-account-name">${E(o.name)}</strong><button type="button" class="customer-profile-button" data-action="customerProfile" aria-label="Detail zákazníka" ${customer?'':'hidden'}>Profil</button><span id="entry-account-total">${fmt(C.sum(o.lines))}</span></div>
         <div class="account-finder"><label class="sr-only" for="account-search">Stůl nebo zákazník; prázdné pole znamená rychlý prodej</label><input id="account-search" type="search" placeholder="Stůl / zákazník · prázdné = rychlý prodej" autocomplete="off" value="${E(accountQuery||(o.id==='bar'?'':o.name))}" aria-expanded="false" aria-controls="account-results"><div id="account-results" class="account-results" hidden></div></div>
-        <div class="entry-counts" aria-label="Počet kusů pro další položku"><span>Počet</span>${[1,2,3,4,5].map(n=>btn(n,'entryCount',`entry-count ${n===entryQuantity?'active':''}`,`data-id="${n}" aria-pressed="${n===entryQuantity}"`)).join('')}${btn(`<strong id="entry-quantity">${entryQuantity}×</strong><small>Jiný počet</small>`,'entryQuantity','entry-calculator','aria-label="Zadat počet kusů na velké klávesnici"')}</div>
+        <div class="entry-counts" aria-label="Počet kusů pro další položku"><div class="entry-count-options"><span id="entry-count-label">${entryServingMl===20?'Počet malých panáků · 2 cl':'Počet'}</span>${btn('2 cl','smallShot',`entry-portion ${entryServingMl===20?'active':''}`,`aria-pressed="${entryServingMl===20}" aria-label="Malý panák 2 cl"`)}</div>${[1,2,3,4,5].map(n=>btn(n,'entryCount',`entry-count ${n===entryQuantity?'active':''}`,`data-id="${n}" aria-pressed="${n===entryQuantity}"`)).join('')}${btn(`<strong id="entry-quantity">${entryQuantity}×</strong><small>Jiný počet</small>`,'entryQuantity','entry-calculator','aria-label="Zadat počet kusů na velké klávesnici"')}</div>
       </div>
       ${window.POSCloud&&o.paymentLock?`<div class="notice"><span>Účet je rezervovaný pro rozpracovanou platbu.</span>${btn('Zkontrolovat platbu','checkPayment','secondary')}</div>`:''}
       ${!sh?`<div class="notice"><span>Začni směnu a zadej hotovost v pokladně.</span>${btn('Otevřít směnu','openShift','shift-start')}</div>`:''}
@@ -256,7 +259,8 @@ function productSalesCounts() {
 function renderProducts() {
   const norm = normalizeSearch;
   const counts = productSalesCounts(), personal = customerAccount(getOrder()) ? Customer.productCounts(state,getOrder().name) : null;
-  const products = state.products.filter(p => p.active && (query || category === 'Vše' || p.category === category) && norm(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(norm(query)))
+  const displayProducts = entryServingMl===20 ? state.products.map(p=>{const portion=C.smallShot(p);return portion?{...p,...portion}:null;}).filter(Boolean) : state.products;
+  const products = displayProducts.filter(p => p.active && (query || category === 'Vše' || p.category === category) && norm(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(norm(query)))
     .sort((a, b) => (personal?.get(b.id) || 0) - (personal?.get(a.id) || 0) || (counts.get(b.id) || 0) - (counts.get(a.id) || 0));
   $('#products').innerHTML = products.map(p => `<button class="product" style="--category:${colors[p.category] || '#a5c99a'}" data-action="add" data-id="${E(p.id)}"><span class="product-cat">${E(p.category)}${p.sourceCode ? ` · #${E(p.sourceCode)}` : ''}</span><span class="product-name">${E(p.name)}</span>${p.serving ? `<span class="product-serving">${E(p.serving)}</span>` : ''}<span class="product-price ${p.price === null ? 'unset' : ''}">${p.price === null ? (p.priceNote ? E(p.priceNote) + ' · zadat cenu' : 'Doplnit cenu') : fmt(p.price)}</span><span class="product-plus">+</span></button>`).join('') + `<button class="product quick-product" data-action="newProduct"><span>+</span>Nová položka</button>`;
 }
@@ -315,12 +319,12 @@ function mergeOrders() {
     $('#merge-summary').innerHTML = target ? `<div class="summary-row"><span>${E(source.name)}</span><strong>${fmt(C.sum(source.lines))}</strong></div><div class="summary-row"><span>${E(target.name)}</span><strong>${fmt(C.sum(target.lines))}</strong></div><div class="summary-row total"><span>Celkem</span><strong>${fmt(C.sum(source.lines)+C.sum(target.lines))}</strong></div><p>Společný účet: <strong>${E(target.name)}</strong></p>` : 'Vyber účet pro zobrazení společné částky.';
   });
 }
-function editProduct(id, addAfter = false) {
+function editProduct(id, addAfter = false, addContext = {orderId:current,quantity:entryQuantity,servingMl:entryServingMl}) {
   const p = state.products.find(x => x.id === id) || {name:'',category:category !== 'Vše' ? category : 'Destiláty',serving:'',price:null,vatRate:null,stockProductId:''};
-  showDialog(p.id ? 'Upravit položku' : 'Nová položka', `<div class="form-grid">${field('Název','name',p.name,'required maxlength="120"',true)}${field('Cena v Kč','price',p.price === null ? '' : inputMoney(p.price),'required inputmode="decimal" placeholder="Zadej skutečnou cenu"')}${field('Velikost porce','serving',p.serving,'maxlength="40" placeholder="např. 0,04 l"')}<label class="field">Kategorie<input name="category" list="category-list" value="${E(p.category)}" maxlength="40" required><datalist id="category-list">${['Pivo','Destiláty','Nealko','Víno','Koktejly','Káva','Ostatní'].map(x=>`<option>${x}</option>`).join('')}</datalist></label>${field('Sazba DPH (%)','vatRate',p.vatRate ?? '',`type="number" min="0" max="100" step="0.01" ${state.settings.vat === 'payer' ? 'required' : ''} placeholder="Nezadáno"`)}</div>`, async f => {
-    const pr = await command('product', {id:p.id,name:f.get('name'),category:f.get('category'),price:C.money(f.get('price')),serving:f.get('serving'),vatRate:f.get('vatRate') === '' ? null : Number(f.get('vatRate')),stockProductId:p.stockProductId});
+  showDialog(p.id ? 'Upravit položku' : 'Nová položka', `<div class="form-grid">${field('Název','name',p.name,'required maxlength="120"',true)}${field('Cena v Kč','price',p.price === null ? '' : inputMoney(p.price),'required inputmode="decimal" placeholder="Zadej skutečnou cenu"')}${field('Velikost porce','serving',p.serving,'maxlength="40" placeholder="např. 0,04 l"')}${C.shotVolumeMl(p)===40?field('Cena 2 cl v Kč (prázdné = polovina)','smallShotPrice',p.smallShotPrice==null?'':inputMoney(p.smallShotPrice),'inputmode="decimal" placeholder="Polovina běžné ceny"'):''}<label class="field">Kategorie<input name="category" list="category-list" value="${E(p.category)}" maxlength="40" required><datalist id="category-list">${['Pivo','Destiláty','Nealko','Víno','Koktejly','Káva','Ostatní'].map(x=>`<option>${x}</option>`).join('')}</datalist></label>${field('Sazba DPH (%)','vatRate',p.vatRate ?? '',`type="number" min="0" max="100" step="0.01" ${state.settings.vat === 'payer' ? 'required' : ''} placeholder="Nezadáno"`)}</div>`, async f => {
+    const pr = await command('product', {id:p.id,name:f.get('name'),category:f.get('category'),price:C.money(f.get('price')),serving:f.get('serving'),vatRate:f.get('vatRate') === '' ? null : Number(f.get('vatRate')),stockProductId:p.stockProductId,...(f.has('smallShotPrice')?{smallShotPrice:f.get('smallShotPrice')===''?null:C.money(f.get('smallShotPrice'))}:{})});
     return pr;
-  }, addAfter && C.activeShift(state) ? 'Uložit a přidat na účet' : 'Uložit položku', async pr => { if (addAfter && C.activeShift(state)) await command('addLine',{orderId:current,productId:pr.id}); toast('Položka uložená.'); });
+  }, addAfter && C.activeShift(state) ? 'Uložit a přidat na účet' : 'Uložit položku', async pr => { if (addAfter && C.activeShift(state)) {entryQuantity=1;await command('addLine',{...addContext,productId:pr.id});} toast('Položka uložená.'); });
 }
 function finishPayment(r) {
   window.paymentAbort?.abort();
@@ -443,13 +447,14 @@ function bulkProducts(){showDialog('Hromadně vložit ceník',`<p class="help">K
 const actions={
   quantityPad:id=>quantityPad(id),
   entryCount:id=>{entryQuantity=Number(id);updateEntryContext();},entryQuantity:entryQuantityPad,
+  smallShot:()=>{entryServingMl=entryServingMl===20?undefined:20;if(entryServingMl===20){const shots=state.products.filter(p=>p.active&&C.smallShot(p));if(!shots.some(p=>p.category===category))category='Vše';if(query&&!shots.some(p=>normalizeSearch(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(normalizeSearch(query))))query='';}render();},
   account:id=>selectAccount(id),customerProfile,category:async id=>{category=id;query='';render();},openShift,renameOrder,mergeOrders,
   newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta (nepovinné)','name',accountQuery.trim(),'maxlength="120" placeholder="Bez vyplnění = rychlý prodej"'),f=>{
     const name=String(f.get('name')||'').trim();
     return name?command('newOrder',{name}):{id:'bar'};
   },'Pokračovat',r=>selectAccount(r.id)),
   deleteOrder:async()=>{await command('deleteOrder',{orderId:current});current='bar';render();},
-  add:async (id,button)=>{const p=state.products.find(x=>x.id===id);if(!p)return;if(p.price===null){editProduct(id,true);return;}if(!C.activeShift(state)){openShift();return;}const quantity=button?.classList.contains('product')?entryQuantity:1,orderId=current;entryQuantity=1;updateEntryContext();await command('addLine',{orderId,productId:id,quantity},true);},
+  add:async (id,button)=>{const p=state.products.find(x=>x.id===id);if(!p)return;const fromCatalog=button?.classList.contains('product'),quantity=fromCatalog?entryQuantity:1,servingMl=fromCatalog?entryServingMl:button?.dataset.servingMl==='20'?20:undefined,orderId=current;if(p.price===null){editProduct(id,true,{orderId,quantity,servingMl});return;}if(!C.activeShift(state)){openShift();return;}entryQuantity=1;updateEntryContext();await command('addLine',{orderId,productId:id,quantity,servingMl},true);},
   minus:async id=>{await command('removeLine',{orderId:current,lineId:id,reason:'Oprava namarkování'},true);},
   newProduct:()=>editProduct(),editProduct:id=>editProduct(id),archiveProduct:id=>showDialog('Skrýt položku',`<p class="help">${E(state.products.find(x=>x.id===id)?.name)} zmizí z nabídky. Existující účty a doklady zůstanou.</p>`,()=>command('archiveProduct',{id}),'Skrýt'),
   checkPayment:()=>{const o=structuredClone(getOrder());showDialog('Rozpracovaná platba','<p class="help">Ověř u obsluhy a na terminálu, zda už host platil. Pokud už platba proběhla, pokračuj jejím zapsáním a na terminálu ji neopakuj. Rezervace po zavření okna zůstává.</p><label class="field">Co provést<select name="operation"><option value="cash">Pokračovat v hotovostní platbě</option><option value="card">Pokračovat v karetní platbě</option><option value="split">Pokračovat v rozdělení účtu</option><option value="cancel">Host nezaplatil — uvolnit účet</option></select></label><label class="inline-check"><input type="checkbox" name="checked" required>Stav platby jsem zkontroloval/a.</label>',async f=>{if(f.get('operation')==='cancel')await command('cancelPayment',{orderId:o.id,paymentToken:o.paymentLock.token,terminalChecked:f.has('checked'),reason:'Obsluha ověřila, že host nezaplatil'});return f.get('operation');},'Pokračovat',operation=>{if(operation!=='cancel')return pay(operation,true);});},

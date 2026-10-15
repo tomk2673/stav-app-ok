@@ -228,6 +228,7 @@ function customerProfile() {
   const o=getOrder(); if(!customerAccount(o))return;
   const p=Customer.profile(state,o.name,o,new Date().toISOString());
   const rows=p.items.map(x=>`<tr><td><strong>${E(x.name)}</strong>${x.serving?`<br><span class="muted small">${E(x.serving)}</span>`:''}</td><td class="amount">${x.quantity}×</td><td class="amount">${fmt(x.spend)}</td></tr>`).join('');
+  const payments=p.payments.slice(0,12).map(r=>`<tr><td><strong>${date(r.at)}</strong><br><span class="muted small">${E(r.number||'Doklad')}</span></td><td>${paymentLabel(r)}</td><td class="amount">${fmt(r.total)}</td></tr>`).join('');
   const rank=p.rank?`#${p.rank} z ${p.competitors}`:'—';
   showDialog(o.name+` · zákazník`,`<div class="customer-profile">
     ${p.currentMinutes?`<div class="customer-current"><span>Právě v baru</span><strong>${durationText(p.currentMinutes)}</strong></div>`:''}
@@ -235,7 +236,8 @@ function customerProfile() {
       <div><span>Kredit</span><strong>${fmt(p.creditBalance||0)}</strong></div>
       <div><span>Věrnostní body</span><strong>${p.points}</strong></div>
       <div><span>Pořadí</span><strong>${rank}</strong></div>
-      <div><span>Celkem utraceno</span><strong>${fmt(p.spend)}</strong></div>
+      <div><span>Historicky zaplaceno</span><strong>${fmt(p.spend)}</strong></div>
+      <div><span>Aktuálně nezaplaceno</span><strong>${fmt(p.openAmount||0)}</strong></div>
       <div><span>Položek</span><strong>${p.itemCount}</strong></div>
       <div><span>Návštěvy s časem</span><strong>${p.visitCount}</strong></div>
       <div><span>Čas v baru</span><strong>${durationText(p.totalMinutes)}</strong></div>
@@ -244,7 +246,9 @@ function customerProfile() {
     </div>
     ${window.POSCloud?'<div class="form-actions">'+btn('Dobít kredit','creditTopup','primary')+'</div>':''}
     <p class="help customer-rules"><strong>Kredit</strong> jsou předplacené peníze, 1 Kč = 1 Kč. <strong>Věrnostní body</strong> jsou samostatná odměna a nejdou použít jako peníze. 1 bod získáš za každých 10 Kč skutečně zaplacené útraty.</p>
-    <div class="customer-detail"><span>Dokladů: <strong>${p.receiptCount}</strong></span><span>Poslední útrata: <strong>${p.lastAt?date(p.lastAt):'—'}</strong></span></div>
+    <div class="customer-detail"><span>Zaplacených dokladů: <strong>${p.receiptCount}</strong></span><span>Poslední platba: <strong>${p.lastAt?date(p.lastAt):'—'}</strong></span></div>
+    <h3>Jednotlivé zaplacené doklady</h3>
+    <div class="table-wrap customer-payments"><table><thead><tr><th>Datum</th><th>Úhrada</th><th class="amount">Částka</th></tr></thead><tbody>${payments||'<tr><td colspan="3" class="empty">Zatím žádný zaplacený doklad.</td></tr>'}</tbody></table></div>
     <h3>Co nejčastěji bere</h3>
     <div class="table-wrap customer-drinks"><table><thead><tr><th>Položka</th><th class="amount">Počet</th><th class="amount">Útrata</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="empty">Po prvním zaplaceném dokladu se tu objeví statistika.</td></tr>'}</tbody></table></div>
   </div>`,null);

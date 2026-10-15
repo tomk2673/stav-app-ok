@@ -1,5 +1,6 @@
 -- Customer prepaid credit is monetary value, separate from loyalty rewards.
 -- Harden pos_commit so wallet movements cannot be smuggled through unrelated commands.
+-- Wallet state is append-only; balance is always derived from immutable movements.
 do $migration$
 declare
  definition text := pg_get_functiondef('public.pos_commit(uuid,uuid,uuid,text,bigint,text,jsonb,jsonb)'::regprocedure);

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Faktury z iPhonu · PUB INVOICES</title>
+  <link rel="stylesheet" href="../../pub_guru/v1.css">
+  <style>main{max-width:760px;margin:auto;padding:24px 16px 64px}.panel{margin:18px 0}li{margin:12px 0;line-height:1.6}p{line-height:1.6}a{color:var(--accent)}h1{font-size:30px}.steps{font-size:18px}table{width:100%;border-collapse:collapse}td,th{padding:12px 4px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}</style>
+</head>
+<body><main>
+  <a href="../../pub_guru/invoice-capture.html">← Faktury</a>
+  <h1>Vyfoť běžným fotoaparátem.<br>Pak sdílej do složky faktur.</h1>
+  <p>Dosavadní album ve Fotkách můžeš používat dál. Do PUB INVOICES už fotografii podruhé nenahráváš. Automat začne u souboru, který je skutečně uložený v Google Drive.</p>
+  <section class="panel">
+    <h2>Nejkratší spolehlivý postup</h2>
+    <ol class="steps">
+      <li>Vyfoť fakturu. Ve <strong>Fotkách</strong> otevři snímek nebo ve svém albu označ více faktur.</li>
+      <li>Klepni na <strong>Sdílet → Disk Google</strong>. Pokud Disk nevidíš, najdi jej přes Další a ověř přihlášení v aplikaci Disk Google.</li>
+      <li>Vyber správný účet, složku <strong>PUB GURU – Faktury</strong> a potvrď nahrání. Vyčkej na dokončení přenosu.</li>
+    </ol>
+    <p>Když sdílení do Disku tvoje verze aplikace nenabízí, otevři přímo složku v Disku a použij <strong>+ → Nahrát → Fotky a videa</strong>. PUB INVOICES soubory stáhne při další automatické kontrole.</p>
+  </section>
+  <section class="panel">
+    <h2>Zkratka „Faktury do Drive“</h2>
+    <ol>
+      <li>V aplikaci <strong>Zkratky</strong> vytvoř novou zkratku a pojmenuj ji „Faktury do Drive“.</li>
+      <li>Přidej akci <strong>Vybrat fotky</strong>, zapni výběr více položek. Při použití vyber snímky ze svého stávajícího alba.</li>
+      <li>Přidej akci <strong>Sdílet</strong> a jako vstup ponech vybrané fotografie.</li>
+      <li>Přidej zkratku na plochu. Po spuštění vybereš fotky a v nabídce sdílení zvolíš Disk Google a cílovou složku.</li>
+    </ol>
+    <p>Zkratka zkracuje cestu k předání fotografií. Výběr účtu, složky a potvrzení nahrání zůstává v aplikaci Google Drive. Nespoléhá na akce nebo tiché ukládání do cizího poskytovatele, které tvoje verze iOS či Drive nemusí podporovat.</p>
+    <p>Zkratky nedávají spolehlivý univerzální spouštěč po každém stisknutí spouště fotoaparátu. Automat při zavření Fotoaparátu nedokáže bezpečně určit, zda nová fotografie patří mezi faktury. Proto se posílají jen tebou vybrané doklady.</p>
+  </section>
+  <section class="panel">
+    <h2>Co uvidíš ve Fakturách</h2>
+    <table><thead><tr><th>Stav</th><th>Co znamená</th></tr></thead><tbody>
+      <tr><td>Stahuji originál</td><td>Soubor se bezpečně ukládá do soukromého úložiště.</td></tr>
+      <tr><td>Čeká na OCR / Probíhá OCR</td><td>Nech otevřenou stránku Faktury. Čtení se spouští automaticky.</td></tr>
+      <tr><td>Čeká na schválení</td><td>Položky jsou připravené k ověření. Účetnictví ani sklad ještě nejsou zapsané.</td></tr>
+      <tr><td>Chyba</td><td>Uvidíš důvod a můžeš opakovat import či OCR. Originál v Drive se nemaže.</td></tr>
+    </tbody></table>
+    <p>Načítání z Drive běží i při zavřené webové aplikaci po jednorázovém propojení Google účtu. Současné OCR potřebuje otevřenou stránku Faktury; telefon může použít nativní Apple Vision, web Tesseract. Serverové AI čtení vyžaduje samostatnou dostupnou a nakonfigurovanou službu.</p>
+    <p>Podporované jsou JPG, HEIC/HEIF a PDF do 8 MB. Import uchová přesné bajty souboru uloženého v Drive. HEIC se pro čtení případně převede na dočasnou kopii; originál se nemění. Dvě kopie se stejnými bajty nevytvoří druhou fakturu ani při různých názvech. Upravená nebo znovu komprimovaná fotografie může mít jiný otisk a vyžaduje kontrolu dokladu.</p>
+    <p>Odkaz „Sdílet přes iCloud“ obvykle platí 30 dní. Slouží ke sdílení snímků, není trvalým napojením na tvoje soukromé album. Pro tento postup jej nepotřebuješ.</p>
+  </section>
+  <p>Ověřené návody: <a href="https://support.google.com/drive/answer/2424368?co=GENIE.Platform%3DiOS">Google Drive – nahrávání z iPhonu</a>,
+    <a href="https://support.apple.com/guide/shortcuts/apd163eb9f95/ios">Apple – sdílení přes Zkratky</a>,
+    <a href="https://support.apple.com/en-in/guide/icloud/mm93a9b98683/icloud">Apple – odkazy na iCloud</a>.</p>
+</main></body>
+</html>

@@ -20,4 +20,5 @@
   const page = location.pathname.split('/').pop();
   if (!page || page === 'index.html') { loadLayer('data-sync.js', 'pub-guru-data-sync'); loadLayer('operations-backend.js', 'pub-guru-operations'); loadLayer('invoice-ui-guard.js', 'pub-guru-invoice-ui-guard'); loadLayer('navigation.js', 'pub-guru-navigation'); }
   else if (page === 'closings.html' || page === 'closings-v1.html') loadLayer('closing-role-guard.js', 'pub-guru-closing-role-guard');
+  else if (page === 'invoice-capture.html') loadLayer('invoice-drive.js?v=20261014', 'pub-guru-invoice-drive');
 })();

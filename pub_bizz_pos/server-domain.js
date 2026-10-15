@@ -60,9 +60,9 @@
       check(['cash','card'].includes(p.method),'Vyber hotovost nebo kartu.');
       if(p.method==='card')check(p.cardConfirmed===true,'Potvrď úspěšné dobití kartou na terminálu.');
       const customer=C.ensureCustomer(s,order,now);
-      result={id:crypto.randomUUID(),type:'topup',customerId:customer.id,customerName:customer.name,orderId:order.id,shiftId:C.activeShift(s).id,amount:p.amount,method:p.method,at:now,actorId:actor.id};
-      s.creditLedger.push(result);
-      result.balance=C.creditBalance(s,customer.id);
+      const entry={id:crypto.randomUUID(),type:'topup',customerId:customer.id,customerName:customer.name,orderId:order.id,shiftId:C.activeShift(s).id,amount:p.amount,method:p.method,at:now,actorId:actor.id};
+      s.creditLedger.push(entry);
+      result={...entry,balance:C.creditBalance(s,customer.id)};
     } else if(type==='loyaltyConfig'){
       check(typeof p.enabled==='boolean'&&Number.isSafeInteger(p.threshold)&&p.threshold>=10000&&p.threshold<=100000,'Zadej částku od 100 do 1 000 Kč.');
       s.loyalty||=L.initial();s.loyalty.enabled=p.enabled;s.loyalty.threshold=p.threshold;

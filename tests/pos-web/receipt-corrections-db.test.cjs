@@ -29,6 +29,7 @@ async function fixture(mode='cash',mapped=true,substitutions=false){
  if(process.env.POS_STOCK_FIXTURE)await db.exec(fs.readFileSync(process.env.POS_STOCK_FIXTURE,'utf8'));
  await db.exec(read(migration));
  await db.exec(read('supabase/migrations/20261014231114_pos_rename_order.sql'));
+ await db.exec(read('supabase/migrations/20261015002500_pos_customer_credit.sql'));
  let s=C.initial();s.venueId=venue;
  await db.query('insert into pos_registers(venue_id,organization_id,state) values($1,$2,$3)',[venue,org,JSON.stringify(s)]);
  await db.exec(`insert into products(id,organization_id,name,unit_mode,volume_ml) values('${liquid}','${org}','TEST liquid','liquid',1000);
@@ -89,12 +90,43 @@ test('SQL 2cl missing-recipe sale later resolves exactly its own portion once',a
   await assert.rejects(f.run('resolveStock',{receiptId:sale.id,lineId:sale.lines[0].id}),/already processed/);assert.deepEqual(await f.snapshot(),before);
  }finally{await f.db.close();}
 });
+test('SQL customer credit appends exact wallet movements only',async()=>{
+ const f=await fixture('cash',false,true);try{
+  await f.run('renameOrder',{orderId:f.target.id,revision:f.s.orders.find(o=>o.id===f.target.id).revision,name:'Petr'},f.staff);
+  const topupCommand=D.run(f.s,'creditTopup',{orderId:f.target.id,amount:50000,method:'cash'},f.staff,[]);
+  const before=await f.snapshot();
+  for(const mutate of [
+   s=>s.creditLedger.at(-1).amount=90000,
+   s=>s.creditLedger.push({...s.creditLedger.at(-1),id:crypto.randomUUID()}),
+   s=>s.orders.find(o=>o.id===f.target.id).name='Injected',
+   s=>s.customers.push({id:crypto.randomUUID(),name:'Injected',aliases:['Injected'],createdAt:new Date().toISOString()})
+  ]){
+   const state=structuredClone(topupCommand.state);mutate(state);
+   await assert.rejects(f.commit('creditTopup',state,topupCommand.result,f.staff),/Credit topup/);assert.deepEqual(await f.snapshot(),before);
+  }
+  await f.run('creditTopup',{orderId:f.target.id,amount:50000,method:'cash'},f.staff);
+  let order=f.s.orders.find(o=>o.id===f.target.id),customerId=order.customerId;
+  assert.equal(C.creditBalance(f.s,customerId),50000);
+  await f.run('addLine',{orderId:order.id,productId:'agnis-2810',quantity:1,servingMl:20},f.staff);
+  order=f.s.orders.find(o=>o.id===f.target.id);
+  const lock=(await f.run('beginPayment',{orderId:order.id,revision:order.revision},f.staff)).result;
+  order=f.s.orders.find(o=>o.id===f.target.id);
+  const sale=(await f.run('checkout',{orderId:order.id,revision:order.revision,paymentToken:lock.token,operationId:crypto.randomUUID(),selected:order.lines.map(l=>({id:l.id,quantity:l.quantity})),mode:'credit',received:0,splitCash:0},f.staff)).result;
+  assert.ok(sale.credit>0);assert.equal(sale.cash,0);assert.equal(sale.card,0);assert.equal(sale.lines[0].servingMl,20);
+  assert.equal(C.creditBalance(f.s,customerId),50000-sale.credit);
+  const refund=(await f.run('refund',{receiptId:sale.id,reason:'TEST credit refund'},f.owner)).result;
+  assert.equal(refund.credit,-sale.credit);assert.equal(C.creditBalance(f.s,customerId),50000);
+  const ledger=(await f.db.query("select state->'creditLedger' ledger from pos_registers")).rows[0].ledger;
+  assert.deepEqual(ledger.map(x=>x.type),['topup','spend','refund']);
+  assert.equal(ledger.some(x=>Object.hasOwn(x,'balance')),false,'derived balance must never be stored');
+ }finally{await f.db.close();}
+});
 test('SQL rename preserves a partial sale, rejects altered state, deduplicates requests and keeps RPC private',async()=>{
  const f=await fixture('cash',true);try{
   await f.run('addLine',{orderId:f.target.id,productId:'agnis-2810',quantity:2},f.staff);
   const order=f.s.orders.find(o=>o.id===f.target.id),before=await f.snapshot();
   const command=D.run(f.s,'renameOrder',{orderId:order.id,revision:order.revision,name:'Petr'},f.staff,[]);
-  for(const alter of [s=>s.orders.find(o=>o.id===order.id).lines[0].quantity++,s=>s.orders[0].name='Changed',s=>s.receipts[0].total++,s=>s.sequence++,s=>s.receiptAssignments.changed={},s=>s.orders.find(o=>o.id===order.id).visitStartedAt='2020-01-01T00:00:00Z',s=>s.audit[0].type='Changed']){
+  for(const alter of [s=>s.orders.find(o=>o.id===order.id).lines[0].quantity++,s=>s.orders[0].name='Changed',s=>s.receipts[0].total++,s=>s.sequence++,s=>s.receiptAssignments.changed={},s=>(s.creditLedger||=[]).push({id:crypto.randomUUID(),customerId:'x',amount:100,type:'topup',method:'cash',at:new Date().toISOString()}),s=>s.orders.find(o=>o.id===order.id).visitStartedAt='2020-01-01T00:00:00Z',s=>s.audit[0].type='Changed']){
    const state=structuredClone(command.state);alter(state);
    await assert.rejects(f.commit('renameOrder',state,command.result,f.staff),/Rename must preserve/);assert.deepEqual(await f.snapshot(),before);
   }

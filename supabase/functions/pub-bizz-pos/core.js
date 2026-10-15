@@ -98,8 +98,36 @@
     check(integer(received) && received >= cash, 'Přijatá hotovost je nižší než částka k úhradě.');
     return { total, cash, card, received, change: received - cash, rounding: total - raw, mode };
   }
+  const VISIT_IDLE_MINUTES = 120;
+  const visitFields = ['visitId','visitStartedAt','visitLastActivityAt','visitEndedAt','visitEndEstimated','visitHasCarriedBalance'];
+  function clearVisit(order) { for (const field of visitFields) delete order[field]; }
+  function visitSessions(state, order, now = new Date().toISOString()) {
+    const start = Date.parse(order?.visitStartedAt), clock = Date.parse(now);
+    if (!Number.isFinite(start) || !Number.isFinite(clock) || start > clock) return [];
+    const manualEnd = Date.parse(order.visitEndedAt), limit = Number.isFinite(manualEnd) ? Math.min(clock,manualEnd) : clock;
+    const times = new Set([start]);
+    for (const event of state.audit || []) {
+      if (!['addLine','checkout'].includes(event.type) || (event.detail?.orderId || event.orderId) !== order.id) continue;
+      const at = Date.parse(event.at); if (at >= start && at <= limit) times.add(at);
+    }
+    const last = Date.parse(order.visitLastActivityAt); if (last >= start && last <= limit) times.add(last);
+    const idle = VISIT_IDLE_MINUTES * 60000, sessions = []; let began = start, activity = start;
+    const row = (end, estimated, active = false) => ({id:began===start?(order.visitId || 'visit:'+order.id+':'+start):(order.visitId || 'visit:'+order.id)+'@'+began,
+      orderId:order.id,orderName:order.name,startedAt:new Date(began).toISOString(),endedAt:end===null?null:new Date(end).toISOString(),
+      durationMinutes:Math.max(0,Math.floor(((end===null?clock:end)-began)/60000)),lastActivityAt:new Date(activity).toISOString(),estimated,active,
+      reason:active?'active':estimated?'idle':'manual'});
+    for (const at of [...times].sort((a,b)=>a-b)) {
+      if (at-activity >= idle) { sessions.push(row(activity+idle,true)); began=at; }
+      activity=at;
+    }
+    if (Number.isFinite(manualEnd)) sessions.push(row(Math.max(began,limit),order.visitEndEstimated===true));
+    else if (clock-activity >= idle) sessions.push(row(activity+idle,true));
+    else sessions.push(row(null,false,true));
+    return sessions;
+  }
   function execute(s, type, p = {}, now = new Date().toISOString(), restoredLines) {
     let result = null;
+    const closedVisits = [];
     const sh = activeShift(s);
     const needShift = () => { check(sh, 'Nejdřív otevři směnu.'); return sh; };
     const order = () => { const o = s.orders.find(x => x.id === p.orderId); check(o, 'Účet už neexistuje.'); return o; };
@@ -121,6 +149,16 @@
       check(!s.orders.some(x => x.id !== o.id && x.name.toLocaleLowerCase('cs') === name.toLocaleLowerCase('cs')), 'Tento účet už existuje.');
       result = { type, orderId: o.id, previousName: o.name, name, at: now };
       o.name = name; o.revision++;
+    } else if (type === 'endVisit') {
+      const o = order();
+      check(o.id !== 'bar' && o.visitStartedAt, 'Na tomto účtu není návštěva k ukončení.');
+      check(!o.paymentLock, 'Nejdřív dokonči nebo uvolni rozpracovanou platbu.');
+      check(o.revision === p.revision, 'Účet se změnil. Znovu otevři profil.');
+      const ended = Date.parse(p.endedAt || now), began = Date.parse(o.visitStartedAt);
+      check(Number.isFinite(ended) && ended >= began && ended <= Date.parse(now), 'Odchod musí být mezi začátkem návštěvy a současností.');
+      o.visitEndedAt = new Date(ended).toISOString(); o.visitEndEstimated = false;
+      const sessions = visitSessions(s,o,now); closedVisits.push(...sessions.filter(v=>!v.active));
+      result = {...sessions[sessions.length-1],type,at:now}; o.revision++;
     } else if (type === 'deleteOrder') {
       const o = order(); check(o.id !== 'bar' && !o.lines.length, 'Smazat lze pouze prázdný pojmenovaný účet.'); s.orders = s.orders.filter(x => x.id !== o.id);
     } else if (type === 'mergeOrders') {
@@ -146,7 +184,7 @@
         if (!target.visitId) target.visitId = source.visitId;
       }
       target.lines = merged; target.revision++;
-      source.lines = []; delete source.visitId; delete source.visitStartedAt; source.revision++;
+      source.lines = []; clearVisit(source); source.revision++;
     } else if (type === 'loadCatalog') {
       if (s.catalogVersion === catalog.version) return null;
       for (const item of catalog.products) {
@@ -188,14 +226,24 @@
       const line = o.lines.find(x => sameLine(x,nextLine));
       check(!line || line.quantity + quantity <= 999, 'Limit množství je 999.');
       check(sum(o.lines) + portion.price * quantity <= 100000000, 'Překročen limit účtu.');
-      if (o.id !== 'bar' && (!o.lines.length || !o.visitId || !o.visitStartedAt)) { o.visitId = uid(); o.visitStartedAt = now; }
+      if (o.id !== 'bar') {
+        const sessions = visitSessions(s,o,now), active = sessions.find(v=>v.active);
+        closedVisits.push(...sessions.filter(v=>!v.active));
+        if (!o.lines.length || !o.visitId || !active) {
+          const carried = o.lines.length > 0; clearVisit(o); o.visitId = uid(); o.visitStartedAt = now;
+          if (carried) o.visitHasCarriedBalance = true;
+        } else if (active.startedAt !== new Date(o.visitStartedAt).toISOString()) {
+          o.visitId = active.id; o.visitStartedAt = active.startedAt; o.visitHasCarriedBalance = true;
+        }
+        o.visitLastActivityAt = now;
+      }
       if (line) line.quantity += quantity;
       else o.lines.push({id:uid(),...nextLine,quantity});
       check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
     } else if (type === 'removeLine') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.'); check(clean(p.reason), 'Doplň důvod opravy.');
       l.quantity--; o.lines = o.lines.filter(x => x.quantity > 0);
-      if (!o.lines.length) { delete o.visitId; delete o.visitStartedAt; }
+      if (!o.lines.length) { clearVisit(o); }
       o.revision++;
     } else if (type === 'setLineQuantity') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.');
@@ -208,15 +256,23 @@
       const lines = selectedLines(o, p.selected); const pay = payment(sum(lines), p.mode, p.received, p.splitCash);
       check(!pay.card || p.cardConfirmed === true, 'Nejdřív potvrď úspěšnou platbu na terminálu.');
       if (s.settings.vat === 'payer') check(lines.every(x => x.vatRate !== null), 'Na účtu chybí sazba DPH. Oprav položky před zaplacením.');
-      const visitId = o.visitId, visitStartedAt = o.visitStartedAt;
+      const sessions = visitSessions(s,o,now), activeVisit = sessions.find(v=>v.active), latestVisit = sessions[sessions.length-1];
+      closedVisits.push(...sessions.filter(v=>!v.active));
+      const visitId = latestVisit?.id || o.visitId, visitStartedAt = latestVisit?.startedAt || o.visitStartedAt;
       s.sequence++;
       result = { id: uid(), operationId: p.operationId, number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, kind: 'sale', at: now, shiftId: sh.id, orderId: o.id, orderName: o.name, deviceId: s.deviceId, venueId: s.venueId, operator: sh.operator, settings: { ...s.settings }, lines, ...pay, ...(visitId && visitStartedAt ? { visitId, visitStartedAt } : {}) };
       for (const line of lines) o.lines.find(x => x.id === line.id).quantity -= line.quantity;
       o.lines = o.lines.filter(x => x.quantity > 0);
-      if (visitId && visitStartedAt && !o.lines.length) {
-        result.visitEndedAt = now;
-        result.visitDurationMinutes = Math.max(0, Math.round((Date.parse(now) - Date.parse(visitStartedAt)) / 60000));
-        delete o.visitId; delete o.visitStartedAt;
+      if (visitId && visitStartedAt) {
+        if (latestVisit?.estimated || o.visitHasCarriedBalance || sessions.length > 1) result.visitEstimated = true;
+        if (!activeVisit || !o.lines.length) {
+          result.visitEndedAt = latestVisit?.endedAt || now;
+          result.visitDurationMinutes = Math.max(0,Math.floor((Date.parse(result.visitEndedAt)-Date.parse(visitStartedAt))/60000));
+          if (activeVisit) closedVisits.push({...activeVisit,active:false,endedAt:now,durationMinutes:result.visitDurationMinutes,estimated:result.visitEstimated===true,reason:'paid'});
+        }
+        if (!o.lines.length) clearVisit(o);
+        else if (activeVisit) o.visitLastActivityAt = now;
+        else if (latestVisit?.endedAt) { o.visitEndedAt=latestVisit.endedAt; o.visitEndEstimated=latestVisit.estimated===true; }
       }
       s.receipts.push(result); o.revision++;
     } else if (type === 'refund') {
@@ -246,7 +302,7 @@
         }
       }
       check(sum(merged) <= 100000000, 'Po vrácení by účet překročil limit.');
-      if (target.id !== 'bar' && !target.visitId) { target.visitId = sale.visitId || uid(); target.visitStartedAt = sale.visitStartedAt || now; }
+      // Restoring an old bill changes the balance, not the customer's presence.
       target.lines = merged; target.revision++;
       s.sequence++; result = { ...sale, ...account, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0, restoredToOrderId: target.id, restoredToOrderName: target.name };
       s.receipts.push(result);
@@ -273,7 +329,7 @@
     } else if (type === 'backup') s.lastBackup = now;
     else throw new Error('Neznámá operace.');
     s.revision++;
-    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : result?.receiptId || null, detail: structuredClone(p), ...(type === 'renameOrder' ? { rename: structuredClone(result) } : {}), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}), ...(type === 'reassignReceipt' ? { assignment: structuredClone(result) } : {}) });
+    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : result?.receiptId || null, detail: structuredClone(p), ...(closedVisits.length ? { visits: structuredClone(closedVisits) } : {}), ...(type === 'endVisit' ? { visit: structuredClone(result) } : {}), ...(type === 'renameOrder' ? { rename: structuredClone(result) } : {}), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}), ...(type === 'reassignReceipt' ? { assignment: structuredClone(result) } : {}) });
     return result;
   }
   function validate(s) {
@@ -286,6 +342,8 @@
     for (const o of s.orders) {
       check(typeof o.name === 'string' && integer(o.revision, 1000000000) && Array.isArray(o.lines), 'Poškozený účet.');
       if (o.visitId !== undefined || o.visitStartedAt !== undefined) check(typeof o.visitId === 'string' && typeof o.visitStartedAt === 'string' && !Number.isNaN(Date.parse(o.visitStartedAt)), 'Poškozený čas návštěvy na účtu.');
+      if (o.visitLastActivityAt !== undefined) check(Number.isFinite(Date.parse(o.visitLastActivityAt)) && Date.parse(o.visitLastActivityAt)>=Date.parse(o.visitStartedAt), 'Poškozená aktivita návštěvy.');
+      if (o.visitEndedAt !== undefined) check(Number.isFinite(Date.parse(o.visitEndedAt)) && Date.parse(o.visitEndedAt)>=Date.parse(o.visitStartedAt), 'Poškozený konec návštěvy.');
       for (const l of o.lines) { check(typeof l.id === 'string' && typeof l.name === 'string' && integer(l.price) && l.price > 0 && integer(l.quantity, 999) && l.quantity > 0, 'Neplatná položka v záloze.'); validatePortion(l); }
     }
     check(s.shifts.filter(x => !x.closedAt).length <= 1, 'Záloha obsahuje více otevřených směn.');
@@ -308,7 +366,7 @@
     }
     return s;
   }
-  const api = { initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines, receiptAccount, shotVolumeMl, smallShot, recipeForLine };
+  const api = { VISIT_IDLE_MINUTES, visitSessions, initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines, receiptAccount, shotVolumeMl, smallShot, recipeForLine };
   if (typeof module !== 'undefined') module.exports = api; else root.POSCore = api;
 })(globalThis);
 

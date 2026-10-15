@@ -5,7 +5,7 @@ const C=require('../../pub_bizz_pos/core.js'), D=require('../../pub_bizz_pos/ser
 const root=path.resolve(__dirname,'../..');
 const read=file=>fs.readFileSync(path.join(root,file),'utf8');
 const migration='supabase/migrations/20261013222653_pos_receipt_terminal_guard.sql';
-async function fixture(mode='cash',mapped=true,substitutions=false){
+async function fixture(mode='cash',mapped=true,substitutions=false,deployedCommit=false){
  const db=new PGlite(), org=crypto.randomUUID(), venue=crypto.randomUUID(), owner={id:crypto.randomUUID(),role:'owner'},staff={id:crypto.randomUUID(),role:'staff'};
  const liquid=crypto.randomUUID(),counted=crypto.randomUUID();
  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;
@@ -23,12 +23,13 @@ async function fixture(mode='cash',mapped=true,substitutions=false){
  await db.exec(read('database/007_immutable_stock_ledger.sql'));
  await db.exec(read('database/20260904025648_counted_inventory_backend.sql'));
  for(const file of ['20260925174410_pub_bizz_shared_register.sql','20260925174607_pub_bizz_payment_reservations.sql','20260927030252_pub_bizz_merge_orders.sql','20261001080000_pos_fast_split_restore_receipt.sql','20261003211245_fix_pos_merge_command_recovery.sql'])await db.exec(read('supabase/migrations/'+file));
- if(process.env.POS_COMMIT_FIXTURE)await db.exec(fs.readFileSync(process.env.POS_COMMIT_FIXTURE,'utf8'));
+ if(process.env.POS_COMMIT_FIXTURE)await db.exec(fs.readFileSync(process.env.POS_COMMIT_FIXTURE,'utf8'));else if(deployedCommit)await db.exec(read('tests/fixtures/live-pos-commit.sql'));
  if(process.env.POS_STOCK_SUPPORT)await db.exec(fs.readFileSync(process.env.POS_STOCK_SUPPORT,'utf8'));
  if(substitutions)await db.exec(read('tests/fixtures/pub-bizz-stock-available.sql'));
  if(process.env.POS_STOCK_FIXTURE)await db.exec(fs.readFileSync(process.env.POS_STOCK_FIXTURE,'utf8'));
  await db.exec(read(migration));
  await db.exec(read('supabase/migrations/20261014231114_pos_rename_order.sql'));
+ await db.exec(read('supabase/migrations/20261015205034_pos_end_customer_visit.sql'));
  let s=C.initial();s.venueId=venue;
  await db.query('insert into pos_registers(venue_id,organization_id,state) values($1,$2,$3)',[venue,org,JSON.stringify(s)]);
  await db.exec(`insert into products(id,organization_id,name,unit_mode,volume_ml) values('${liquid}','${org}','TEST liquid','liquid',1000);
@@ -203,5 +204,21 @@ for(const mode of ['recipe','no_stock'])test('SQL late '+mode+' mapping remains 
   const order=f.s.orders[0],lock=(await f.run('beginPayment',{orderId:'bar',revision:order.revision},f.staff)).result;
   await f.run('checkout',{orderId:'bar',revision:order.revision,paymentToken:lock.token,operationId:crypto.randomUUID(),selected:order.lines.map(l=>({id:l.id,quantity:l.quantity})),mode:'cash',received:30000,splitCash:0},f.staff);
   assert.equal(await balance(),before,'original served quantities remain consumed once');
+ }finally{await f.db.close();}
+});
+
+test('SQL departure keeps unpaid money and stock, and rejects forged financial changes',async()=>{
+ const f=await fixture('cash',true,false,true);try{
+  await f.run('addLine',{orderId:f.target.id,productId:'agnis-2810',quantity:2},f.staff);
+  const order=f.s.orders.find(o=>o.id===f.target.id),before=await f.snapshot(),financial=structuredClone({receipts:f.s.receipts,sequence:f.s.sequence,shifts:f.s.shifts});
+  const request={orderId:order.id,revision:order.revision,endedAt:new Date().toISOString()};
+  const command=D.run(f.s,'endVisit',request,f.staff,[]);
+  const changed=structuredClone(command.state);changed.orders.find(o=>o.id===order.id).lines[0].quantity=1;
+  await assert.rejects(()=>f.commit('endVisit',changed,command.result,f.staff),/preserve/);assert.deepEqual(await f.snapshot(),before);
+  await f.run('endVisit',request,f.staff);const after=await f.snapshot();
+  assert.deepEqual(after.receipts,before.receipts);assert.deepEqual(after.stock,before.stock);
+  assert.deepEqual(f.s.orders.find(o=>o.id===order.id).lines,order.lines);
+  assert.deepEqual({receipts:f.s.receipts,sequence:f.s.sequence,shifts:f.s.shifts},financial);
+  const audit=after.audit.find(a=>a.event_type==='pos.endVisit');assert.ok(audit);assert.equal(audit.after_data.visit.orderId,order.id);
  }finally{await f.db.close();}
 });

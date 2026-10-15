@@ -60,7 +60,7 @@ function connection() {
   warning.hidden=!state||(!pending&&online);
   warning.innerHTML=pending?`<span><strong>Ověřujeme uloženou operaci.</strong> Platbu na terminálu neopakuj.</span>${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}`:'<span>Server není dostupný. Zobrazená data mohou být starší; placení vyžaduje spojení.</span>';
   if(state){$('#save-state').textContent=cloud.busy?'Ukládám na server…':pending?'Čeká na ověření':online?'Potvrzeno serverem':'Spojení přerušeno';$('#save-state').classList.toggle('error',!!pending||!online);}
-  const writeActions=['add','minus','restoreReceipt','newOrder','renameOrder','deleteOrder','mergeOrders','openShift','payCash','payCard','paySplit','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
+  const writeActions=['add','minus','restoreReceipt','newOrder','renameOrder','endVisit','deleteOrder','mergeOrders','openShift','payCash','payCard','paySplit','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
   document.querySelectorAll('[data-action]').forEach(b=>{if(writeActions.includes(b.dataset.action)){const lock=!!pending&&!cloud.busy||!online;if(lock&&!b.disabled){b.disabled=true;b.dataset.connectionDisabled='true';}else if(!lock&&b.dataset.connectionDisabled){b.disabled=false;delete b.dataset.connectionDisabled;}}});
 }
 function render() {
@@ -226,22 +226,30 @@ function customerProfile() {
   const rows=p.items.map(x=>`<tr><td><strong>${E(x.name)}</strong>${x.serving?`<br><span class="muted small">${E(x.serving)}</span>`:''}</td><td class="amount">${x.quantity}×</td><td class="amount">${fmt(x.spend)}</td></tr>`).join('');
   const rank=p.rank?`#${p.rank} z ${p.competitors}`:'—';
   showDialog(o.name+` · zákazník`,`<div class="customer-profile">
-    ${p.currentMinutes?`<div class="customer-current"><span>Právě v baru</span><strong>${durationText(p.currentMinutes)}</strong></div>`:''}
+    ${p.activeVisit?`<div class="customer-current"><span>Aktuální návštěva</span><strong>${p.currentMinutes?durationText(p.currentMinutes):'0 min'}</strong></div>`:p.lastVisit?'<p class="help">Návštěva je ukončená. Nezaplacený účet zůstává otevřený.</p>':''}
+    ${o.visitStartedAt&&!o.paymentLock?btn('Host odešel · ukončit návštěvu','endVisit','secondary'):''}
     <div class="customer-stats">
       <div><span>Věrnostní body</span><strong>${p.points}</strong></div>
       <div><span>Pořadí</span><strong>${rank}</strong></div>
       <div><span>Celkem utraceno</span><strong>${fmt(p.spend)}</strong></div>
       <div><span>Položek</span><strong>${p.itemCount}</strong></div>
       <div><span>Návštěvy s časem</span><strong>${p.visitCount}</strong></div>
-      <div><span>Čas v baru</span><strong>${durationText(p.totalMinutes)}</strong></div>
+      <div><span>Čas návštěv${p.estimatedVisitCount?' · část odhadem':''}</span><strong>${durationText(p.totalMinutes)}</strong></div>
       <div><span>Průměr návštěvy</span><strong>${durationText(p.averageMinutes)}</strong></div>
-      <div><span>Útrata / hod.</span><strong>${p.totalMinutes?fmt(p.spendPerHour):'—'}</strong></div>
+      <div><span>Útrata / hod.</span><strong>${p.exactMinutes?fmt(p.spendPerHour):'—'}</strong></div>
     </div>
-    <p class="help customer-rules">1 bod za každých 10 Kč skutečně zaplacené útraty. Vratky se automaticky odečítají. Pořadí je podle bodů, ne podle množství alkoholu. Přesný čas se počítá jen u návštěv zahájených po nasazení této funkce.</p>
+    <p class="help customer-rules">1 bod za každých 10 Kč skutečně zaplacené útraty. Vratky se automaticky odečítají. Pořadí je podle bodů, ne podle množství alkoholu. Návštěva se po 2 hodinách bez další objednávky automaticky ukončí odhadem. Další objednávka začne novou návštěvu i na nezaplaceném účtu. Odchod lze potvrdit ručně. Odhady se nepoužívají pro útratu za hodinu.</p>
     <div class="customer-detail"><span>Dokladů: <strong>${p.receiptCount}</strong></span><span>Poslední útrata: <strong>${p.lastAt?date(p.lastAt):'—'}</strong></span></div>
     <h3>Co nejčastěji bere</h3>
     <div class="table-wrap customer-drinks"><table><thead><tr><th>Položka</th><th class="amount">Počet</th><th class="amount">Útrata</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="empty">Po prvním zaplaceném dokladu se tu objeví statistika.</td></tr>'}</tbody></table></div>
   </div>`,null);
+}
+function endVisit() {
+  const o=getOrder();if(!customerAccount(o)||!o.visitStartedAt)return;
+  const sessions=C.visitSessions(state,o),last=sessions[sessions.length-1];
+  const at=last?.endedAt||new Date().toISOString(),d=new Date(at);
+  const local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,19);
+  showDialog('Host odešel',`<p class="help">Ukončí se pouze návštěva zákazníka <strong>${E(o.name)}</strong>. Nezaplacená částka <strong>${fmt(C.sum(o.lines))}</strong> zůstane na jeho účtu.</p><label class="field">Čas odchodu<input type="datetime-local" step="1" name="endedAt" value="${E(local)}" required></label><p class="help">Pokud zákazník odešel dříve, oprav čas. Automaticky předvyplněný konec je odhad podle aktivity.</p>`,f=>command('endVisit',{orderId:o.id,revision:o.revision,endedAt:new Date(String(f.get('endedAt'))).toISOString()}),'Ukončit návštěvu',()=>{render();toast('Návštěva ukončená. Účet zůstává otevřený.');});
 }
 function productSalesCounts() {
   // Receipts come from the shared confirmed state; never count taps or unpaid orders.
@@ -450,7 +458,7 @@ const actions={
   quantityPad:id=>quantityPad(id),
   entryCount:id=>{entryQuantity=Number(id);updateEntryContext();},entryQuantity:entryQuantityPad,
   smallShot:()=>{entryServingMl=entryServingMl===20?undefined:20;if(entryServingMl===20){const shots=state.products.filter(p=>p.active&&C.smallShot(p));if(!shots.some(p=>p.category===category))category='Vše';if(query&&!shots.some(p=>normalizeSearch(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(normalizeSearch(query))))query='';}render();},
-  account:id=>selectAccount(id),customerProfile,category:async id=>{category=id;query='';render();},openShift,renameOrder,mergeOrders,
+  account:id=>selectAccount(id),customerProfile,endVisit,category:async id=>{category=id;query='';render();},openShift,renameOrder,mergeOrders,
   newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta (nepovinné)','name',accountQuery.trim(),'maxlength="120" placeholder="Bez vyplnění = rychlý prodej"'),f=>{
     const name=String(f.get('name')||'').trim();
     return name?command('newOrder',{name}):{id:'bar'};

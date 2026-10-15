@@ -1,4 +1,4 @@
-const CACHE = 'pub-bizz-pos-shell-2.0.14';
+const CACHE = 'pub-bizz-pos-shell-2.0.15';
 const SHELL = ['./index.html', './style.css', './compat.js', './catalog.js', './core.js', './customer.js', './storage.js', './app.js', './config.js', './cloud.js', './stock.js', './vendor/supabase-2.117.2.js', './icon.svg', './manifest.webmanifest'];
 // Safari rejects a followed/cached redirect returned for a manual navigation.
 // Keep the final HTML and its security headers, without the redirect URL list.

@@ -18,17 +18,28 @@
     const account = C.receiptAccount(state, receipt);
     return (state.orders || []).find(o => o.id === account.orderId)?.name || account.orderName;
   }
-  function salesFor(state, name) {
-    const key = normalize(name), customers=state.customers||[];
-    const current=customers.find(x=>normalize(x.name)===key)||null;
-    const retiredAlias=customers.some(x=>normalize(x.name)!==key&&(x.aliases||[]).some(a=>normalize(a)===key));
-    if(retiredAlias&&!current)return [];
-    const aliases=new Set([key,...((current?.aliases)||[]).map(normalize)]);
-    return validSales(state).filter(r => (current&&r.customerId===current.id) || aliases.has(normalize(receiptName(state, r))));
+  function activeOrder(state,name) {
+    const key=normalize(name);
+    return (state.orders||[]).find(o=>o.id!=='bar'&&normalize(o.name)===key)||null;
   }
-  function productCounts(state, name) {
+  function orderAliases(state,order) {
+    const aliases=new Set([normalize(order?.name)]);
+    if(!order)return aliases;
+    for(const event of state.audit||[]) {
+      const r=event?.rename;
+      if(event?.type==='renameOrder'&&r?.orderId===order.id){aliases.add(normalize(r.previousName));aliases.add(normalize(r.name));}
+    }
+    return aliases;
+  }
+  function salesFor(state, name, customerId = null, orderId = null) {
+    const order=orderId?(state.orders||[]).find(o=>o.id===orderId):activeOrder(state,name);
+    if(!order&&!customerId)return [];
+    const id=customerId||order?.customerId||null, aliases=orderAliases(state,order);
+    return validSales(state).filter(r => (id&&r.customerId===id) || aliases.has(normalize(receiptName(state, r))));
+  }
+  function productCounts(state, name, customerId = null, orderId = null) {
     const counts = new Map();
-    for (const receipt of salesFor(state, name)) for (const line of receipt.lines || []) {
+    for (const receipt of salesFor(state, name, customerId, orderId)) for (const line of receipt.lines || []) {
       counts.set(line.productId, (counts.get(line.productId) || 0) + line.quantity);
     }
     return counts;
@@ -53,7 +64,7 @@
     }).sort((a,b) => b.points-a.points || b.spend-a.spend || a.name.localeCompare(b.name,'cs'));
   }
   function profile(state, name, currentOrder = null, now = new Date().toISOString()) {
-    const key = normalize(name), sales = salesFor(state, name), customer=(state.customers||[]).find(x=>normalize(x.name)===key)||null;
+    const key = normalize(name), order=currentOrder||activeOrder(state,name), customerId=order?.customerId||null, sales = salesFor(state, name, customerId, order?.id), customer=customerId?(state.customers||[]).find(x=>x.id===customerId):null;
     const spend = sales.reduce((n,r) => n + r.total, 0);
     const itemMap = new Map();
     for (const receipt of sales) for (const line of receipt.lines || []) {

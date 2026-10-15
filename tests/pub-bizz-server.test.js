@@ -48,3 +48,34 @@ test('financial refund does not restock unless explicitly selected',()=>{
  assert.equal(refund.result.restock,false);assert.equal(refund.state.receipts[0].kind,'sale');
  assert.equal(D.run(s,'refund',{receiptId:s.receipts[0].id,reason:'Zboží vráceno',restock:true},owner,stock).result.restock,true);
 });
+
+test('customer credit topup, spend and refund stay separate from loyalty',()=>{
+ let s=C.initial();
+ s=D.run(s,'openShift',{opening:10000,operator:'Test'},owner,stock,'2026-10-15T00:00:00Z').state;
+ const created=D.run(s,'newOrder',{name:'Petr'},staff,stock,'2026-10-15T00:01:00Z');s=created.state;
+ const order=()=>s.orders.find(o=>o.name==='Petr');
+ assert.ok(order().customerId,'named customer receives a stable customer id');
+ assert.throws(()=>D.run(s,'creditTopup',{orderId:order().id,amount:30000,method:'card'},staff,stock),/Potvrď/);
+ let topup=D.run(s,'creditTopup',{orderId:order().id,amount:30000,method:'cash'},staff,stock,'2026-10-15T00:02:00Z');s=topup.state;
+ assert.equal(topup.result.balance,30000);assert.equal(C.creditBalance(s,order().customerId),30000);
+ s=D.run(s,'addLine',{orderId:order().id,productId:'agnis-2810'},staff,stock,'2026-10-15T00:03:00Z').state;
+ const lock=D.run(s,'beginPayment',{orderId:order().id,revision:order().revision},staff,stock,'2026-10-15T00:04:00Z');s=lock.state;
+ const line=order().lines[0];
+ const sale=D.run(s,'checkout',{orderId:order().id,revision:order().revision,paymentToken:lock.result.token,operationId:crypto.randomUUID(),selected:[{id:line.id,quantity:1}],mode:'credit',received:0,splitCash:0},staff,stock,'2026-10-15T00:05:00Z');s=sale.state;
+ assert.ok(sale.result.credit>0);assert.equal(sale.result.cash,0);assert.equal(sale.result.card,0);
+ assert.equal(C.creditBalance(s,order().customerId),30000-sale.result.credit);
+ const beforeRefund=C.creditBalance(s,order().customerId);
+ const refund=D.run(s,'refund',{receiptId:sale.result.id,reason:'Vráceno'},owner,stock,'2026-10-15T00:06:00Z');
+ assert.equal(C.creditBalance(refund.state,order().customerId),beforeRefund+sale.result.credit);
+ assert.equal(refund.result.credit,-sale.result.credit);
+ const t=C.totals(refund.state,C.activeShift(refund.state).id);
+ assert.equal(t.credit,0);assert.equal(t.creditTopupCash,30000);assert.equal(t.expected,40000);
+});
+test('customer credit cannot go below zero',()=>{
+ let s=C.initial();s=D.run(s,'openShift',{opening:0},owner,stock).state;s=D.run(s,'newOrder',{name:'Jana'},staff,stock).state;
+ const o=s.orders.find(x=>x.name==='Jana');s=D.run(s,'addLine',{orderId:o.id,productId:'agnis-2810'},staff,stock).state;
+ const live=s.orders.find(x=>x.id===o.id),lock=D.run(s,'beginPayment',{orderId:o.id,revision:live.revision},staff,stock);s=lock.state;
+ const current=s.orders.find(x=>x.id===o.id),line=current.lines[0];
+ assert.throws(()=>D.run(s,'checkout',{orderId:o.id,revision:current.revision,paymentToken:lock.result.token,operationId:crypto.randomUUID(),selected:[{id:line.id,quantity:1}],mode:'credit',received:0,splitCash:0},staff,stock),/kreditu/);
+ assert.equal(C.creditBalance(s,o.customerId),0);assert.equal(s.receipts.length,0);
+});

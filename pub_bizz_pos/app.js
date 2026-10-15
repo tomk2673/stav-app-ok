@@ -362,7 +362,7 @@ function finishPayment(r) {
 }
 async function pay(mode, resume=false) {
   const o=structuredClone(getOrder());if(!o.lines.length)return;
-  const reservation=window.POSCloud?(resume?o.paymentLock:await command('beginPayment',{orderId:o.id,revision:o.revision})):null;
+  let reservation=window.POSCloud&&resume?o.paymentLock:null;
   const operationId=crypto.randomUUID();let partial=mode==='split';
   let paymentMode=partial?'cash':mode,receivedTouched=false,splitTouched=false;
   const selected=()=>o.lines.map(l=>({id:l.id,quantity:Number($('#dialog-form').elements['line-'+l.id].value)})).filter(x=>x.quantity>0);
@@ -378,6 +378,7 @@ async function pay(mode, resume=false) {
       <label class="inline-check" id="card-confirm-field"><input type="checkbox" name="cardConfirmed">Platba kartou na terminálu proběhla úspěšně.</label>
     </div>`, async f=>{
       for(const l of o.lines){const q=Number(f.get('line-'+l.id));if(!Number.isSafeInteger(q)||q<0||q>l.quantity)throw new Error('Neplatný počet kusů.');}
+      if(window.POSCloud&&!reservation) reservation=await command('beginPayment',{orderId:o.id,revision:o.revision});
       return await command('checkout',{orderId:o.id,revision:o.revision,operationId,paymentToken:reservation?.token,selected:selected(),mode:paymentMode,received:['card','credit'].includes(paymentMode)?0:C.money(f.get('received')),splitCash:paymentMode==='split'?C.money(f.get('splitCash')):0,cardConfirmed:f.has('cardConfirmed')});
     },'Potvrdit zaplacení',finishPayment);
   const signal=window.paymentAbort.signal,form=$('#dialog-form');

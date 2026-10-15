@@ -292,8 +292,12 @@
       needShift(); check(Number.isSafeInteger(p.amount) && Math.abs(p.amount) <= 100000000 && p.amount !== 0, 'Neplatná částka.'); check(clean(p.reason), 'Doplň důvod pohybu hotovosti.');
       sh.movements.push({ id: uid(), at: now, amount: p.amount, reason: clean(p.reason) });
     } else if (type === 'closeShift') {
-      needShift(); check(!s.orders.some(x => x.lines.length), 'Zůstaly nezaplacené účty. Nejdřív je vyrovnej.'); check(integer(p.counted), 'Zadej spočítanou hotovost.');
-      sh.summary = totals(s, sh.id); sh.counted = p.counted; sh.difference = p.counted - sh.summary.expected; sh.closedAt = now; result = sh;
+      needShift();
+      check(!s.orders.some(x => x.lines.length && !customerLike(x.name)), 'Před uzávěrkou doplať rychlý prodej a běžné stoly. Nezaplacený pojmenovaný zákazník může zůstat otevřený.');
+      check(integer(p.counted), 'Zadej spočítanou hotovost.');
+      const unpaidAccounts=s.orders.filter(x=>x.lines.length&&customerLike(x.name)).map(x=>({orderId:x.id,name:x.name,amount:sum(x.lines),itemCount:x.lines.reduce((n,l)=>n+l.quantity,0)}));
+      const unpaidTotal=unpaidAccounts.reduce((n,x)=>n+x.amount,0);
+      sh.summary = {...totals(s, sh.id),unpaidAccounts,unpaidTotal}; sh.counted = p.counted; sh.difference = p.counted - sh.summary.expected; sh.closedAt = now; result = sh;
     } else if (type === 'settings') {
       check(['unknown', 'payer', 'nonpayer'].includes(p.vat), 'Neplatné nastavení DPH.');
       check(clean(p.venue), 'Zadej název podniku.');

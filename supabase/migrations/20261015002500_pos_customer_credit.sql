@@ -61,7 +61,7 @@ declare
      or jsonb_typeof(p_state->'creditLedger') is distinct from 'array'
      or jsonb_array_length(p_state->'creditLedger') is distinct from jsonb_array_length(coalesce(old.state->'creditLedger','[]'::jsonb))+1
      or (p_state->'creditLedger') - jsonb_array_length(coalesce(old.state->'creditLedger','[]'::jsonb)) is distinct from coalesce(old.state->'creditLedger','[]'::jsonb)
-     or p_state#>array['creditLedger',jsonb_array_length(p_state->'creditLedger')-1::text] is distinct from p_result-'balance'
+     or p_state#>array['creditLedger',(jsonb_array_length(p_state->'creditLedger')-1)::text] is distinct from p_result-'balance'
      or (p_result->>'balance')::bigint is distinct from (
        select coalesce(sum((x->>'amount')::bigint),0) from jsonb_array_elements(p_state->'creditLedger') x where x->>'customerId'=p_result->>'customerId')
      or jsonb_typeof(p_state->'audit') is distinct from 'array'
@@ -82,8 +82,8 @@ declare
       or p_result->>'customerId' is null
       or jsonb_array_length(coalesce(p_state->'creditLedger','[]'::jsonb)) is distinct from jsonb_array_length(coalesce(old.state->'creditLedger','[]'::jsonb))+1
       or coalesce(p_state->'creditLedger','[]'::jsonb) - jsonb_array_length(coalesce(old.state->'creditLedger','[]'::jsonb)) is distinct from coalesce(old.state->'creditLedger','[]'::jsonb)
-      or jsonb_typeof(p_state#>array['creditLedger',jsonb_array_length(p_state->'creditLedger')-1::text,'id']) is distinct from 'string'
-      or (p_state#>array['creditLedger',jsonb_array_length(p_state->'creditLedger')-1::text]) - 'id' is distinct from
+      or jsonb_typeof(p_state#>array['creditLedger',(jsonb_array_length(p_state->'creditLedger')-1)::text,'id']) is distinct from 'string'
+      or (p_state#>array['creditLedger',(jsonb_array_length(p_state->'creditLedger')-1)::text]) - 'id' is distinct from
         jsonb_build_object('type','spend','customerId',p_result->>'customerId','customerName',p_result->>'orderName',
           'orderId',p_result->>'orderId','shiftId',p_result->>'shiftId','amount',-(p_result->>'credit')::bigint,
           'method','credit','receiptId',p_result->>'id','at',p_result->>'at','actorId',p_actor::text)
@@ -101,8 +101,8 @@ declare
    if p_result->>'customerId' is null
       or jsonb_array_length(coalesce(p_state->'creditLedger','[]'::jsonb)) is distinct from jsonb_array_length(coalesce(old.state->'creditLedger','[]'::jsonb))+1
       or coalesce(p_state->'creditLedger','[]'::jsonb) - jsonb_array_length(coalesce(old.state->'creditLedger','[]'::jsonb)) is distinct from coalesce(old.state->'creditLedger','[]'::jsonb)
-      or jsonb_typeof(p_state#>array['creditLedger',jsonb_array_length(p_state->'creditLedger')-1::text,'id']) is distinct from 'string'
-      or (p_state#>array['creditLedger',jsonb_array_length(p_state->'creditLedger')-1::text]) - 'id' is distinct from
+      or jsonb_typeof(p_state#>array['creditLedger',(jsonb_array_length(p_state->'creditLedger')-1)::text,'id']) is distinct from 'string'
+      or (p_state#>array['creditLedger',(jsonb_array_length(p_state->'creditLedger')-1)::text]) - 'id' is distinct from
         jsonb_build_object('type','refund','customerId',p_result->>'customerId','customerName',p_result->>'orderName',
           'orderId',p_result->>'orderId','shiftId',p_result->>'shiftId','amount',-(p_result->>'credit')::bigint,
           'method','credit','receiptId',p_result->>'id','refundOf',p_result->>'refundOf','at',p_result->>'at','actorId',p_actor::text) then

@@ -183,6 +183,13 @@ async function flow(browser,base,width){
     assert.equal(await page.locator('#dialog-title').textContent(),'Žaneta · zákazník');
     assert.match(await page.locator('#dialog-body').textContent(),/Věrnostní body/);
     assert.match(await page.locator('#dialog-body').textContent(),/Co nejčastěji bere/);
+    assert.match(await page.locator('#dialog-body').textContent(),/Kredit/);
+    await page.locator('[data-action="creditTopup"]').click();
+    await page.locator('[name="amount"]').fill('5000');await page.locator('#dialog-submit').click();
+    await until(page,()=>document.querySelector('#dialog-title')?.textContent==='Žaneta · zákazník');
+    assert.equal(f.state.creditLedger.filter(x=>x.type==='topup').length,1);
+    assert.equal(f.state.creditLedger.find(x=>x.type==='topup').amount,500000);
+    assert.match(await page.locator('#dialog-body').textContent(),/5\s?000/);
     await page.locator('#dialog .close-dialog').first().click();
     assert.equal(await page.locator('.product[data-action="add"]').first().getAttribute('data-id'),markedProduct,'confirmed paid pieces move the product to the top');
     const order=f.state.orders.find(o=>o.name==='Žaneta');assert.equal(order.lines[0].quantity,3);
@@ -194,8 +201,12 @@ async function flow(browser,base,width){
     assert.equal(f.state.orders.find(o=>o.name==='Žaneta').lines[0].quantity,4);
     assert.equal(f.calls.filter(c=>c.requestId===pendingId).length,2,'reload replays the same durable ID');
     await page.locator('#account-search').fill('zaneta');await page.locator('#account-results [data-action="account"]').first().click();
-    await page.locator('[data-action="payCash"]').click();await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
+    const creditCustomer=f.state.orders.find(o=>o.name==='Žaneta'),creditBefore=C.creditBalance(f.state,creditCustomer.customerId);
+    assert.equal(await page.locator('[data-action="payCredit"]').isDisabled(),false,'funded customer can pay with credit');
+    await page.locator('[data-action="payCredit"]').click();await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
     assert.equal(f.state.receipts.length,2);assert.equal(f.state.orders.find(o=>o.name==='Žaneta').lines.length,0);
+    assert.ok(f.state.receipts[1].credit>0);assert.equal(f.state.receipts[1].cash,0);assert.equal(f.state.receipts[1].card,0);
+    assert.equal(C.creditBalance(f.state,creditCustomer.customerId),creditBefore-f.state.receipts[1].credit);
     assert.equal(await page.locator('.receipt-head h2').textContent(),'Rychlý prodej','full payment returns to quick sale');
     assert.equal(await page.locator('#account-search').inputValue(),'');
     assert.match(await page.locator('#toast').textContent(),/Zaplaceno/);

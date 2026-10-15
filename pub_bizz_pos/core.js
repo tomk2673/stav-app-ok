@@ -7,6 +7,25 @@
   const integer = (x, max = 100000000) => Number.isSafeInteger(x) && x >= 0 && x <= max;
   const clean = (s, max = 120) => String(s || '').trim().slice(0, max);
   const own = (o, key) => Object.prototype.hasOwnProperty.call(o, key);
+  const normalizeCustomerName = value => String(value || '').toLocaleLowerCase('cs').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const accountNumber = name => String(name || '').match(/^(?:st[ůu]l\s*#?\s*)?(\d+)\b/i)?.[1] || '';
+  const customerLike = name => { const key=normalizeCustomerName(name); return !!key && key!=='rychly prodej' && !accountNumber(name); };
+  function findCustomer(s, name) {
+    const key=normalizeCustomerName(name);
+    return (s.customers||[]).find(x=>normalizeCustomerName(x.name)===key||(x.aliases||[]).some(a=>normalizeCustomerName(a)===key))||null;
+  }
+  function ensureCustomer(s, o, now = new Date().toISOString()) {
+    check(o && o.id !== 'bar' && customerLike(o.name), 'Kredit lze použít jen u pojmenovaného zákazníka.');
+    s.customers ||= [];
+    let customer=o.customerId?s.customers.find(x=>x.id===o.customerId):null;
+    if(!customer) customer=findCustomer(s,o.name);
+    if(!customer){customer={id:uid(),name:o.name,aliases:[o.name],createdAt:now};s.customers.push(customer);}
+    customer.aliases ||= [];
+    if(!customer.aliases.some(a=>normalizeCustomerName(a)===normalizeCustomerName(o.name)))customer.aliases.push(o.name);
+    customer.name=o.name;o.customerId=customer.id;
+    return customer;
+  }
+  const creditBalance = (s, customerId) => (s.creditLedger||[]).filter(x=>x.customerId===customerId).reduce((n,x)=>n+x.amount,0);
   const sameLine = (a, b) => ['productId', 'sourceCode', 'stockProductId', 'name', 'serving', 'price', 'vatRate'].every(k => a[k] === b[k])
     && own(a, 'stockRecipe') === own(b, 'stockRecipe') && JSON.stringify(a.stockRecipe) === JSON.stringify(b.stockRecipe);
   const receiptAccount = (s, r) => own(s.receiptAssignments || {}, r.id) ? s.receiptAssignments[r.id] : { orderId: r.orderId, orderName: r.orderName };
@@ -27,7 +46,7 @@
     return { schema: 1, deviceId: uid(), venueId: uid(), revision: 0, sequence: 0, catalogVersion: catalog.version,
       settings: { venue: 'ZTRACENÝ BAR', company: '', address: '', ico: '', dic: '', vat: 'unknown', operator: 'Obsluha' },
       products: structuredClone(catalog.products),
-      orders: [{ id: 'bar', name: 'Rychlý prodej', lines: [], revision: 0 }], shifts: [], receipts: [], receiptAssignments: {}, audit: [], lastBackup: null };
+      orders: [{ id: 'bar', name: 'Rychlý prodej', lines: [], revision: 0 }], shifts: [], receipts: [], receiptAssignments: {}, customers: [], creditLedger: [], audit: [], lastBackup: null };
   }
   const activeShift = s => s.shifts.find(x => !x.closedAt);
   function totals(s, shiftId) {
@@ -35,9 +54,15 @@
     const receipts = s.receipts.filter(x => x.shiftId === shiftId);
     const cash = receipts.reduce((n, x) => n + x.cash, 0);
     const card = receipts.reduce((n, x) => n + x.card, 0);
+    const credit = receipts.reduce((n, x) => n + (x.credit || 0), 0);
+    const topups=(s.creditLedger||[]).filter(x=>x.shiftId===shiftId&&x.type==='topup');
+    const creditTopupCash=topups.filter(x=>x.method==='cash').reduce((n,x)=>n+x.amount,0);
+    const creditTopupCard=topups.filter(x=>x.method==='card').reduce((n,x)=>n+x.amount,0);
     const movements = (sh?.movements || []).reduce((n, x) => n + x.amount, 0);
-    return { cash, card, total: cash + card, count: receipts.filter(x => x.kind === 'sale').length,
-      refunds: receipts.filter(x => x.kind === 'refund').length, movements, opening: sh?.opening || 0, expected: (sh?.opening || 0) + cash + movements };
+    return { cash, card, credit, total: cash + card + credit, count: receipts.filter(x => x.kind === 'sale').length,
+      refunds: receipts.filter(x => x.kind === 'refund').length, movements, opening: sh?.opening || 0,
+      creditTopupCash, creditTopupCard, creditTopups:creditTopupCash+creditTopupCard,
+      expected: (sh?.opening || 0) + cash + creditTopupCash + movements, terminal:card+creditTopupCard };
   }
   function selectedLines(order, selected) {
     check(Array.isArray(selected) && selected.length > 0, 'Vyber položky k zaplacení.');
@@ -50,14 +75,15 @@
   }
   function payment(raw, mode, received, splitCash) {
     check(integer(raw) && raw > 0, 'Účet musí mít kladnou hodnotu.');
-    check(['cash', 'card', 'split'].includes(mode), 'Vyber způsob platby.');
+    check(['cash', 'card', 'split', 'credit'].includes(mode), 'Vyber způsob platby.');
     const total = mode === 'cash' ? Math.round(raw / 100) * 100 : raw;
     check(total > 0, 'Částka po zaokrouhlení musí být kladná.');
-    const cash = mode === 'cash' ? total : mode === 'card' ? 0 : splitCash;
+    const cash = mode === 'cash' ? total : mode === 'split' ? splitCash : 0;
     check(integer(cash) && cash <= total && (mode !== 'split' || cash % 100 === 0), 'Hotovost zadej v celých Kč, nejvýš do výše účtu.');
-    const card = total - cash;
+    const credit = mode === 'credit' ? total : 0;
+    const card = mode === 'card' ? total : mode === 'split' ? total - cash : 0;
     check(integer(received) && received >= cash, 'Přijatá hotovost je nižší než částka k úhradě.');
-    return { total, cash, card, received, change: received - cash, rounding: total - raw, mode };
+    return { total, cash, card, credit, received, change: received - cash, rounding: total - raw, mode };
   }
   function execute(s, type, p = {}, now = new Date().toISOString(), restoredLines) {
     let result = null;
@@ -72,6 +98,7 @@
       check(clean(p.name), 'Zadej název účtu.');
       check(!s.orders.some(x => x.name.toLocaleLowerCase('cs') === clean(p.name).toLocaleLowerCase('cs')), 'Tento účet už existuje.');
       result = { id: uid(), name: clean(p.name), lines: [], revision: 0 }; s.orders.push(result);
+      if(customerLike(result.name))ensureCustomer(s,result,now);
     } else if (type === 'renameOrder') {
       const o = order();
       check(o.id !== 'bar', 'Rychlý prodej nelze přejmenovat.');
@@ -81,7 +108,15 @@
       const name = p.name.trim();
       check(!s.orders.some(x => x.id !== o.id && x.name.toLocaleLowerCase('cs') === name.toLocaleLowerCase('cs')), 'Tento účet už existuje.');
       result = { type, orderId: o.id, previousName: o.name, name, at: now };
-      o.name = name; o.revision++;
+      o.name = name;
+      if(customerLike(name)){
+        const customer=ensureCustomer(s,o,now);
+        if(customerLike(result.previousName)&&!customer.aliases.some(a=>normalizeCustomerName(a)===normalizeCustomerName(result.previousName)))customer.aliases.push(result.previousName);
+      } else if(o.customerId) {
+        check(creditBalance(s,o.customerId)===0,'Zákazníka s kreditem nelze změnit na stůl. Nejdřív kredit vyčerpej nebo vrať.');
+        delete o.customerId;
+      }
+      o.revision++;
     } else if (type === 'deleteOrder') {
       const o = order(); check(o.id !== 'bar' && !o.lines.length, 'Smazat lze pouze prázdný pojmenovaný účet.'); s.orders = s.orders.filter(x => x.id !== o.id);
     } else if (type === 'mergeOrders') {
@@ -165,7 +200,7 @@
       if (s.settings.vat === 'payer') check(lines.every(x => x.vatRate !== null), 'Na účtu chybí sazba DPH. Oprav položky před zaplacením.');
       const visitId = o.visitId, visitStartedAt = o.visitStartedAt;
       s.sequence++;
-      result = { id: uid(), operationId: p.operationId, number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, kind: 'sale', at: now, shiftId: sh.id, orderId: o.id, orderName: o.name, deviceId: s.deviceId, venueId: s.venueId, operator: sh.operator, settings: { ...s.settings }, lines, ...pay, ...(visitId && visitStartedAt ? { visitId, visitStartedAt } : {}) };
+      result = { id: uid(), operationId: p.operationId, number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, kind: 'sale', at: now, shiftId: sh.id, orderId: o.id, orderName: o.name, customerId:o.customerId||null, deviceId: s.deviceId, venueId: s.venueId, operator: sh.operator, settings: { ...s.settings }, lines, ...pay, ...(visitId && visitStartedAt ? { visitId, visitStartedAt } : {}) };
       for (const line of lines) o.lines.find(x => x.id === line.id).quantity -= line.quantity;
       o.lines = o.lines.filter(x => x.quantity > 0);
       if (visitId && visitStartedAt && !o.lines.length) {
@@ -179,7 +214,7 @@
       check(sale && sale.shiftId === sh.id, 'Vratku lze provést pouze k prodeji v právě otevřené směně.');
       check(!s.receipts.some(x => x.refundOf === sale.id), 'Tento doklad už má vratku.');
       const terminalConfirmation = refundVerification(sale, p, now);
-      s.sequence++; result = { ...sale, ...receiptAccount(s, sale), id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0 };
+      s.sequence++; result = { ...sale, ...receiptAccount(s, sale), id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, credit: -(sale.credit||0), rounding: -sale.rounding, received: 0, change: 0 };
       s.receipts.push(result);
     } else if (type === 'restoreReceipt') {
       needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
@@ -203,7 +238,7 @@
       check(sum(merged) <= 100000000, 'Po vrácení by účet překročil limit.');
       if (target.id !== 'bar' && !target.visitId) { target.visitId = sale.visitId || uid(); target.visitStartedAt = sale.visitStartedAt || now; }
       target.lines = merged; target.revision++;
-      s.sequence++; result = { ...sale, ...account, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0, restoredToOrderId: target.id, restoredToOrderName: target.name };
+      s.sequence++; result = { ...sale, ...account, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, credit: -(sale.credit||0), rounding: -sale.rounding, received: 0, change: 0, restoredToOrderId: target.id, restoredToOrderName: target.name };
       s.receipts.push(result);
     } else if (type === 'reassignReceipt') {
       needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
@@ -250,12 +285,23 @@
     }
     for (const r of s.receipts) {
       check(['sale','refund'].includes(r.kind) && Array.isArray(r.lines) && r.lines.length && r.settings && typeof r.settings.venue === 'string' && s.shifts.some(x => x.id === r.shiftId), 'Poškozený doklad.');
-      check([r.total,r.cash,r.card,r.rounding].every(Number.isSafeInteger) && r.total === r.cash + r.card, 'Nesedí součet dokladu.');
+      const credit=r.credit||0;
+      check([r.total,r.cash,r.card,credit,r.rounding].every(Number.isSafeInteger) && r.total === r.cash + r.card + credit, 'Nesedí součet dokladu.');
       if (r.visitId !== undefined || r.visitStartedAt !== undefined) check(typeof r.visitId === 'string' && typeof r.visitStartedAt === 'string' && !Number.isNaN(Date.parse(r.visitStartedAt)), 'Poškozený začátek návštěvy na dokladu.');
       if (r.visitEndedAt !== undefined || r.visitDurationMinutes !== undefined) check(typeof r.visitEndedAt === 'string' && !Number.isNaN(Date.parse(r.visitEndedAt)) && integer(r.visitDurationMinutes, 10000000), 'Poškozený konec návštěvy na dokladu.');
       for (const l of r.lines) check(integer(l.price) && integer(l.quantity, 999) && l.quantity > 0 && typeof l.name === 'string', 'Poškozená položka dokladu.');
       const sign = r.kind === 'sale' ? 1 : -1;
       check(sign * sum(r.lines) + r.rounding === r.total && sign * r.cash >= 0 && sign * r.card >= 0, 'Nesedí položky dokladu.');
+    }
+    if(s.customers!==undefined){
+      check(Array.isArray(s.customers)&&s.customers.length<100000&&s.customers.every(x=>x&&typeof x.id==='string'&&typeof x.name==='string'&&Array.isArray(x.aliases||[])), 'Poškozené zákaznické profily.');
+      check(new Set(s.customers.map(x=>x.id)).size===s.customers.length,'Duplicitní zákaznické profily.');
+    }
+    if(s.creditLedger!==undefined){
+      check(Array.isArray(s.creditLedger)&&s.creditLedger.length<100000,'Poškozená historie kreditu.');
+      check(new Set(s.creditLedger.map(x=>x.id)).size===s.creditLedger.length,'Duplicitní záznam kreditu.');
+      for(const x of s.creditLedger)check(x&&typeof x.id==='string'&&typeof x.customerId==='string'&&Number.isSafeInteger(x.amount)&&x.amount!==0&&['topup','spend','refund'].includes(x.type)&&['cash','card','credit'].includes(x.method)&&typeof x.at==='string','Poškozený záznam kreditu.');
+      for(const customer of s.customers||[])check(creditBalance(s,customer.id)>=0,'Kredit zákazníka nesmí být záporný.');
     }
     if (s.receiptAssignments !== undefined) {
       check(s.receiptAssignments && typeof s.receiptAssignments === 'object' && !Array.isArray(s.receiptAssignments), 'Poškozené přiřazení dokladů.');
@@ -263,7 +309,7 @@
     }
     return s;
   }
-  const api = { initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines, receiptAccount };
+  const api = { initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines, receiptAccount, normalizeCustomerName, customerLike, findCustomer, ensureCustomer, creditBalance };
   if (typeof module !== 'undefined') module.exports = api; else root.POSCore = api;
 })(globalThis);
 

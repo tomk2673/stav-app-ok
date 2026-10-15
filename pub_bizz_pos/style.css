@@ -256,3 +256,8 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
 .customer-drinks th,.customer-drinks td{padding:10px 11px}
 @media(max-width:630px){.customer-profile-button{padding:5px 8px;min-height:32px}.customer-stats{gap:7px}.customer-stats>div{padding:11px}.customer-stats strong{font-size:1.02rem}.customer-drinks{max-height:250px}}
 
+
+.payment-buttons.with-credit{grid-template-columns:repeat(3,minmax(0,1fr))}
+.paycredit{background:#c7d7ff;color:#18243f}
+.payment-methods.credit-enabled{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:630px){.payment-buttons.with-credit{gap:6px}.payment-buttons.with-credit button{font-size:.82rem;padding-left:6px;padding-right:6px}.payment-methods.credit-enabled{grid-template-columns:repeat(2,minmax(0,1fr))}}

@@ -19,9 +19,12 @@
     return (state.orders || []).find(o => o.id === account.orderId)?.name || account.orderName;
   }
   function salesFor(state, name) {
-    const key = normalize(name), customer=C.findCustomer?.(state,name);
-    const aliases=new Set([key,...((customer?.aliases)||[]).map(normalize)]);
-    return validSales(state).filter(r => (customer&&r.customerId===customer.id) || aliases.has(normalize(receiptName(state, r))));
+    const key = normalize(name), customers=state.customers||[];
+    const current=customers.find(x=>normalize(x.name)===key)||null;
+    const retiredAlias=customers.some(x=>normalize(x.name)!==key&&(x.aliases||[]).some(a=>normalize(a)===key));
+    if(retiredAlias&&!current)return [];
+    const aliases=new Set([key,...((current?.aliases)||[]).map(normalize)]);
+    return validSales(state).filter(r => (current&&r.customerId===current.id) || aliases.has(normalize(receiptName(state, r))));
   }
   function productCounts(state, name) {
     const counts = new Map();
@@ -50,7 +53,7 @@
     }).sort((a,b) => b.points-a.points || b.spend-a.spend || a.name.localeCompare(b.name,'cs'));
   }
   function profile(state, name, currentOrder = null, now = new Date().toISOString()) {
-    const key = normalize(name), sales = salesFor(state, name), customer=C.findCustomer?.(state,name);
+    const key = normalize(name), sales = salesFor(state, name), customer=(state.customers||[]).find(x=>normalize(x.name)===key)||null;
     const spend = sales.reduce((n,r) => n + r.total, 0);
     const itemMap = new Map();
     for (const receipt of sales) for (const line of receipt.lines || []) {

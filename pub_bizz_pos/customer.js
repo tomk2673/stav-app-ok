@@ -85,11 +85,13 @@
     const currentMinutes = currentOrder && normalize(currentOrder.name)===key && currentOrder.visitStartedAt
       ? Math.max(0,Math.floor((Date.parse(now)-Date.parse(currentOrder.visitStartedAt))/60000)) : 0;
     const board = leaderboard(state), rankIndex = board.findIndex(x=>x.key===key);
+    const payments=[...sales].sort((a,b)=>String(b.at).localeCompare(String(a.at))).map(r=>({id:r.id,number:r.number,at:r.at,total:r.total,cash:r.cash||0,card:r.card||0,credit:r.credit||0}));
+    const openAmount=order?C.sum(order.lines||[]):0;
     return {
       name, customerId:customer?.id||order?.customerId||null, creditBalance:customer?C.creditBalance(state,customer.id):order?.customerId?C.creditBalance(state,order.customerId):0,
-      spend, points:Math.floor(spend / POINT_VALUE), pointValueCzk:POINT_VALUE/100,
+      spend, openAmount, points:Math.floor(spend / POINT_VALUE), pointValueCzk:POINT_VALUE/100,
       rank:rankIndex<0?null:rankIndex+1, competitors:board.length,
-      receiptCount:sales.length, itemCount:items.reduce((n,x)=>n+x.quantity,0), items,
+      receiptCount:sales.length, itemCount:items.reduce((n,x)=>n+x.quantity,0), items, payments,
       visitCount:visits.length, totalMinutes, averageMinutes:visits.length?Math.round(totalMinutes/visits.length):0,
       spendPerHour:totalMinutes?Math.round(timedSpend*60/totalMinutes):0, timedSpend,
       currentMinutes, visits, lastAt:sales.reduce((latest,r)=>!latest||String(r.at)>String(latest)?r.at:latest,null)

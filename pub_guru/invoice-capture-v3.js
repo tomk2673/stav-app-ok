@@ -870,7 +870,11 @@
         lines:rows.map(r=>({raw_name:r.rawName,quantity:r.qty,unit_price_net:r.price,vat_rate:r.vatRate,
           line_total_net:r.lineNet,line_total_gross:r.lineGross,warning:null,
           discount_percent:r.discountPercent??null,discount_amount_net:r.discountAmountNet??null}))};
-      return window.PubGuruInvoiceAccounting.validate(draft).warnings;
+      const checked=window.PubGuruInvoiceAccounting.validate(draft);
+      // A correctly signed credit note may be SAVED FOR REVIEW. Posting still
+      // requires the manager's explicit approval of existing-product returns.
+      const signedCredit=draft.document_type==='credit_note'&&draft.total_gross<0&&draft.lines.some(line=>line.quantity<0);
+      return checked.warnings.filter(w=>!(signedCredit&&/^Dobropis vyžaduje kontrolu vratky;/.test(w)));
     },
     beginQueue:()=>{queueLocked=true;lockEditor(true);},
     endQueue:()=>{queueLocked=false;lockEditor(false);window.dispatchEvent(new Event('pubguru:invoice-read-finished'));},

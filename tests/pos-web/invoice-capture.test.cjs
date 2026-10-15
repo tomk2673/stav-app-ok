@@ -431,3 +431,14 @@ test('blank numeric inputs persist as missing, never as free goods',async()=>{
     assert.equal(h.w.document.getElementById('submitBtn').disabled,true);assert.equal(h.writes.length,0);
   } finally { h.dom.window.close(); }
 });
+test('a balanced signed AI credit note reaches manager review without becoming a positive stock receipt',async()=>{
+  const expected=require('../fixtures/invoice-vision/cases.cjs').find(c=>c.id==='credit-note').expected;
+  const h=await harness({payload:{provider:'openai-vision',invoice:expected}});
+  try{
+    await h.capture();const result=await h.submit();
+    assert.equal(result.invoice.status,'review');assert.equal(result.invoice.total_amount,-242);
+    const line=h.writes.find(w=>w.table==='invoice_lines').data;
+    assert.equal(line.quantity,-2);assert.equal(line.unit_price_net,100);assert.equal(line.line_total_gross,-242);
+    assert.ok(h.writes.every(w=>w.table!=='stock_movements'));
+  }finally{h.dom.window.close();}
+});

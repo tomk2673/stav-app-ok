@@ -116,15 +116,15 @@ declare
 $guard$;
 begin
  if strpos(definition,'-- POS_CUSTOMER_CREDIT_GUARD_V1')>0 then return; end if;
- if (length(definition)-length(replace(definition,staff_old,'')))/length(staff_old) <> 1
+ if (length(definition)-length(replace(definition,staff_old,'')))/length(staff_old) <> 2
     or (length(definition)-length(replace(definition,all_old,'')))/length(all_old) <> 1
     or (length(definition)-length(replace(definition,receipt_old,'')))/length(receipt_old) <> 1
     or (length(definition)-length(replace(definition,guard_anchor,'')))/length(guard_anchor) <> 1
     or (length(definition)-length(replace(definition,closing_old,'')))/length(closing_old) <> 1 then
   raise exception 'pos_commit changed: review customer-credit anchors before applying';
  end if;
- definition:=replace(definition,staff_old,staff_new);
  definition:=replace(definition,all_old,all_new);
+ definition:=replace(definition,staff_old,staff_new);
  definition:=replace(definition,receipt_old,receipt_new);
  definition:=replace(definition,guard_anchor,wallet_guard||E'\n'||guard_anchor);
  definition:=replace(definition,closing_old,closing_new);

@@ -586,3 +586,14 @@ test('a lost reservation response freezes payment until its result is recovered,
   const reservations=h.calls.filter(c=>c.type==='beginPayment');assert.equal(reservations.length,2);assert.ok(reservations.every(c=>c.requestId===id));assert.equal(h.server.receipts.length,0);
  }finally{h.dom.window.close();}
 });
+
+test('customer departure UI freezes the visit while keeping the whole unpaid account',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});const o=C.execute(s,'newOrder',{name:'Lukas Novobilsky'});C.execute(s,'addLine',{orderId:o.id,productId:'agnis-2810',quantity:2},new Date(Date.now()-30*60000).toISOString());return s;});try{
+  const o=h.server.orders.find(o=>o.name==='Lukas Novobilsky'),before=structuredClone(o.lines);
+  h.click('[data-action="account"][data-id="'+o.id+'"]');h.click('[data-action="customerProfile"]');
+  h.click('[data-action="endVisit"]');assert.match(h.w.document.querySelector('#dialog-body').textContent,/zůstane/);h.submit();
+  await until(()=>!h.w.document.querySelector('#dialog').open&&h.server.orders.find(x=>x.id===o.id).visitEndedAt,'departure saved');
+  assert.deepEqual(h.server.orders.find(x=>x.id===o.id).lines,before);assert.equal(h.server.receipts.length,0);
+  h.click('[data-action="customerProfile"]');assert.match(h.w.document.querySelector('#dialog-body').textContent,/Návštěva je ukončená/);
+ }finally{h.dom.window.close();}
+});

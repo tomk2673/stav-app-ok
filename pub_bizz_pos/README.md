@@ -86,3 +86,9 @@ Omylem otevřenou celou platbu lze přímo přepnout přes **Rozdělit po polož
 Nasazení: aplikovat `supabase/migrations/20261013222653_pos_receipt_terminal_guard.sql`, nasadit celý aktualizovaný Edge bundle a potom web. Migrace upravuje aktuální funkci pomocí hlídaných kotvicích bodů, zachovává její stock/closing integrace a oprávnění a nepřepisuje staré tržby, doklady ani zásoby. Bundle zachovává dříve nasazené věrnostní hooky, náhradní suroviny a stav `awaiting_stock`. Aktualizovaná PWA cache je `2.0.8`; samostatný HTML soubor je generovaný z týchž zdrojů.
 
 Regrese: `node --test tests/pub-bizz-receipt-corrections.test.js` ověřuje oba skutečné core/domain moduly; `node --test tests/pos-web/cloud-ui.test.cjs tests/pos-web/receipt-corrections-db.test.cjs` ověřuje ovládání, dvojí kliknutí, přerušení před/po commitu, audit a izolovanou PostgreSQL transakci se skutečnými migracemi a skladovými triggery. Žádný z těchto testů nepoužívá produkční finanční data nebo skutečný terminál.
+
+## Návštěvy a nezaplacené účty
+
+Doba návštěvy je oddělená od dlužné částky. Po 120 minutách bez objednávky nebo průběžné platby se návštěva ukončí odhadem; další objednávka začne novou návštěvu na stejném účtu. Starší stav se odvozuje z auditní historie, aby se dnešní objednávka nepočítala od včerejší noci. Profil nabízí „Host odešel“ s opravitelným časem odchodu. Příkaz `endVisit` mění jen metadata návštěvy a audit; doklady, položky, dluh a sklad zůstávají stejné. Odhadované intervaly a útraty obsahující převedený dluh se nepovažují za přesný podklad pro útratu za hodinu. Vratka starého dokladu sama nezakládá návštěvu.
+
+Regrese: `tests/pub-bizz-visits.test.js`, test odchodu v `tests/pos-web/cloud-ui.test.cjs` a skutečná PostgreSQL transakce v `tests/pos-web/receipt-corrections-db.test.cjs`. Databázový guard odmítne současnou změnu finančních dat.

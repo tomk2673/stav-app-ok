@@ -2952,8 +2952,36 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     check(integer(received) && received >= cash, 'Přijatá hotovost je nižší než částka k úhradě.');
     return { total, cash, card, received, change: received - cash, rounding: total - raw, mode };
   }
+  const VISIT_IDLE_MINUTES = 120;
+  const visitFields = ['visitId','visitStartedAt','visitLastActivityAt','visitEndedAt','visitEndEstimated','visitHasCarriedBalance'];
+  function clearVisit(order) { for (const field of visitFields) delete order[field]; }
+  function visitSessions(state, order, now = new Date().toISOString()) {
+    const start = Date.parse(order?.visitStartedAt), clock = Date.parse(now);
+    if (!Number.isFinite(start) || !Number.isFinite(clock) || start > clock) return [];
+    const manualEnd = Date.parse(order.visitEndedAt), limit = Number.isFinite(manualEnd) ? Math.min(clock,manualEnd) : clock;
+    const times = new Set([start]);
+    for (const event of state.audit || []) {
+      if (!['addLine','checkout'].includes(event.type) || (event.detail?.orderId || event.orderId) !== order.id) continue;
+      const at = Date.parse(event.at); if (at >= start && at <= limit) times.add(at);
+    }
+    const last = Date.parse(order.visitLastActivityAt); if (last >= start && last <= limit) times.add(last);
+    const idle = VISIT_IDLE_MINUTES * 60000, sessions = []; let began = start, activity = start;
+    const row = (end, estimated, active = false) => ({id:began===start?(order.visitId || 'visit:'+order.id+':'+start):(order.visitId || 'visit:'+order.id)+'@'+began,
+      orderId:order.id,orderName:order.name,startedAt:new Date(began).toISOString(),endedAt:end===null?null:new Date(end).toISOString(),
+      durationMinutes:Math.max(0,Math.floor(((end===null?clock:end)-began)/60000)),lastActivityAt:new Date(activity).toISOString(),estimated,active,
+      reason:active?'active':estimated?'idle':'manual'});
+    for (const at of [...times].sort((a,b)=>a-b)) {
+      if (at-activity >= idle) { sessions.push(row(activity+idle,true)); began=at; }
+      activity=at;
+    }
+    if (Number.isFinite(manualEnd)) sessions.push(row(Math.max(began,limit),order.visitEndEstimated===true));
+    else if (clock-activity >= idle) sessions.push(row(activity+idle,true));
+    else sessions.push(row(null,false,true));
+    return sessions;
+  }
   function execute(s, type, p = {}, now = new Date().toISOString(), restoredLines) {
     let result = null;
+    const closedVisits = [];
     const sh = activeShift(s);
     const needShift = () => { check(sh, 'Nejdřív otevři směnu.'); return sh; };
     const order = () => { const o = s.orders.find(x => x.id === p.orderId); check(o, 'Účet už neexistuje.'); return o; };
@@ -2975,6 +3003,16 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       check(!s.orders.some(x => x.id !== o.id && x.name.toLocaleLowerCase('cs') === name.toLocaleLowerCase('cs')), 'Tento účet už existuje.');
       result = { type, orderId: o.id, previousName: o.name, name, at: now };
       o.name = name; o.revision++;
+    } else if (type === 'endVisit') {
+      const o = order();
+      check(o.id !== 'bar' && o.visitStartedAt, 'Na tomto účtu není návštěva k ukončení.');
+      check(!o.paymentLock, 'Nejdřív dokonči nebo uvolni rozpracovanou platbu.');
+      check(o.revision === p.revision, 'Účet se změnil. Znovu otevři profil.');
+      const ended = Date.parse(p.endedAt || now), began = Date.parse(o.visitStartedAt);
+      check(Number.isFinite(ended) && ended >= began && ended <= Date.parse(now), 'Odchod musí být mezi začátkem návštěvy a současností.');
+      o.visitEndedAt = new Date(ended).toISOString(); o.visitEndEstimated = false;
+      const sessions = visitSessions(s,o,now); closedVisits.push(...sessions.filter(v=>!v.active));
+      result = {...sessions[sessions.length-1],type,at:now}; o.revision++;
     } else if (type === 'deleteOrder') {
       const o = order(); check(o.id !== 'bar' && !o.lines.length, 'Smazat lze pouze prázdný pojmenovaný účet.'); s.orders = s.orders.filter(x => x.id !== o.id);
     } else if (type === 'mergeOrders') {
@@ -3000,7 +3038,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
         if (!target.visitId) target.visitId = source.visitId;
       }
       target.lines = merged; target.revision++;
-      source.lines = []; delete source.visitId; delete source.visitStartedAt; source.revision++;
+      source.lines = []; clearVisit(source); source.revision++;
     } else if (type === 'loadCatalog') {
       if (s.catalogVersion === catalog.version) return null;
       for (const item of catalog.products) {
@@ -3042,14 +3080,24 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       const line = o.lines.find(x => sameLine(x,nextLine));
       check(!line || line.quantity + quantity <= 999, 'Limit množství je 999.');
       check(sum(o.lines) + portion.price * quantity <= 100000000, 'Překročen limit účtu.');
-      if (o.id !== 'bar' && (!o.lines.length || !o.visitId || !o.visitStartedAt)) { o.visitId = uid(); o.visitStartedAt = now; }
+      if (o.id !== 'bar') {
+        const sessions = visitSessions(s,o,now), active = sessions.find(v=>v.active);
+        closedVisits.push(...sessions.filter(v=>!v.active));
+        if (!o.lines.length || !o.visitId || !active) {
+          const carried = o.lines.length > 0; clearVisit(o); o.visitId = uid(); o.visitStartedAt = now;
+          if (carried) o.visitHasCarriedBalance = true;
+        } else if (active.startedAt !== new Date(o.visitStartedAt).toISOString()) {
+          o.visitId = active.id; o.visitStartedAt = active.startedAt; o.visitHasCarriedBalance = true;
+        }
+        o.visitLastActivityAt = now;
+      }
       if (line) line.quantity += quantity;
       else o.lines.push({id:uid(),...nextLine,quantity});
       check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
     } else if (type === 'removeLine') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.'); check(clean(p.reason), 'Doplň důvod opravy.');
       l.quantity--; o.lines = o.lines.filter(x => x.quantity > 0);
-      if (!o.lines.length) { delete o.visitId; delete o.visitStartedAt; }
+      if (!o.lines.length) { clearVisit(o); }
       o.revision++;
     } else if (type === 'setLineQuantity') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.');
@@ -3062,15 +3110,23 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       const lines = selectedLines(o, p.selected); const pay = payment(sum(lines), p.mode, p.received, p.splitCash);
       check(!pay.card || p.cardConfirmed === true, 'Nejdřív potvrď úspěšnou platbu na terminálu.');
       if (s.settings.vat === 'payer') check(lines.every(x => x.vatRate !== null), 'Na účtu chybí sazba DPH. Oprav položky před zaplacením.');
-      const visitId = o.visitId, visitStartedAt = o.visitStartedAt;
+      const sessions = visitSessions(s,o,now), activeVisit = sessions.find(v=>v.active), latestVisit = sessions[sessions.length-1];
+      closedVisits.push(...sessions.filter(v=>!v.active));
+      const visitId = latestVisit?.id || o.visitId, visitStartedAt = latestVisit?.startedAt || o.visitStartedAt;
       s.sequence++;
       result = { id: uid(), operationId: p.operationId, number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, kind: 'sale', at: now, shiftId: sh.id, orderId: o.id, orderName: o.name, deviceId: s.deviceId, venueId: s.venueId, operator: sh.operator, settings: { ...s.settings }, lines, ...pay, ...(visitId && visitStartedAt ? { visitId, visitStartedAt } : {}) };
       for (const line of lines) o.lines.find(x => x.id === line.id).quantity -= line.quantity;
       o.lines = o.lines.filter(x => x.quantity > 0);
-      if (visitId && visitStartedAt && !o.lines.length) {
-        result.visitEndedAt = now;
-        result.visitDurationMinutes = Math.max(0, Math.round((Date.parse(now) - Date.parse(visitStartedAt)) / 60000));
-        delete o.visitId; delete o.visitStartedAt;
+      if (visitId && visitStartedAt) {
+        if (latestVisit?.estimated || o.visitHasCarriedBalance || sessions.length > 1) result.visitEstimated = true;
+        if (!activeVisit || !o.lines.length) {
+          result.visitEndedAt = latestVisit?.endedAt || now;
+          result.visitDurationMinutes = Math.max(0,Math.floor((Date.parse(result.visitEndedAt)-Date.parse(visitStartedAt))/60000));
+          if (activeVisit) closedVisits.push({...activeVisit,active:false,endedAt:now,durationMinutes:result.visitDurationMinutes,estimated:result.visitEstimated===true,reason:'paid'});
+        }
+        if (!o.lines.length) clearVisit(o);
+        else if (activeVisit) o.visitLastActivityAt = now;
+        else if (latestVisit?.endedAt) { o.visitEndedAt=latestVisit.endedAt; o.visitEndEstimated=latestVisit.estimated===true; }
       }
       s.receipts.push(result); o.revision++;
     } else if (type === 'refund') {
@@ -3100,7 +3156,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
         }
       }
       check(sum(merged) <= 100000000, 'Po vrácení by účet překročil limit.');
-      if (target.id !== 'bar' && !target.visitId) { target.visitId = sale.visitId || uid(); target.visitStartedAt = sale.visitStartedAt || now; }
+      // Restoring an old bill changes the balance, not the customer's presence.
       target.lines = merged; target.revision++;
       s.sequence++; result = { ...sale, ...account, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0, restoredToOrderId: target.id, restoredToOrderName: target.name };
       s.receipts.push(result);
@@ -3127,7 +3183,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     } else if (type === 'backup') s.lastBackup = now;
     else throw new Error('Neznámá operace.');
     s.revision++;
-    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : result?.receiptId || null, detail: structuredClone(p), ...(type === 'renameOrder' ? { rename: structuredClone(result) } : {}), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}), ...(type === 'reassignReceipt' ? { assignment: structuredClone(result) } : {}) });
+    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : result?.receiptId || null, detail: structuredClone(p), ...(closedVisits.length ? { visits: structuredClone(closedVisits) } : {}), ...(type === 'endVisit' ? { visit: structuredClone(result) } : {}), ...(type === 'renameOrder' ? { rename: structuredClone(result) } : {}), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}), ...(type === 'reassignReceipt' ? { assignment: structuredClone(result) } : {}) });
     return result;
   }
   function validate(s) {
@@ -3140,6 +3196,8 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     for (const o of s.orders) {
       check(typeof o.name === 'string' && integer(o.revision, 1000000000) && Array.isArray(o.lines), 'Poškozený účet.');
       if (o.visitId !== undefined || o.visitStartedAt !== undefined) check(typeof o.visitId === 'string' && typeof o.visitStartedAt === 'string' && !Number.isNaN(Date.parse(o.visitStartedAt)), 'Poškozený čas návštěvy na účtu.');
+      if (o.visitLastActivityAt !== undefined) check(Number.isFinite(Date.parse(o.visitLastActivityAt)) && Date.parse(o.visitLastActivityAt)>=Date.parse(o.visitStartedAt), 'Poškozená aktivita návštěvy.');
+      if (o.visitEndedAt !== undefined) check(Number.isFinite(Date.parse(o.visitEndedAt)) && Date.parse(o.visitEndedAt)>=Date.parse(o.visitStartedAt), 'Poškozený konec návštěvy.');
       for (const l of o.lines) { check(typeof l.id === 'string' && typeof l.name === 'string' && integer(l.price) && l.price > 0 && integer(l.quantity, 999) && l.quantity > 0, 'Neplatná položka v záloze.'); validatePortion(l); }
     }
     check(s.shifts.filter(x => !x.closedAt).length <= 1, 'Záloha obsahuje více otevřených směn.');
@@ -3162,7 +3220,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     }
     return s;
   }
-  const api = { initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines, receiptAccount, shotVolumeMl, smallShot, recipeForLine };
+  const api = { VISIT_IDLE_MINUTES, visitSessions, initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines, receiptAccount, shotVolumeMl, smallShot, recipeForLine };
   if (typeof module !== 'undefined') module.exports = api; else root.POSCore = api;
 })(globalThis);
 
@@ -3230,21 +3288,30 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     const completed = new Map();
     for (const receipt of state.receipts || []) {
       if (receipt.kind !== 'sale' || normalize(receiptName(state, receipt)) !== key || !receipt.visitId || !receipt.visitEndedAt || !Number.isSafeInteger(receipt.visitDurationMinutes)) continue;
-      completed.set(receipt.visitId,{id:receipt.visitId,startedAt:receipt.visitStartedAt,endedAt:receipt.visitEndedAt,durationMinutes:receipt.visitDurationMinutes});
+      completed.set(receipt.visitId,{id:receipt.visitId,startedAt:receipt.visitStartedAt,endedAt:receipt.visitEndedAt,durationMinutes:receipt.visitDurationMinutes,estimated:receipt.visitEstimated===true});
     }
+    for (const event of state.audit || []) for (const visit of event.visits || []) {
+      const visitName = (state.orders || []).find(o=>o.id===visit.orderId)?.name || visit.orderName;
+      if (normalize(visitName)===key && Number.isSafeInteger(visit.durationMinutes) && visit.durationMinutes>=0) completed.set(visit.id,visit);
+    }
+    const sessions = currentOrder && normalize(currentOrder.name)===key ? C.visitSessions(state,currentOrder,now) : [];
+    for (const visit of sessions.filter(v=>!v.active)) completed.set(visit.id,visit);
+    const activeVisit = sessions.find(v=>v.active) || null;
     const visits = [...completed.values()].sort((a,b) => String(b.endedAt).localeCompare(String(a.endedAt)));
-    const visitIds = new Set(visits.map(v=>v.id));
-    const timedSpend = sales.filter(r=>visitIds.has(r.visitId)).reduce((n,r)=>n+r.total,0);
+    const exactVisits = visits.filter(v=>!v.estimated);
+    const visitIds = new Set(exactVisits.map(v=>v.id));
+    const timedSpend = sales.filter(r=>visitIds.has(r.visitId)&&r.visitEstimated!==true).reduce((n,r)=>n+r.total,0);
     const totalMinutes = visits.reduce((n,v)=>n+v.durationMinutes,0);
-    const currentMinutes = currentOrder && normalize(currentOrder.name)===key && currentOrder.visitStartedAt
-      ? Math.max(0,Math.floor((Date.parse(now)-Date.parse(currentOrder.visitStartedAt))/60000)) : 0;
+    const exactMinutes = exactVisits.reduce((n,v)=>n+v.durationMinutes,0);
+    const currentMinutes = activeVisit?.durationMinutes || 0;
     const board = leaderboard(state), rankIndex = board.findIndex(x=>x.key===key);
     return {
       name, spend, points:Math.floor(spend / POINT_VALUE), pointValueCzk:POINT_VALUE/100,
       rank:rankIndex<0?null:rankIndex+1, competitors:board.length,
       receiptCount:sales.length, itemCount:items.reduce((n,x)=>n+x.quantity,0), items,
       visitCount:visits.length, totalMinutes, averageMinutes:visits.length?Math.round(totalMinutes/visits.length):0,
-      spendPerHour:totalMinutes?Math.round(timedSpend*60/totalMinutes):0, timedSpend,
+      spendPerHour:exactMinutes?Math.round(timedSpend*60/exactMinutes):0, timedSpend, exactMinutes,
+      estimatedVisitCount:visits.filter(v=>v.estimated).length, activeVisit, lastVisit:sessions[sessions.length-1] || null,
       currentMinutes, visits, lastAt:sales.reduce((latest,r)=>!latest||String(r.at)>String(latest)?r.at:latest,null)
     };
   }
@@ -3390,7 +3457,7 @@ function connection() {
   warning.hidden=!state||(!pending&&online);
   warning.innerHTML=pending?`<span><strong>Ověřujeme uloženou operaci.</strong> Platbu na terminálu neopakuj.</span>${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}`:'<span>Server není dostupný. Zobrazená data mohou být starší; placení vyžaduje spojení.</span>';
   if(state){$('#save-state').textContent=cloud.busy?'Ukládám na server…':pending?'Čeká na ověření':online?'Potvrzeno serverem':'Spojení přerušeno';$('#save-state').classList.toggle('error',!!pending||!online);}
-  const writeActions=['add','minus','restoreReceipt','newOrder','renameOrder','deleteOrder','mergeOrders','openShift','payCash','payCard','paySplit','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
+  const writeActions=['add','minus','restoreReceipt','newOrder','renameOrder','endVisit','deleteOrder','mergeOrders','openShift','payCash','payCard','paySplit','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
   document.querySelectorAll('[data-action]').forEach(b=>{if(writeActions.includes(b.dataset.action)){const lock=!!pending&&!cloud.busy||!online;if(lock&&!b.disabled){b.disabled=true;b.dataset.connectionDisabled='true';}else if(!lock&&b.dataset.connectionDisabled){b.disabled=false;delete b.dataset.connectionDisabled;}}});
 }
 function render() {
@@ -3556,22 +3623,30 @@ function customerProfile() {
   const rows=p.items.map(x=>`<tr><td><strong>${E(x.name)}</strong>${x.serving?`<br><span class="muted small">${E(x.serving)}</span>`:''}</td><td class="amount">${x.quantity}×</td><td class="amount">${fmt(x.spend)}</td></tr>`).join('');
   const rank=p.rank?`#${p.rank} z ${p.competitors}`:'—';
   showDialog(o.name+` · zákazník`,`<div class="customer-profile">
-    ${p.currentMinutes?`<div class="customer-current"><span>Právě v baru</span><strong>${durationText(p.currentMinutes)}</strong></div>`:''}
+    ${p.activeVisit?`<div class="customer-current"><span>Aktuální návštěva</span><strong>${p.currentMinutes?durationText(p.currentMinutes):'0 min'}</strong></div>`:p.lastVisit?'<p class="help">Návštěva je ukončená. Nezaplacený účet zůstává otevřený.</p>':''}
+    ${o.visitStartedAt&&!o.paymentLock?btn('Host odešel · ukončit návštěvu','endVisit','secondary'):''}
     <div class="customer-stats">
       <div><span>Věrnostní body</span><strong>${p.points}</strong></div>
       <div><span>Pořadí</span><strong>${rank}</strong></div>
       <div><span>Celkem utraceno</span><strong>${fmt(p.spend)}</strong></div>
       <div><span>Položek</span><strong>${p.itemCount}</strong></div>
       <div><span>Návštěvy s časem</span><strong>${p.visitCount}</strong></div>
-      <div><span>Čas v baru</span><strong>${durationText(p.totalMinutes)}</strong></div>
+      <div><span>Čas návštěv${p.estimatedVisitCount?' · část odhadem':''}</span><strong>${durationText(p.totalMinutes)}</strong></div>
       <div><span>Průměr návštěvy</span><strong>${durationText(p.averageMinutes)}</strong></div>
-      <div><span>Útrata / hod.</span><strong>${p.totalMinutes?fmt(p.spendPerHour):'—'}</strong></div>
+      <div><span>Útrata / hod.</span><strong>${p.exactMinutes?fmt(p.spendPerHour):'—'}</strong></div>
     </div>
-    <p class="help customer-rules">1 bod za každých 10 Kč skutečně zaplacené útraty. Vratky se automaticky odečítají. Pořadí je podle bodů, ne podle množství alkoholu. Přesný čas se počítá jen u návštěv zahájených po nasazení této funkce.</p>
+    <p class="help customer-rules">1 bod za každých 10 Kč skutečně zaplacené útraty. Vratky se automaticky odečítají. Pořadí je podle bodů, ne podle množství alkoholu. Návštěva se po 2 hodinách bez další objednávky automaticky ukončí odhadem. Další objednávka začne novou návštěvu i na nezaplaceném účtu. Odchod lze potvrdit ručně. Odhady se nepoužívají pro útratu za hodinu.</p>
     <div class="customer-detail"><span>Dokladů: <strong>${p.receiptCount}</strong></span><span>Poslední útrata: <strong>${p.lastAt?date(p.lastAt):'—'}</strong></span></div>
     <h3>Co nejčastěji bere</h3>
     <div class="table-wrap customer-drinks"><table><thead><tr><th>Položka</th><th class="amount">Počet</th><th class="amount">Útrata</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="empty">Po prvním zaplaceném dokladu se tu objeví statistika.</td></tr>'}</tbody></table></div>
   </div>`,null);
+}
+function endVisit() {
+  const o=getOrder();if(!customerAccount(o)||!o.visitStartedAt)return;
+  const sessions=C.visitSessions(state,o),last=sessions[sessions.length-1];
+  const at=last?.endedAt||new Date().toISOString(),d=new Date(at);
+  const local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,19);
+  showDialog('Host odešel',`<p class="help">Ukončí se pouze návštěva zákazníka <strong>${E(o.name)}</strong>. Nezaplacená částka <strong>${fmt(C.sum(o.lines))}</strong> zůstane na jeho účtu.</p><label class="field">Čas odchodu<input type="datetime-local" step="1" name="endedAt" value="${E(local)}" required></label><p class="help">Pokud zákazník odešel dříve, oprav čas. Automaticky předvyplněný konec je odhad podle aktivity.</p>`,f=>command('endVisit',{orderId:o.id,revision:o.revision,endedAt:new Date(String(f.get('endedAt'))).toISOString()}),'Ukončit návštěvu',()=>{render();toast('Návštěva ukončená. Účet zůstává otevřený.');});
 }
 function productSalesCounts() {
   // Receipts come from the shared confirmed state; never count taps or unpaid orders.
@@ -3665,7 +3740,8 @@ function finishPayment(r) {
 }
 async function pay(mode, resume=false) {
   const o=structuredClone(getOrder());if(!o.lines.length)return;
-  const reservation=window.POSCloud?(resume?o.paymentLock:await command('beginPayment',{orderId:o.id,revision:o.revision})):null;
+  const delayReservation=window.POSCloud&&mode==='split'&&!resume;
+  let reservation=window.POSCloud?(resume?o.paymentLock:delayReservation?null:await command('beginPayment',{orderId:o.id,revision:o.revision})):null;
   const operationId=crypto.randomUUID();let partial=mode==='split';
   let paymentMode=partial?'cash':mode,receivedTouched=false,splitTouched=false;
   const selected=()=>o.lines.map(l=>({id:l.id,quantity:Number($('#dialog-form').elements['line-'+l.id].value)})).filter(x=>x.quantity>0);
@@ -3680,6 +3756,7 @@ async function pay(mode, resume=false) {
       <label class="inline-check" id="card-confirm-field"><input type="checkbox" name="cardConfirmed">Platba kartou na terminálu proběhla úspěšně.</label>
     </div>`, async f=>{
       for(const l of o.lines){const q=Number(f.get('line-'+l.id));if(!Number.isSafeInteger(q)||q<0||q>l.quantity)throw new Error('Neplatný počet kusů.');}
+      if(window.POSCloud&&!reservation) reservation=await command('beginPayment',{orderId:o.id,revision:o.revision});
       return await command('checkout',{orderId:o.id,revision:o.revision,operationId,paymentToken:reservation?.token,selected:selected(),mode:paymentMode,received:paymentMode==='card'?0:C.money(f.get('received')),splitCash:paymentMode==='split'?C.money(f.get('splitCash')):0,cardConfirmed:f.has('cardConfirmed')});
     },'Potvrdit zaplacení',finishPayment);
   const signal=window.paymentAbort.signal,form=$('#dialog-form');
@@ -3778,7 +3855,7 @@ const actions={
   quantityPad:id=>quantityPad(id),
   entryCount:id=>{entryQuantity=Number(id);updateEntryContext();},entryQuantity:entryQuantityPad,
   smallShot:()=>{entryServingMl=entryServingMl===20?undefined:20;if(entryServingMl===20){const shots=state.products.filter(p=>p.active&&C.smallShot(p));if(!shots.some(p=>p.category===category))category='Vše';if(query&&!shots.some(p=>normalizeSearch(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(normalizeSearch(query))))query='';}render();},
-  account:id=>selectAccount(id),customerProfile,category:async id=>{category=id;query='';render();},openShift,renameOrder,mergeOrders,
+  account:id=>selectAccount(id),customerProfile,endVisit,category:async id=>{category=id;query='';render();},openShift,renameOrder,mergeOrders,
   newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta (nepovinné)','name',accountQuery.trim(),'maxlength="120" placeholder="Bez vyplnění = rychlý prodej"'),f=>{
     const name=String(f.get('name')||'').trim();
     return name?command('newOrder',{name}):{id:'bar'};

@@ -60,7 +60,7 @@
       check(['cash','card'].includes(p.method),'Vyber hotovost nebo kartu.');
       if(p.method==='card')check(p.cardConfirmed===true,'Potvrď úspěšné dobití kartou na terminálu.');
       const customer=C.ensureCustomer(s,order,now);
-      const entry={id:crypto.randomUUID(),type:'topup',customerId:customer.id,customerName:customer.name,orderId:order.id,shiftId:C.activeShift(s).id,amount:p.amount,method:p.method,at:now,actorId:actor.id};
+      const entry={id:crypto.randomUUID(),type:'topup',customerId:customer.id,customerName:customer.name,orderId:order.id,shiftId:C.activeShift(s).id,amount:p.amount,method:p.method,cardConfirmed:p.method==='card',at:now,actorId:actor.id};
       s.creditLedger.push(entry);
       result={...entry,balance:C.creditBalance(s,customer.id)};
     } else if(type==='loyaltyConfig'){

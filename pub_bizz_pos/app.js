@@ -362,7 +362,8 @@ function finishPayment(r) {
 }
 async function pay(mode, resume=false) {
   const o=structuredClone(getOrder());if(!o.lines.length)return;
-  let reservation=window.POSCloud&&resume?o.paymentLock:null;
+  const delayReservation=window.POSCloud&&mode==='split'&&!resume;
+  let reservation=window.POSCloud?(resume?o.paymentLock:delayReservation?null:await command('beginPayment',{orderId:o.id,revision:o.revision})):null;
   const operationId=crypto.randomUUID();let partial=mode==='split';
   let paymentMode=partial?'cash':mode,receivedTouched=false,splitTouched=false;
   const selected=()=>o.lines.map(l=>({id:l.id,quantity:Number($('#dialog-form').elements['line-'+l.id].value)})).filter(x=>x.quantity>0);

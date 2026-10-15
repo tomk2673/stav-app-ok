@@ -19,8 +19,9 @@
     return (state.orders || []).find(o => o.id === account.orderId)?.name || account.orderName;
   }
   function salesFor(state, name) {
-    const key = normalize(name);
-    return validSales(state).filter(r => normalize(receiptName(state, r)) === key);
+    const key = normalize(name), customer=C.findCustomer?.(state,name);
+    const aliases=new Set([key,...((customer?.aliases)||[]).map(normalize)]);
+    return validSales(state).filter(r => (customer&&r.customerId===customer.id) || aliases.has(normalize(receiptName(state, r))));
   }
   function productCounts(state, name) {
     const counts = new Map();
@@ -49,7 +50,7 @@
     }).sort((a,b) => b.points-a.points || b.spend-a.spend || a.name.localeCompare(b.name,'cs'));
   }
   function profile(state, name, currentOrder = null, now = new Date().toISOString()) {
-    const key = normalize(name), sales = salesFor(state, name);
+    const key = normalize(name), sales = salesFor(state, name), customer=C.findCustomer?.(state,name);
     const spend = sales.reduce((n,r) => n + r.total, 0);
     const itemMap = new Map();
     for (const receipt of sales) for (const line of receipt.lines || []) {
@@ -71,7 +72,8 @@
       ? Math.max(0,Math.floor((Date.parse(now)-Date.parse(currentOrder.visitStartedAt))/60000)) : 0;
     const board = leaderboard(state), rankIndex = board.findIndex(x=>x.key===key);
     return {
-      name, spend, points:Math.floor(spend / POINT_VALUE), pointValueCzk:POINT_VALUE/100,
+      name, customerId:customer?.id||currentOrder?.customerId||null, creditBalance:customer?C.creditBalance(state,customer.id):currentOrder?.customerId?C.creditBalance(state,currentOrder.customerId):0,
+      spend, points:Math.floor(spend / POINT_VALUE), pointValueCzk:POINT_VALUE/100,
       rank:rankIndex<0?null:rankIndex+1, competitors:board.length,
       receiptCount:sales.length, itemCount:items.reduce((n,x)=>n+x.quantity,0), items,
       visitCount:visits.length, totalMinutes, averageMinutes:visits.length?Math.round(totalMinutes/visits.length):0,

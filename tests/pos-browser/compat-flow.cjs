@@ -203,7 +203,14 @@ async function flow(browser,base,width){
     await page.locator('#account-search').fill('zaneta');await page.locator('#account-results [data-action="account"]').first().click();
     const creditCustomer=f.state.orders.find(o=>o.name==='Žaneta'),creditBefore=C.creditBalance(f.state,creditCustomer.customerId);
     assert.equal(await page.locator('[data-action="payCredit"]').isDisabled(),false,'funded customer can pay with credit');
-    await page.locator('[data-action="payCredit"]').click();await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
+    await page.locator('[data-action="payCredit"]').click();
+    await page.locator('#dialog .close-dialog').first().click();
+    await until(page,()=>!document.querySelector('#dialog').open&&!!f.state.orders.find(o=>o.name==='Žaneta').paymentLock);
+    await page.locator('[data-action="checkPayment"]').click();
+    assert.equal(await page.locator('[name="operation"] option[value="credit"]').count(),1,'interrupted customer payment can resume as credit');
+    await page.locator('[name="operation"]').selectOption('credit');await page.locator('[name="checked"]').check();await page.locator('#dialog-submit').click();
+    await until(page,()=>document.querySelector('#dialog-title')?.textContent==='Zaplatit kreditem');
+    await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
     assert.equal(f.state.receipts.length,2);assert.equal(f.state.orders.find(o=>o.name==='Žaneta').lines.length,0);
     assert.ok(f.state.receipts[1].credit>0);assert.equal(f.state.receipts[1].cash,0);assert.equal(f.state.receipts[1].card,0);
     assert.equal(C.creditBalance(f.state,creditCustomer.customerId),creditBefore-f.state.receipts[1].credit);

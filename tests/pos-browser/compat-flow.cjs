@@ -161,6 +161,12 @@ async function flow(browser,base,width){
     assert.equal(await page.locator('.product[data-action="add"]').first().getAttribute('data-id'),firstProduct,'unpaid marking keeps product positions');
     await page.locator('[data-action="quantityPad"]').click();await page.locator('[data-qty="5"]').click();
     await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='5×');
+    await page.locator('[data-action="paySplit"]').click();
+    assert.equal(f.state.orders.find(o=>o.name==='Žaneta').paymentLock,undefined,'opening split must not reserve the account');
+    await page.locator('#dialog .close-dialog').first().click();await until(page,()=>!document.querySelector('#dialog').open);
+    await page.locator('.line [data-action="add"]').click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='6×');
+    assert.equal(f.state.orders.find(o=>o.name==='Žaneta').paymentLock,undefined,'account remains markable after abandoning split');
+    await page.locator('[data-action="minus"]').click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='5×');
     await page.locator('[data-action="paySplit"]').click();await page.locator('.payment-item').first().click();await page.locator('[data-qty="2"]').click();
     assert.equal(await page.locator('#payment-items').isVisible(),true,'returns to item selection');
     await page.locator('[data-payment-mode="card"]').click();await page.locator('#dialog-submit').click();assert.equal(f.state.receipts.length,0,'terminal confirmation required');

@@ -39,7 +39,7 @@ declare
        where o->>'id'=p_result->>'orderId' and o->>'name'=p_result->>'customerName' and o->>'id'<>'bar')
      or p_state->'orders' is distinct from (
        select jsonb_agg(case when o->>'id'=p_result->>'orderId'
-         then jsonb_set(o,'{customerId}',to_jsonb(p_result->>'customerId'),true)
+         then jsonb_set(case when o#>>'{paymentLock,purpose}'='creditTopup' then o-'paymentLock' else o end,'{customerId}',to_jsonb(p_result->>'customerId'),true)
          else o end order by n)
        from jsonb_array_elements(old.state->'orders') with ordinality as t(o,n))
      or jsonb_typeof(p_state->'customers') is distinct from 'array'
@@ -130,7 +130,8 @@ begin
  definition:=replace(definition,closing_old,closing_new);
  execute definition;
  update public.pos_registers
- set state=jsonb_set(jsonb_set(state,'{customers}',coalesce(state->'customers','[]'::jsonb),true),'{creditLedger}',coalesce(state->'creditLedger','[]'::jsonb),true)
+ set state=jsonb_set(jsonb_set(jsonb_set(state,'{customers}',coalesce(state->'customers','[]'::jsonb),true),'{creditLedger}',coalesce(state->'creditLedger','[]'::jsonb),true),'{revision}',to_jsonb(revision+1),true),
+     revision=revision+1,updated_at=now()
  where state->'customers' is null or state->'creditLedger' is null;
 end;
 $migration$;

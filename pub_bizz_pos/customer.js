@@ -16,6 +16,10 @@
   }
   function receiptName(state, receipt) {
     const account = C.receiptAccount(state, receipt);
+    const assigned=Object.prototype.hasOwnProperty.call(state.receiptAssignments||{},receipt.id);
+    const customerId=assigned?account.customerId:receipt.customerId;
+    const customer=(state.customers||[]).find(c=>c.id===customerId);
+    if(customer)return customer.name;
     return (state.orders || []).find(o => o.id === account.orderId)?.name || account.orderName;
   }
   function activeOrder(state,name) {
@@ -35,7 +39,14 @@
     const order=orderId?(state.orders||[]).find(o=>o.id===orderId):activeOrder(state,name);
     if(!order&&!customerId)return [];
     const id=customerId||order?.customerId||null, aliases=orderAliases(state,order);
-    return validSales(state).filter(r => (id&&r.customerId===id) || aliases.has(normalize(receiptName(state, r))));
+    return validSales(state).filter(r => {
+      const assigned=Object.prototype.hasOwnProperty.call(state.receiptAssignments||{},r.id), account=C.receiptAccount(state,r);
+      const target=(state.orders||[]).find(o=>o.id===account.orderId);
+      const owner=assigned?(account.customerId??target?.customerId):r.customerId;
+      // An explicit assignment always wins; the original payer still owns any wallet refund.
+      if(owner)return !!id&&owner===id;
+      return target?target.id===order?.id:aliases.has(normalize(receiptName(state,r)));
+    });
   }
   function productCounts(state, name, customerId = null, orderId = null) {
     const counts = new Map();
@@ -76,14 +87,22 @@
     const completed = new Map();
     for (const receipt of state.receipts || []) {
       if (receipt.kind !== 'sale' || normalize(receiptName(state, receipt)) !== key || !receipt.visitId || !receipt.visitEndedAt || !Number.isSafeInteger(receipt.visitDurationMinutes)) continue;
-      completed.set(receipt.visitId,{id:receipt.visitId,startedAt:receipt.visitStartedAt,endedAt:receipt.visitEndedAt,durationMinutes:receipt.visitDurationMinutes});
+      completed.set(receipt.visitId,{id:receipt.visitId,startedAt:receipt.visitStartedAt,endedAt:receipt.visitEndedAt,durationMinutes:receipt.visitDurationMinutes,estimated:receipt.visitEstimated===true});
     }
+    for (const event of state.audit || []) for (const visit of event.visits || []) {
+      const visitName = (state.orders || []).find(o=>o.id===visit.orderId)?.name || visit.orderName;
+      if (normalize(visitName)===key && Number.isSafeInteger(visit.durationMinutes) && visit.durationMinutes>=0) completed.set(visit.id,visit);
+    }
+    const sessions = currentOrder && normalize(currentOrder.name)===key ? C.visitSessions(state,currentOrder,now) : [];
+    for (const visit of sessions.filter(v=>!v.active)) completed.set(visit.id,visit);
+    const activeVisit = sessions.find(v=>v.active) || null;
     const visits = [...completed.values()].sort((a,b) => String(b.endedAt).localeCompare(String(a.endedAt)));
-    const visitIds = new Set(visits.map(v=>v.id));
-    const timedSpend = sales.filter(r=>visitIds.has(r.visitId)).reduce((n,r)=>n+r.total,0);
+    const exactVisits = visits.filter(v=>!v.estimated);
+    const visitIds = new Set(exactVisits.map(v=>v.id));
+    const timedSpend = sales.filter(r=>visitIds.has(r.visitId)&&r.visitEstimated!==true).reduce((n,r)=>n+r.total,0);
     const totalMinutes = visits.reduce((n,v)=>n+v.durationMinutes,0);
-    const currentMinutes = currentOrder && normalize(currentOrder.name)===key && currentOrder.visitStartedAt
-      ? Math.max(0,Math.floor((Date.parse(now)-Date.parse(currentOrder.visitStartedAt))/60000)) : 0;
+    const exactMinutes = exactVisits.reduce((n,v)=>n+v.durationMinutes,0);
+    const currentMinutes = activeVisit?.durationMinutes || 0;
     const board = leaderboard(state), rankIndex = board.findIndex(x=>x.key===key);
     const payments=[...sales].sort((a,b)=>String(b.at).localeCompare(String(a.at))).map(r=>({id:r.id,number:r.number,at:r.at,total:r.total,cash:r.cash||0,card:r.card||0,credit:r.credit||0}));
     const openAmount=order?C.sum(order.lines||[]):0;
@@ -93,7 +112,8 @@
       rank:rankIndex<0?null:rankIndex+1, competitors:board.length,
       receiptCount:sales.length, itemCount:items.reduce((n,x)=>n+x.quantity,0), items, payments,
       visitCount:visits.length, totalMinutes, averageMinutes:visits.length?Math.round(totalMinutes/visits.length):0,
-      spendPerHour:totalMinutes?Math.round(timedSpend*60/totalMinutes):0, timedSpend,
+      spendPerHour:exactMinutes?Math.round(timedSpend*60/exactMinutes):0, timedSpend, exactMinutes,
+      estimatedVisitCount:visits.filter(v=>v.estimated).length, activeVisit, lastVisit:sessions[sessions.length-1] || null,
       currentMinutes, visits, lastAt:sales.reduce((latest,r)=>!latest||String(r.at)>String(latest)?r.at:latest,null)
     };
   }

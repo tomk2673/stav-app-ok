@@ -586,3 +586,57 @@ test('a lost reservation response freezes payment until its result is recovered,
   const reservations=h.calls.filter(c=>c.type==='beginPayment');assert.equal(reservations.length,2);assert.ok(reservations.every(c=>c.requestId===id));assert.equal(h.server.receipts.length,0);
  }finally{h.dom.window.close();}
 });
+
+test('customer departure UI freezes the visit while keeping the whole unpaid account',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});const o=C.execute(s,'newOrder',{name:'Lukas Novobilsky'});C.execute(s,'addLine',{orderId:o.id,productId:'agnis-2810',quantity:2},new Date(Date.now()-30*60000).toISOString());return s;});try{
+  const o=h.server.orders.find(o=>o.name==='Lukas Novobilsky'),before=structuredClone(o.lines);
+  h.click('[data-action="account"][data-id="'+o.id+'"]');h.click('[data-action="customerProfile"]');
+  h.click('[data-action="endVisit"]');assert.match(h.w.document.querySelector('#dialog-body').textContent,/zůstane/);h.submit();
+  await until(()=>!h.w.document.querySelector('#dialog').open&&h.server.orders.find(x=>x.id===o.id).visitEndedAt,'departure saved');
+  assert.deepEqual(h.server.orders.find(x=>x.id===o.id).lines,before);assert.equal(h.server.receipts.length,0);
+  h.click('[data-action="customerProfile"]');assert.match(h.w.document.querySelector('#dialog-body').textContent,/Návštěva je ukončená/);
+ }finally{h.dom.window.close();}
+});
+
+for(const timing of ['before','after'])test('credit reversal UI '+timing+' lost response keeps one audited refund and terminal reference',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});const o=C.execute(s,'newOrder',{name:'TEST Credit Customer'});C.execute(s,'creditTopup',{orderId:o.id,amount:50000,method:'card',cardConfirmed:true});return s;});try{
+  const order=h.server.orders.find(o=>o.name==='TEST Credit Customer'),entry=h.server.creditLedger[0];
+  h.click('[data-action="account"][data-id="'+order.id+'"]');h.click('[data-action="customerProfile"]');h.click('[data-action="creditReverse"]');
+  const form=h.w.document.querySelector('#dialog-form');form.elements.reason.value='TEST wrong customer';form.elements.terminalReference.value='TEST-CREDIT-REFUND';h.submit();
+  await until(()=>h.w.document.querySelector('#dialog-error').textContent.includes('Potvrď'),'terminal proof required');assert.equal(h.server.creditLedger.length,1);
+  form.elements.cardConfirmed.checked=true;if(timing==='before')h.disconnect();else h.drop();h.submit();h.submit();
+  await until(()=>h.w.POSCloud.pending&&!h.w.POSCloud.busy,'credit reversal pending');const requestId=h.w.POSCloud.pending.requestId;
+  h.click('#dialog .close-dialog');h.click('[data-action="retryPending"]');await until(()=>!h.w.POSCloud.pending&&!h.w.POSCloud.busy,'credit reversal recovered');
+  const reversals=h.server.creditLedger.filter(x=>x.reversalOf===entry.id);assert.equal(reversals.length,1);assert.equal(reversals[0].terminalConfirmation.reference,'TEST-CREDIT-REFUND');
+  assert.equal(C.creditBalance(h.server,order.customerId),0);assert.equal(h.server.receipts.length,0);assert.equal(C.totals(h.server,C.activeShift(h.server).id).terminal,0);
+  assert.equal(h.calls.filter(x=>x.type==='creditReverse'&&x.payload.cardConfirmed===true).every(x=>x.requestId===requestId),true);
+ }finally{h.dom.window.close();}
+});
+
+test('staff customer profile hides topup reversals and closing UI stops reserved customer payments',{concurrency:false},async()=>{
+ const seed=s=>{C.execute(s,'openShift',{opening:0});const o=C.execute(s,'newOrder',{name:'TEST Locked Customer'});C.execute(s,'creditTopup',{orderId:o.id,amount:50000,method:'cash'});C.execute(s,'addLine',{orderId:o.id,productId:'agnis-2810'});o.paymentLock={token:crypto.randomUUID(),actorId:crypto.randomUUID()};return s;};
+ const staff=await harness(seed,'staff');try{const o=staff.server.orders.find(o=>o.name==='TEST Locked Customer');staff.click('[data-action="account"][data-id="'+o.id+'"]');staff.click('[data-action="customerProfile"]');assert.equal(staff.w.document.querySelector('[data-action="creditReverse"]'),null);}finally{staff.dom.window.close();}
+ const owner=await harness(seed);try{owner.click('[data-view="overview"]');owner.click('[data-action="closeShift"]');assert.match(owner.w.document.querySelector('#toast').textContent,/rozpracované platby/);assert.equal(owner.w.document.querySelector('#dialog').open,false);assert.equal(owner.calls.filter(x=>x.type==='closeShift').length,0);}finally{owner.dom.window.close();}
+});
+
+test('card credit funding reserves an empty customer before the terminal and resumes after closing the dialog',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});C.execute(s,'newOrder',{name:'TEST Empty Wallet'});return s;});try{
+  const o=h.server.orders.find(o=>o.name==='TEST Empty Wallet');h.click('[data-action="account"][data-id="'+o.id+'"]');h.click('[data-action="customerProfile"]');h.click('[data-action="creditTopup"]');
+  let form=h.w.document.querySelector('#dialog-form');form.elements.amount.value='500';form.elements.method.value='card';form.elements.method.dispatchEvent(new h.w.Event('change'));
+  assert.equal(h.w.document.querySelector('#topup-card-confirm').hidden,true);assert.equal(o.paymentLock,undefined);h.submit();
+  await until(()=>h.server.orders.find(x=>x.id===o.id).paymentLock?.purpose==='creditTopup'&&h.w.document.querySelector('#dialog-submit').textContent==='Připsat kredit','funding prepared');
+  assert.equal(h.server.creditLedger.length,0);assert.throws(()=>h.external('closeShift',{counted:0}),/rozpracované platby/);
+  h.click('#dialog .close-dialog');h.click('[data-action="checkPayment"]');form=h.w.document.querySelector('#dialog-form');form.elements.checked.checked=true;h.submit();
+  await until(()=>!!h.w.document.querySelector('[name="cardConfirmed"]'),'funding resumed');form=h.w.document.querySelector('#dialog-form');form.elements.cardConfirmed.checked=true;h.submit();
+  await until(()=>h.server.creditLedger.length===1,'funding recorded');assert.equal(h.server.creditLedger[0].amount,50000);assert.equal(h.server.orders.find(x=>x.id===o.id).paymentLock,undefined);assert.equal(h.server.receipts.length,0);
+ }finally{h.dom.window.close();}
+});
+
+test('split card confirmation stays hidden until reservation succeeds, while just opening split remains editable',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});const o=C.execute(s,'newOrder',{name:'TEST Card Split'});C.execute(s,'addLine',{orderId:o.id,productId:'agnis-2810',quantity:2});return s;});try{
+  const o=h.server.orders.find(o=>o.name==='TEST Card Split');h.click('[data-action="account"][data-id="'+o.id+'"]');h.click('[data-action="paySplit"]');h.click('.payment-item');h.click('[data-qty="1"]');
+  assert.equal(h.server.orders.find(x=>x.id===o.id).paymentLock,undefined);h.hold();h.click('[data-payment-mode="card"]');await until(()=>h.w.POSCloud.busy,'preparing card');
+  assert.equal(h.w.document.querySelector('#card-confirm-field').hidden,true);assert.equal(h.w.document.querySelector('#dialog-submit').disabled,true);h.release();
+  await until(()=>!h.w.document.querySelector('#card-confirm-field').hidden,'card is safe to charge');assert.ok(h.server.orders.find(x=>x.id===o.id).paymentLock);assert.throws(()=>h.external('closeShift',{counted:0}),/rozpracované platby/);
+ }finally{h.dom.window.close();}
+});

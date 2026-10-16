@@ -4,8 +4,8 @@
   const C = typeof module !== 'undefined' ? require('./core.js') : root.POSCore;
   const L = typeof module !== 'undefined' ? require('./loyalty.js') : root.POSLoyalty;
   const manager = new Set(['owner', 'manager']);
-  const staffCommands = new Set(['openShift', 'newOrder', 'renameOrder', 'deleteOrder', 'mergeOrders', 'addLine', 'removeLine', 'setLineQuantity', 'beginPayment', 'cancelPayment', 'checkout', 'reassignReceipt', 'creditTopup', 'backup', 'redeemReward']);
-  const managerCommands = new Set(['product', 'archiveProduct', 'importProducts', 'refund', 'restoreReceipt', 'cashMovement', 'closeShift', 'settings', 'recipe', 'resolveStock', 'loyaltyConfig']);
+  const staffCommands = new Set(['openShift', 'newOrder', 'renameOrder', 'endVisit', 'deleteOrder', 'mergeOrders', 'addLine', 'removeLine', 'setLineQuantity', 'beginPayment', 'cancelPayment', 'checkout', 'reassignReceipt', 'creditTopup', 'backup', 'redeemReward']);
+  const managerCommands = new Set(['product', 'archiveProduct', 'importProducts', 'refund', 'restoreReceipt', 'creditReverse', 'cashMovement', 'closeShift', 'settings', 'recipe', 'resolveStock', 'loyaltyConfig']);
   const check = (ok, message) => { if (!ok) throw new Error(message); };
   function restoredStockLines(sale, records) {
     const result = {};
@@ -51,19 +51,17 @@
     if (['addLine','removeLine','setLineQuantity','deleteOrder'].includes(type)) check(!order?.paymentLock, 'Na tomto účtu právě probíhá platba. Nejdřív ji dokonči nebo zkontroluj rezervaci.');
     if (type === 'checkout') {
       check(order?.paymentLock && order.paymentLock.token===p.paymentToken, 'Účet není rezervovaný pro tuto platbu. Otevři platbu znovu.');
+      check(order.paymentLock.purpose!=='creditTopup','Nejdřív dokonči nebo uvolni rozpracované dobití kreditu.');
       check(order.paymentLock.actorId===actor.id || manager.has(actor.role), 'Platbu dokončuje jiná obsluha.');
     }
     if(type==='creditTopup'){
-      check(C.activeShift(s),'Nejdřív otevři směnu.');
-      check(order,'Zákaznický účet už neexistuje.');
-      check(Number.isSafeInteger(p.amount)&&p.amount>=1000&&p.amount<=100000000,'Dobití musí být od 10 Kč do 1 000 000 Kč.');
-      check(['cash','card'].includes(p.method),'Vyber hotovost nebo kartu.');
-      if(p.method==='card')check(p.cardConfirmed===true,'Potvrď úspěšné dobití kartou na terminálu.');
-      const customer=C.ensureCustomer(s,order,now);
-      const entry={id:crypto.randomUUID(),type:'topup',customerId:customer.id,customerName:customer.name,orderId:order.id,shiftId:C.activeShift(s).id,amount:p.amount,method:p.method,cardConfirmed:p.method==='card',at:now,actorId:actor.id};
-      s.creditLedger.push(entry);
-      result={...entry,balance:C.creditBalance(s,customer.id)};
-    } else if(type==='loyaltyConfig'){
+      if(p.method==='card'){
+        check(p.cardConfirmed===true,'Potvrď úspěšné dobití kartou na terminálu.');
+        check(order?.paymentLock?.purpose==='creditTopup','Nejdřív připrav karetní dobití a rezervuj účet.');
+      }
+      if(order?.paymentLock)check(order.paymentLock.purpose==='creditTopup'&&order.paymentLock.token===p.paymentToken&&(order.paymentLock.actorId===actor.id||manager.has(actor.role)),'Na účtu právě probíhá jiná platba.');
+    }
+    if(type==='loyaltyConfig'){
       check(typeof p.enabled==='boolean'&&Number.isSafeInteger(p.threshold)&&p.threshold>=10000&&p.threshold<=100000,'Zadej částku od 100 do 1 000 Kč.');
       s.loyalty||=L.initial();s.loyalty.enabled=p.enabled;s.loyalty.threshold=p.threshold;
       result={enabled:p.enabled,threshold:p.threshold};
@@ -73,10 +71,12 @@
       check(p.fulfilled===true&&String(p.note||'').trim(),'Nejdřív splň odměnu a napiš skladbu nebo poznámku.');
       reward.status='redeemed';reward.redeemedAt=now;reward.redeemedBy=actor.id;reward.note=String(p.note).trim().slice(0,160);result=structuredClone(reward);
     } else if (type === 'beginPayment') {
-      check(C.activeShift(s) && order?.lines.length, 'Účet nemá položky nebo není otevřená směna.');
+      const funding=p.purpose==='creditTopup';
+      check(C.activeShift(s) && order && (funding?C.customerLike(order.name)&&order.id!=='bar':order.lines.length), 'Účet nemá položky nebo není otevřená směna.');
+      if(funding)check(Number.isSafeInteger(p.amount)&&p.amount>=1000&&p.amount<=100000000,'Dobití musí být od 10 Kč do 1 000 000 Kč.');
       check(order.revision===p.revision, 'Účet se změnil. Otevři platbu znovu.');
       check(!order.paymentLock, 'Účet už je rezervovaný pro platbu. Nejdřív zkontroluj rozpracovanou platbu.');
-      result={token:crypto.randomUUID(),actorId:actor.id,at:now};order.paymentLock=result;
+      result={token:crypto.randomUUID(),actorId:actor.id,at:now,...(funding?{purpose:'creditTopup',amount:p.amount,method:'card',shiftId:C.activeShift(s).id}:{})};order.paymentLock=result;
     } else if (type === 'cancelPayment') {
       check(order?.paymentLock?.token===p.paymentToken, 'Rezervace už není platná. Obnov účet.');
       check(order.paymentLock.actorId===actor.id || manager.has(actor.role), 'Rezervaci může uvolnit původní obsluha nebo vedoucí.');
@@ -105,7 +105,7 @@
       result = { version: (old?.version || 0) + 1, mode: p.mode, reason, selection:'available', components: components.map(c => ({productId:c.productId, quantity:c.quantity, unit:c.unit, alternatives:c.alternatives||[]})), updatedAt:now, updatedBy:actor.id };
       s.recipes[p.productId] = result;
     } else if (type === 'resolveStock') {
-      const receipt = s.receipts.find(r => r.id === p.receiptId && r.kind === 'sale');
+      const receipt = s.receipts.find(r => r.id === p.receiptId && r.kind === 'sale') || (s.stockIssues||[]).find(r=>r.id===p.receiptId);
       const line = receipt?.lines.find(l => l.id === p.lineId);
       check(line && s.recipes[line.productId], 'Nejdřív nastav recepturu prodané položky.');
       check(!s.receipts.some(r => r.refundOf === receipt.id && r.restock), 'Zboží už bylo vrácené. Případnou opravu proveď v PUB GURU.');
@@ -118,41 +118,26 @@
         const due=C.payment(C.sum(C.selectedLines(order,p.selected)),'credit',0,0).credit;
         check(C.creditBalance(s,customer.id)>=due,`Na kreditu chybí ${((due-C.creditBalance(s,customer.id))/100).toLocaleString('cs-CZ')} Kč.`);
       }
-      result = C.execute(s, type, p, now, restored);
+      result = C.execute(s, type, p, now, restored, actor.id);
       if (type === 'checkout' && result) {
         delete order.paymentLock;
         result.actorId = actor.id;
         result.lines = result.lines.map(l => ({ ...l, stockRecipe: Object.prototype.hasOwnProperty.call(l, 'stockRecipe') ? structuredClone(l.stockRecipe) : C.recipeForLine(l, s.recipes[l.productId] || null) }));
-        if(result.credit>0){
-          const customerId=result.customerId||order.customerId;
-          check(customerId&&C.creditBalance(s,customerId)>=result.credit,'Na kreditu není dostatek prostředků.');
-          s.creditLedger.push({id:crypto.randomUUID(),type:'spend',customerId,customerName:result.orderName,orderId:result.orderId,shiftId:result.shiftId,amount:-result.credit,method:'credit',receiptId:result.id,at:now,actorId:actor.id});
-        }
         L.award(s,result,now);
       }
       if (type === 'refund' && result) {
         result.actorId = actor.id;
         result.restock = p.restock === true;
-        if(result.credit<0){
-          const customerId=result.customerId||s.receipts.find(r=>r.id===result.refundOf)?.customerId;
-          check(customerId,'K vratce kreditu chybí zákazník.');
-          s.creditLedger.push({id:crypto.randomUUID(),type:'refund',customerId,customerName:result.orderName,orderId:result.orderId,shiftId:result.shiftId,amount:-result.credit,method:'credit',receiptId:result.id,refundOf:result.refundOf,at:now,actorId:actor.id});
-        }
         L.refund(s,result);
       }
       if (type === 'restoreReceipt' && result) {
         result.actorId = actor.id;
         result.restock = true;
-        if(result.credit<0){
-          const customerId=result.customerId||s.receipts.find(r=>r.id===result.refundOf)?.customerId;
-          check(customerId,'K vratce kreditu chybí zákazník.');
-          s.creditLedger.push({id:crypto.randomUUID(),type:'refund',customerId,customerName:result.orderName,orderId:result.orderId,shiftId:result.shiftId,amount:-result.credit,method:'credit',receiptId:result.id,refundOf:result.refundOf,at:now,actorId:actor.id});
-        }
         L.refund(s,result);
       }
       if (['refund', 'restoreReceipt'].includes(type) && result?.terminalConfirmation) result.terminalConfirmation.actorId = actor.id;
     }
-    if (['recipe','resolveStock','beginPayment','cancelPayment','creditTopup','loyaltyConfig','redeemReward'].includes(type)) {
+    if (['recipe','resolveStock','beginPayment','cancelPayment','loyaltyConfig','redeemReward'].includes(type)) {
       s.revision++;
       s.audit.push({id:crypto.randomUUID(), at:now, type, actorId:actor.id, detail:p});
     } else if (s.audit.length) s.audit[s.audit.length - 1].actorId = actor.id;

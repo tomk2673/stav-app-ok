@@ -196,6 +196,14 @@ async function flow(browser,base,width){
     assert.equal(f.state.creditLedger.filter(x=>x.type==='topup').length,1);
     assert.equal(f.state.creditLedger.find(x=>x.type==='topup').amount,500000);
     assert.match(await page.locator('#dialog-body').textContent(),/5\s?000/);
+    const originalTopup=f.state.creditLedger.find(x=>x.type==='topup');
+    await page.locator('.customer-profile details summary').click();await page.locator('[data-action="creditReverse"]').click();
+    await page.locator('[name="reason"]').fill('TEST wrong deposit');await page.locator('#dialog-submit').click();
+    await until(page,()=>document.querySelector('#dialog-title')?.textContent==='Žaneta · zákazník');
+    assert.equal(f.state.creditLedger.filter(x=>x.reversalOf===originalTopup.id).length,1);assert.equal(C.creditBalance(f.state,originalTopup.customerId),0);
+    assert.equal(f.state.receipts.length,1,'reversing a deposit must not invent a sale');
+    await page.locator('[data-action="creditTopup"]').click();await page.locator('[name="amount"]').fill('5000');await page.locator('#dialog-submit').click();
+    await until(page,()=>document.querySelector('#dialog-title')?.textContent==='Žaneta · zákazník');
     await page.locator('#dialog .close-dialog').first().click();
     assert.equal(await page.locator('.product[data-action="add"]').first().getAttribute('data-id'),markedProduct,'confirmed paid pieces move the product to the top');
     const order=f.state.orders.find(o=>o.name==='Žaneta');assert.equal(order.lines[0].quantity,3);
@@ -211,7 +219,8 @@ async function flow(browser,base,width){
     assert.equal(await page.locator('[data-action="payCredit"]').isDisabled(),false,'funded customer can pay with credit');
     await page.locator('[data-action="payCredit"]').click();
     await page.locator('#dialog .close-dialog').first().click();
-    await until(page,()=>!document.querySelector('#dialog').open&&!!f.state.orders.find(o=>o.name==='Žaneta').paymentLock);
+    await until(page,()=>!document.querySelector('#dialog').open&&!!document.querySelector('[data-action="checkPayment"]'));
+    assert.ok(f.state.orders.find(o=>o.name==='Žaneta').paymentLock);
     await page.locator('[data-action="checkPayment"]').click();
     assert.equal(await page.locator('[name="operation"] option[value="credit"]').count(),1,'interrupted customer payment can resume as credit');
     await page.locator('[name="operation"]').selectOption('credit');await page.locator('[name="checked"]').check();await page.locator('#dialog-submit').click();

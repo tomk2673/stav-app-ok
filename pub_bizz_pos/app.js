@@ -60,7 +60,7 @@ function connection() {
   warning.hidden=!state||(!pending&&online);
   warning.innerHTML=pending?`<span><strong>Ověřujeme uloženou operaci.</strong> Platbu na terminálu neopakuj.</span>${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}`:'<span>Server není dostupný. Zobrazená data mohou být starší; placení vyžaduje spojení.</span>';
   if(state){$('#save-state').textContent=cloud.busy?'Ukládám na server…':pending?'Čeká na ověření':online?'Potvrzeno serverem':'Spojení přerušeno';$('#save-state').classList.toggle('error',!!pending||!online);}
-  const writeActions=['add','minus','restoreReceipt','newOrder','renameOrder','deleteOrder','mergeOrders','openShift','payCash','payCard','payCredit','paySplit','creditTopup','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
+  const writeActions=['add','minus','restoreReceipt','newOrder','renameOrder','endVisit','deleteOrder','mergeOrders','openShift','payCash','payCard','payCredit','paySplit','creditTopup','creditReverse','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
   document.querySelectorAll('[data-action]').forEach(b=>{if(writeActions.includes(b.dataset.action)){const lock=!!pending&&!cloud.busy||!online;if(lock&&!b.disabled){b.disabled=true;b.dataset.connectionDisabled='true';}else if(!lock&&b.dataset.connectionDisabled){b.disabled=false;delete b.dataset.connectionDisabled;}}});
 }
 function render() {
@@ -169,7 +169,7 @@ function renderPOS() {
       <div class="categories" aria-label="Kategorie">${cats.map(c=>`<button type="button" class="category ${category===c?'active':''}" data-action="category" data-id="${E(c)}" aria-pressed="${category===c}">${E(c)}</button>`).join('')}</div>
       <div class="products" id="products"></div>
     </section>
-    <section class="receipt" aria-label="Aktuální účet"><div class="receipt-head"><div><h2>${E(o.name)}</h2><p>${o.lines.length?'Účet zůstává otevřený do zaplacení':'Připravený pro dalšího hosta'}</p></div><span class="receipt-number">${E(accountNumber(o)||'•')}</span></div><div class="receipt-tools">${o.id!=='bar'?btn('Přejmenovat','renameOrder','merge-account rename-account',o.paymentLock?'disabled':''):''}${btn('Spojit účty','mergeOrders','merge-account',canMerge?'':'disabled')}</div><div class="receipt-items">${lines||'<div class="receipt-empty"><span>≡</span><p>Účet je zatím prázdný.<br>Přidej první nápoj.</p></div>'}</div><div class="receipt-bottom"><div class="receipt-meta"><span>${o.lines.reduce((n,l)=>n+l.quantity,0)} ks na účtu</span>${o.id!=='bar'&&!o.lines.length?btn('Smazat účet','deleteOrder','splitbutton'):'<span>Ceny v Kč</span>'}</div><div class="receipt-total"><span>K zaplacení</span><strong>${fmt(C.sum(o.lines))}</strong></div><div class="payment-buttons ${customer&&window.POSCloud?'with-credit':''}">${btn('Hotově','payCash','paycash',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${btn('Kartou','payCard','paycard',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${customer&&window.POSCloud?btn(`Kredit ${fmt(credit)}`,'payCredit','paycredit',!sh||!o.lines.length||!!o.paymentLock||credit<C.sum(o.lines)?'disabled':''):''}</div>${btn('Rozdělit platbu / položky','paySplit','splitbutton',!sh||!o.lines.length||!canResume?'disabled':'')}</div></section>
+    <section class="receipt" aria-label="Aktuální účet"><div class="receipt-head"><div><h2>${E(o.name)}</h2><p>${o.lines.length?'Účet zůstává otevřený do zaplacení':'Připravený pro dalšího hosta'}</p></div><span class="receipt-number">${E(accountNumber(o)||'•')}</span></div><div class="receipt-tools">${o.id!=='bar'?btn('Přejmenovat','renameOrder','merge-account rename-account',o.paymentLock?'disabled':''):''}${btn('Spojit účty','mergeOrders','merge-account',canMerge?'':'disabled')}</div><div class="receipt-items">${lines||'<div class="receipt-empty"><span>≡</span><p>Účet je zatím prázdný.<br>Přidej první nápoj.</p></div>'}</div><div class="receipt-bottom"><div class="receipt-meta"><span>${o.lines.reduce((n,l)=>n+l.quantity,0)} ks na účtu</span>${o.id!=='bar'&&!o.lines.length?btn('Smazat účet','deleteOrder','splitbutton'):'<span>Ceny v Kč</span>'}</div><div class="receipt-total"><span>K zaplacení</span><strong>${fmt(C.sum(o.lines))}</strong></div><div class="payment-buttons ${customer?'with-credit':''}">${btn('Hotově','payCash','paycash',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${btn('Kartou','payCard','paycard',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${customer?btn(`Kredit ${fmt(credit)}`,'payCredit','paycredit',!sh||!o.lines.length||!!o.paymentLock||credit<C.sum(o.lines)?'disabled':''):''}</div>${btn('Rozdělit platbu / položky','paySplit','splitbutton',!sh||!o.lines.length||!canResume?'disabled':'')}</div></section>
   </div>`;
 }
 function quantityPickerHTML(name,initial,min=1,max=999,all=false) {
@@ -229,9 +229,15 @@ function customerProfile() {
   const p=Customer.profile(state,o.name,o,new Date().toISOString());
   const rows=p.items.map(x=>`<tr><td><strong>${E(x.name)}</strong>${x.serving?`<br><span class="muted small">${E(x.serving)}</span>`:''}</td><td class="amount">${x.quantity}×</td><td class="amount">${fmt(x.spend)}</td></tr>`).join('');
   const payments=p.payments.slice(0,12).map(r=>`<tr><td><strong>${date(r.at)}</strong><br><span class="muted small">${E(r.number||'Doklad')}</span></td><td>${paymentLabel(r)}</td><td class="amount">${fmt(r.total)}</td></tr>`).join('');
+  const canReverse=!window.POSCloud||['owner','manager'].includes(window.POSCloud.meta.role);
+  const deposits=(state.creditLedger||[]).filter(x=>x.customerId===p.customerId&&['topup','reversal'].includes(x.type)).reverse().map(x=>{
+    const reversed=state.creditLedger.some(y=>y.reversalOf===x.id);
+    return `<div class="summary-row"><span>${date(x.at)} · ${x.type==='reversal'?'Storno dobití':'Dobití'} · ${x.method==='card'?'kartou':'hotově'}${reversed?' · stornováno':''}</span><strong>${fmt(x.amount)}</strong>${canReverse&&x.type==='topup'&&!reversed?btn('Stornovat','creditReverse','textbutton',`data-id="${E(x.id)}" ${C.activeShift(state)?'':'disabled'}`):''}</div>`;
+  }).join('');
   const rank=p.rank?`#${p.rank} z ${p.competitors}`:'—';
   showDialog(o.name+` · zákazník`,`<div class="customer-profile">
-    ${p.currentMinutes?`<div class="customer-current"><span>Právě v baru</span><strong>${durationText(p.currentMinutes)}</strong></div>`:''}
+    ${p.activeVisit?`<div class="customer-current"><span>Aktuální návštěva</span><strong>${p.currentMinutes?durationText(p.currentMinutes):'0 min'}</strong></div>`:p.lastVisit?'<p class="help">Návštěva je ukončená. Nezaplacený účet zůstává otevřený.</p>':''}
+    ${o.visitStartedAt&&!o.paymentLock?btn('Host odešel · ukončit návštěvu','endVisit','secondary'):''}
     <div class="customer-stats">
       <div><span>Kredit</span><strong>${fmt(p.creditBalance||0)}</strong></div>
       <div><span>Věrnostní body</span><strong>${p.points}</strong></div>
@@ -240,35 +246,57 @@ function customerProfile() {
       <div><span>Aktuálně nezaplaceno</span><strong>${fmt(p.openAmount||0)}</strong></div>
       <div><span>Položek</span><strong>${p.itemCount}</strong></div>
       <div><span>Návštěvy s časem</span><strong>${p.visitCount}</strong></div>
-      <div><span>Čas v baru</span><strong>${durationText(p.totalMinutes)}</strong></div>
+      <div><span>Čas návštěv${p.estimatedVisitCount?' · část odhadem':''}</span><strong>${durationText(p.totalMinutes)}</strong></div>
       <div><span>Průměr návštěvy</span><strong>${durationText(p.averageMinutes)}</strong></div>
-      <div><span>Útrata / hod.</span><strong>${p.totalMinutes?fmt(p.spendPerHour):'—'}</strong></div>
+      <div><span>Útrata / hod.</span><strong>${p.exactMinutes?fmt(p.spendPerHour):'—'}</strong></div>
     </div>
-    ${window.POSCloud?'<div class="form-actions">'+btn('Dobít kredit','creditTopup','primary')+'</div>':''}
+    <div class="form-actions">${btn('Dobít kredit','creditTopup','primary',C.activeShift(state)?'':'disabled')}</div>
+    ${deposits?`<details class="section-gap"><summary>Dobití a storna kreditu</summary>${deposits}</details>`:''}
     <p class="help customer-rules"><strong>Kredit</strong> jsou předplacené peníze, 1 Kč = 1 Kč. <strong>Věrnostní body</strong> jsou samostatná odměna a nejdou použít jako peníze. 1 bod získáš za každých 10 Kč skutečně zaplacené útraty.</p>
     <div class="customer-detail"><span>Zaplacených dokladů: <strong>${p.receiptCount}</strong></span><span>Poslední platba: <strong>${p.lastAt?date(p.lastAt):'—'}</strong></span></div>
     <h3>Jednotlivé zaplacené doklady</h3>
     <div class="table-wrap customer-payments"><table><thead><tr><th>Datum</th><th>Úhrada</th><th class="amount">Částka</th></tr></thead><tbody>${payments||'<tr><td colspan="3" class="empty">Zatím žádný zaplacený doklad.</td></tr>'}</tbody></table></div>
+    <p class="help customer-rules">1 bod za každých 10 Kč skutečně zaplacené útraty. Vratky se automaticky odečítají. Pořadí je podle bodů, ne podle množství alkoholu. Návštěva se po 2 hodinách bez další objednávky automaticky ukončí odhadem. Další objednávka začne novou návštěvu i na nezaplaceném účtu. Odchod lze potvrdit ručně. Odhady se nepoužívají pro útratu za hodinu.</p>
     <h3>Co nejčastěji bere</h3>
     <div class="table-wrap customer-drinks"><table><thead><tr><th>Položka</th><th class="amount">Počet</th><th class="amount">Útrata</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="empty">Po prvním zaplaceném dokladu se tu objeví statistika.</td></tr>'}</tbody></table></div>
   </div>`,null);
 }
-function creditTopup() {
-  const o=structuredClone(getOrder());if(!window.POSCloud||!customerAccount(o))return;
+function creditTopup(prepared) {
+  const o=structuredClone(getOrder());if(!customerAccount(o))return;
+  const funding=prepared?.purpose==='creditTopup'?prepared:null;
+  if(funding){
+    showDialog('Dobít kredit · '+o.name,`<p class="help"><strong>${fmt(funding.amount)} kartou</strong> · účet je rezervovaný. Pokud už host zaplatil, platbu na terminálu neopakuj.</p><label class="inline-check"><input type="checkbox" name="cardConfirmed" required>Dobití kartou na terminálu proběhlo úspěšně.</label>`,f=>command('creditTopup',{orderId:o.id,amount:funding.amount,method:'card',paymentToken:funding.token,cardConfirmed:f.has('cardConfirmed')}),'Připsat kredit',r=>{toast(`Kredit dobit o ${fmt(r.amount)}`);customerProfile();});return;
+  }
   showDialog('Dobít kredit · '+o.name,`
     <p class="help">Kredit je předplacená peněžní hodnota. Dobití se eviduje odděleně od tržby za nápoje.</p>
     <div class="form-grid">${field('Částka (Kč)','amount','','required inputmode="decimal" placeholder="500"')}<label class="field">Zaplaceno<select name="method"><option value="cash">Hotově</option><option value="card">Kartou</option></select></label></div>
     <label class="inline-check" id="topup-card-confirm" hidden><input type="checkbox" name="cardConfirmed">Dobití kartou na terminálu proběhlo úspěšně.</label>`,
-    async form=>command('creditTopup',{orderId:o.id,amount:C.money(form.get('amount')),method:form.get('method'),cardConfirmed:form.has('cardConfirmed')}),
-    'Připsat kredit',r=>{toast(`Kredit dobit o ${fmt(r.amount)} · zůstatek ${fmt(r.balance)}`);customerProfile();}
+    async form=>{
+      const amount=C.money(form.get('amount')),method=form.get('method');
+      if(window.POSCloud&&method==='card')return command('beginPayment',{orderId:o.id,revision:o.revision,purpose:'creditTopup',amount});
+      return command('creditTopup',{orderId:o.id,amount,method,cardConfirmed:form.has('cardConfirmed')});
+    },
+    'Připsat kredit',r=>{if(r.purpose==='creditTopup')return creditTopup(r);toast(`Kredit dobit o ${fmt(r.amount)} · zůstatek ${fmt(r.balance)}`);customerProfile();}
   );
   const form=$('#dialog-form'),select=form.elements.method,confirm=$('#topup-card-confirm');
-  const update=()=>{const card=select.value==='card';confirm.hidden=!card;form.elements.cardConfirmed.required=card;if(!card)form.elements.cardConfirmed.checked=false;};
+  const update=()=>{const card=select.value==='card',localCard=card&&!window.POSCloud;confirm.hidden=!localCard;form.elements.cardConfirmed.required=localCard;form.elements.cardConfirmed.checked=false;$('#dialog-submit').textContent=card&&window.POSCloud?'Připravit platbu kartou':'Připsat kredit';};
   select.addEventListener('change',update);update();
+}
+function creditReverse(id) {
+  const entry=(state.creditLedger||[]).find(x=>x.id===id&&x.type==='topup');if(!entry)return;
+  const card=entry.method==='card';
+  showDialog('Stornovat dobití kreditu',`<p class="help"><strong>${E(entry.customerName)} · ${fmt(entry.amount)}</strong><br>${date(entry.at)} · ${card?'kartou':'hotově'}</p><p class="help">Vrátí se celé původní dobití. Záznam zůstane v historii. Pro správnou částku potom vytvoř nové dobití.</p>${field('Důvod storna','reason','','required maxlength="120"',true)}${card?'<label class="inline-check"><input type="checkbox" name="cardConfirmed" required>Vratka kartou na terminálu proběhla úspěšně.</label>'+field('Číslo storna / vratky z terminálu','terminalReference','','required maxlength="120"',true):'<p class="help">Vrať zákazníkovi uvedenou hotovost pouze jednou.</p>'}`,f=>command('creditReverse',{entryId:entry.id,reason:f.get('reason'),cardConfirmed:f.has('cardConfirmed'),terminalReference:f.get('terminalReference')||''}),'Potvrdit storno',()=>{toast('Dobití stornované.');customerProfile();});
 }
 function paymentLabel(r) {
   const parts=[];if(r.cash)parts.push('Hotově');if(r.card)parts.push('Karta');if(r.credit)parts.push('Kredit');
   return parts.length>1?'Kombinovaně · '+parts.join(' + '):(parts[0]||'—');
+}
+function endVisit() {
+  const o=getOrder();if(!customerAccount(o)||!o.visitStartedAt)return;
+  const sessions=C.visitSessions(state,o),last=sessions[sessions.length-1];
+  const at=last?.endedAt||new Date().toISOString(),d=new Date(at);
+  const local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,19);
+  showDialog('Host odešel',`<p class="help">Ukončí se pouze návštěva zákazníka <strong>${E(o.name)}</strong>. Nezaplacená částka <strong>${fmt(C.sum(o.lines))}</strong> zůstane na jeho účtu.</p><label class="field">Čas odchodu<input type="datetime-local" step="1" name="endedAt" value="${E(local)}" required></label><p class="help">Pokud zákazník odešel dříve, oprav čas. Automaticky předvyplněný konec je odhad podle aktivity.</p>`,f=>command('endVisit',{orderId:o.id,revision:o.revision,endedAt:new Date(String(f.get('endedAt'))).toISOString()}),'Ukončit návštěvu',()=>{render();toast('Návštěva ukončená. Účet zůstává otevřený.');});
 }
 function productSalesCounts() {
   // Receipts come from the shared confirmed state; never count taps or unpaid orders.
@@ -364,10 +392,11 @@ async function pay(mode, resume=false) {
   const o=structuredClone(getOrder());if(!o.lines.length)return;
   const delayReservation=window.POSCloud&&mode==='split'&&!resume;
   let reservation=window.POSCloud?(resume?o.paymentLock:delayReservation?null:await command('beginPayment',{orderId:o.id,revision:o.revision})):null;
+  let cardReservation=null,cardReservationFailed=false;
   const operationId=crypto.randomUUID();let partial=mode==='split';
   let paymentMode=partial?'cash':mode,receivedTouched=false,splitTouched=false;
   const selected=()=>o.lines.map(l=>({id:l.id,quantity:Number($('#dialog-form').elements['line-'+l.id].value)})).filter(x=>x.quantity>0);
-  const canCredit=!!window.POSCloud&&customerAccount(o);
+  const canCredit=!!customerAccount(o);
   showDialog(partial?'Rozdělit účet':mode==='cash'?'Zaplatit hotově':mode==='credit'?'Zaplatit kreditem':'Zaplatit kartou',`
     <p class="help" id="payment-help">${partial?'Klepni na položku a vyber počet kusů. Zbytek zůstane na účtu.':'Zaplatit celý účet, nebo rozdělit jen vybrané položky.'}</p>${!partial?'<button type="button" class="secondary" data-payment-reset>Rozdělit po položkách</button>':''}${resume?'<p class="help">Pokud host už platil, platbu na terminálu neopakuj. Zapiš pouze skutečně zaplacenou část.</p>':''}
     ${o.lines.map(l=>`<input type="hidden" name="line-${E(l.id)}" value="${partial?0:l.quantity}">`).join('')}
@@ -379,10 +408,16 @@ async function pay(mode, resume=false) {
       <label class="inline-check" id="card-confirm-field"><input type="checkbox" name="cardConfirmed">Platba kartou na terminálu proběhla úspěšně.</label>
     </div>`, async f=>{
       for(const l of o.lines){const q=Number(f.get('line-'+l.id));if(!Number.isSafeInteger(q)||q<0||q>l.quantity)throw new Error('Neplatný počet kusů.');}
+      if(cardReservation)await cardReservation;
+      if(cardReservationFailed)throw new Error('Platbu se nepodařilo připravit. Zkontroluj uloženou operaci a otevři platbu znovu.');
       if(window.POSCloud&&!reservation) reservation=await command('beginPayment',{orderId:o.id,revision:o.revision});
       return await command('checkout',{orderId:o.id,revision:o.revision,operationId,paymentToken:reservation?.token,selected:selected(),mode:paymentMode,received:['card','credit'].includes(paymentMode)?0:C.money(f.get('received')),splitCash:paymentMode==='split'?C.money(f.get('splitCash')):0,cardConfirmed:f.has('cardConfirmed')});
     },'Potvrdit zaplacení',finishPayment);
   const signal=window.paymentAbort.signal,form=$('#dialog-form');
+  function prepareCard() {
+    if(reservation||cardReservation||cardReservationFailed||signal.aborted)return;
+    cardReservation=command('beginPayment',{orderId:o.id,revision:o.revision}).then(r=>{reservation=r;}).catch(e=>{cardReservationFailed=true;if(!signal.aborted)$('#dialog-error').textContent=e.message;}).finally(()=>{cardReservation=null;if(!signal.aborted&&$('#dialog').open)preview();});
+  }
   function renderItems() {
     $('#payment-items').innerHTML=o.lines.map(l=>{
       const q=Number(form.elements['line-'+l.id].value);
@@ -399,10 +434,12 @@ async function pay(mode, resume=false) {
       const cash=paymentMode==='cash'?Math.round(raw/100)*100:paymentMode==='split'?C.money(form.elements.splitCash.value):0;
       if(!receivedTouched)form.elements.received.value=inputMoney(cash);
       const received=['card','credit'].includes(paymentMode)?0:C.money(form.elements.received.value),p=C.payment(raw,paymentMode,Math.max(cash,received),cash);
-      form.elements.cardConfirmed.required=p.card>0;$('#card-confirm-field').hidden=p.card===0;
+      const cardReady=!window.POSCloud||!p.card||!!reservation;
+      form.elements.cardConfirmed.required=p.card>0;$('#card-confirm-field').hidden=p.card===0||!cardReady;
       const balance=canCredit?customerCredit(o):0,creditMissing=Math.max(0,p.credit-balance);
-      $('#dialog-submit').disabled=received<cash||creditMissing>0;
+      $('#dialog-submit').disabled=received<cash||creditMissing>0||!cardReady;
       $('#payment-summary').innerHTML=`<div class="summary-row total"><span>K úhradě</span><strong>${fmt(p.total)}</strong></div>${p.rounding?`<div class="summary-row"><span>Zaokrouhlení</span><span>${fmt(p.rounding)}</span></div>`:''}${paymentMode==='split'?`<div class="summary-row"><span>Na terminálu</span><strong>${fmt(p.card)}</strong></div>`:''}${paymentMode==='credit'?`<div class="summary-row"><span>Kredit před platbou</span><strong>${fmt(balance)}</strong></div><div class="summary-row"><span>${creditMissing?'Na kreditu chybí':'Kredit po platbě'}</span><strong>${fmt(creditMissing||balance-p.credit)}</strong></div>`:paymentMode!=='card'?`<div class="summary-row"><span>${received<cash?'Ještě chybí':'Vrátit hostovi'}</span><strong>${fmt(Math.abs(received-cash))}</strong></div>`:'<span class="muted small">Částku zadej na samostatném terminálu.</span>'}`;
+      if(!cardReady){$('#payment-summary').innerHTML+='<p class="help">Nejdřív připravujeme rezervaci. Zatím neprováděj platbu na terminálu.</p>';prepareCard();}
     }catch(e){$('#payment-summary').textContent=e.message;$('#dialog-submit').disabled=true;form.elements.cardConfirmed.required=false;$('#card-confirm-field').hidden=true;}
   }
   function returnToItems() {
@@ -474,13 +511,17 @@ function csv(){
   download(`PUB-BIZZ-prodeje-${new Date().toISOString().slice(0,10)}.csv`,'\uFEFF'+rows.map(r=>r.map(cell).join(';')).join('\r\n'),'text/csv;charset=utf-8');toast('CSV připravené ke stažení.');
 }
 function closeShift(){ const sh=C.activeShift(state);if(!sh)return;
+  if(state.orders.some(x=>x.paymentLock)){toast('Nejdřív dokonči nebo uvolni všechny rozpracované platby.',true);return;}
   const blocked=state.orders.filter(x=>x.lines.length&&!C.customerLike(x.name));
   if(blocked.length){toast('Nejdřív doplať rychlý prodej a běžné stoly. Pojmenovaný zákazník může zůstat nezaplacený.',true);return;}
   const debts=state.orders.filter(x=>x.lines.length&&C.customerLike(x.name)).map(x=>({name:x.name,amount:C.sum(x.lines),items:x.lines.reduce((n,l)=>n+l.quantity,0)}));
   const debtTotal=debts.reduce((n,x)=>n+x.amount,0),t=C.totals(state,sh.id);
-  showDialog('Uzavřít směnu',`<div class="payment-summary"><div class="summary-row"><span>Tržba celkem</span><strong>${fmt(t.total)}</strong></div><div class="summary-row"><span>Hotově</span><strong>${fmt(t.cash)}</strong></div><div class="summary-row"><span>Kartou</span><strong>${fmt(t.card)}</strong></div><div class="summary-row"><span>Kreditem</span><strong>${fmt(t.credit)}</strong></div><hr><div class="summary-row"><span>Dobití kreditu hotově</span><strong>${fmt(t.creditTopupCash)}</strong></div><div class="summary-row"><span>Dobití kreditu kartou</span><strong>${fmt(t.creditTopupCard)}</strong></div><div class="summary-row"><span>Terminál celkem</span><strong>${fmt(t.terminal)}</strong></div><div class="summary-row"><span>Očekávaná hotovost</span><strong>${fmt(t.expected)}</strong></div></div>${debts.length?`<div class="panel debt-summary"><h3>Neuhrazené účty · nejsou v tržbě</h3>${debts.map(d=>`<div class="summary-row"><span>${E(d.name)} · ${d.items} ks</span><strong>${fmt(d.amount)}</strong></div>`).join('')}<div class="summary-row total"><span>Celkem nezaplaceno</span><strong>${fmt(debtTotal)}</strong></div><p class="help">Tyto účty zůstanou otevřené do další směny a jejich spotřeba se započítá do inventury jako vydané zboží.</p></div>`:''}${field('Spočítaná hotovost v zásuvce (Kč)','counted','','required inputmode="decimal"')}<p class="help section-gap">Dobití kreditu je oddělené od tržby za nápoje, aby se peníze nezapočítaly dvakrát.</p>`,f=>command('closeShift',{counted:C.money(f.get('counted'))}),'Uzavřít a zálohovat',async()=>{view='overview';render();await backup();});}
+  showDialog('Uzavřít směnu',`<div class="payment-summary"><div class="summary-row"><span>Tržba celkem</span><strong>${fmt(t.total)}</strong></div><div class="summary-row"><span>Hotově</span><strong>${fmt(t.cash)}</strong></div><div class="summary-row"><span>Kartou</span><strong>${fmt(t.card)}</strong></div><div class="summary-row"><span>Kreditem</span><strong>${fmt(t.credit)}</strong></div><hr><div class="summary-row"><span>Dobití kreditu hotově</span><strong>${fmt(t.creditTopupCash)}</strong></div><div class="summary-row"><span>Dobití kreditu kartou</span><strong>${fmt(t.creditTopupCard)}</strong></div><div class="summary-row"><span>Terminál celkem</span><strong>${fmt(t.terminal)}</strong></div><div class="summary-row"><span>Očekávaná hotovost</span><strong>${fmt(t.expected)}</strong></div></div>${debts.length?`<div class="panel debt-summary"><h3>Neuhrazené účty · nejsou v tržbě</h3>${debts.map(d=>`<div class="summary-row"><span>${E(d.name)} · ${d.items} ks</span><strong>${fmt(d.amount)}</strong></div>`).join('')}<div class="summary-row total"><span>Celkem nezaplaceno</span><strong>${fmt(debtTotal)}</strong></div><p class="help">Tyto účty zůstanou otevřené do další směny. Spotřebu zapíše samostatná výdejka; chybějící receptury nebo zásoby zůstanou ve Skladu ke kontrole. Doplacení už vydané porce znovu neodepíše.</p></div>`:''}${field('Spočítaná hotovost v zásuvce (Kč)','counted','','required inputmode="decimal"')}<p class="help section-gap">Dobití kreditu je oddělené od tržby za nápoje, aby se peníze nezapočítaly dvakrát.</p>`,f=>command('closeShift',{counted:C.money(f.get('counted'))}),'Uzavřít a zálohovat',async()=>{view='overview';render();await backup();});}
 function checkPayment(){
-  const o=structuredClone(getOrder()),creditOption=window.POSCloud&&customerAccount(o)?'<option value="credit">Pokračovat v platbě kreditem</option>':'';
+  const o=structuredClone(getOrder()),creditOption=customerAccount(o)?'<option value="credit">Pokračovat v platbě kreditem</option>':'';
+  if(o.paymentLock?.purpose==='creditTopup'){
+    showDialog('Rozpracované dobití kreditu',`<p class="help">${E(o.name)} · ${fmt(o.paymentLock.amount)} kartou. Ověř stav terminálu; úspěšnou platbu neopakuj.</p><label class="field">Co provést<select name="operation"><option value="complete">Dokončit zápis dobití</option><option value="cancel">Host nezaplatil — uvolnit účet</option></select></label><label class="inline-check"><input type="checkbox" name="checked" required>Stav platby jsem zkontroloval/a.</label>`,async f=>{if(f.get('operation')==='cancel')await command('cancelPayment',{orderId:o.id,paymentToken:o.paymentLock.token,terminalChecked:f.has('checked'),reason:'Ověřené zrušení nepřijatého dobití'});return f.get('operation');},'Pokračovat',operation=>{if(operation==='complete')creditTopup(o.paymentLock);});return;
+  }
   showDialog('Rozpracovaná platba',`<p class="help">Ověř u obsluhy a na terminálu, zda už host platil. Pokud už platba proběhla, platbu na terminálu neopakuj.</p><label class="field">Co provést<select name="operation"><option value="cash">Pokračovat v hotovostní platbě</option><option value="card">Pokračovat v karetní platbě</option><option value="split">Pokračovat v rozdělení účtu</option>${creditOption}<option value="cancel">Host nezaplatil — uvolnit účet</option></select></label><label class="inline-check"><input type="checkbox" name="checked" required>Stav platby jsem zkontroloval/a.</label>`,async f=>{
     if(f.get('operation')==='cancel')await command('cancelPayment',{orderId:o.id,paymentToken:o.paymentLock.token,terminalChecked:f.has('checked'),reason:'Obsluha ověřila, že host nezaplatil'});
     return f.get('operation');
@@ -491,7 +532,7 @@ const actions={
   quantityPad:id=>quantityPad(id),
   entryCount:id=>{entryQuantity=Number(id);updateEntryContext();},entryQuantity:entryQuantityPad,
   smallShot:()=>{entryServingMl=entryServingMl===20?undefined:20;if(entryServingMl===20){const shots=state.products.filter(p=>p.active&&C.smallShot(p));if(!shots.some(p=>p.category===category))category='Vše';if(query&&!shots.some(p=>normalizeSearch(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(normalizeSearch(query))))query='';}render();},
-  account:id=>selectAccount(id),customerProfile,creditTopup,category:async id=>{category=id;query='';render();},openShift,renameOrder,mergeOrders,
+  account:id=>selectAccount(id),customerProfile,creditTopup,creditReverse,endVisit,category:async id=>{category=id;query='';render();},openShift,renameOrder,mergeOrders,
   newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta (nepovinné)','name',accountQuery.trim(),'maxlength="120" placeholder="Bez vyplnění = rychlý prodej"'),f=>{
     const name=String(f.get('name')||'').trim();
     return name?command('newOrder',{name}):{id:'bar'};

@@ -129,10 +129,10 @@
   const VISIT_IDLE_MINUTES = 120;
   const visitFields = ['visitId','visitStartedAt','visitLastActivityAt','visitEndedAt','visitEndEstimated','visitHasCarriedBalance'];
   function clearVisit(order) { for (const field of visitFields) delete order[field]; }
-  function visitSessions(state, order, now = new Date().toISOString()) {
+  function visitSessions(state, order, now = new Date().toISOString(), {ignoreSavedEnd = false} = {}) {
     const start = Date.parse(order?.visitStartedAt), clock = Date.parse(now);
     if (!Number.isFinite(start) || !Number.isFinite(clock) || start > clock) return [];
-    const manualEnd = Date.parse(order.visitEndedAt), limit = Number.isFinite(manualEnd) ? Math.min(clock,manualEnd) : clock;
+    const manualEnd = ignoreSavedEnd ? NaN : Date.parse(order.visitEndedAt), limit = Number.isFinite(manualEnd) ? Math.min(clock,manualEnd) : clock;
     const times = new Set([start]);
     for (const event of state.audit || []) {
       if (own(event,'visitActivity')) {
@@ -214,9 +214,9 @@
       check(o.revision === p.revision, 'Účet se změnil. Znovu otevři profil.');
       const ended = Date.parse(p.endedAt || now), began = Date.parse(o.visitStartedAt);
       check(Number.isFinite(ended) && ended >= began && ended <= Date.parse(now), 'Odchod musí být mezi začátkem návštěvy a současností.');
-      // Resolve the current session BEFORE applying the requested end; using that
-      // end as a filter would hide the very orders/payments we must validate.
-      const latest = visitSessions(s,o,now).slice(-1)[0];
+      // Validate without either the requested or previously saved end: a legacy
+      // incorrect end must not hide the very orders/payments we must validate.
+      const latest = visitSessions(s,o,now,{ignoreSavedEnd:true}).slice(-1)[0];
       const lastActivity = Math.max(began,Date.parse(latest?.lastActivityAt) || began,Date.parse(o.visitLastActivityAt) || began);
       check(ended >= lastActivity, 'Odchod nesmí být před poslední evidovanou aktivitou návštěvy (objednávkou nebo průběžnou platbou).');
       o.visitEndedAt = new Date(ended).toISOString(); o.visitEndEstimated = false;

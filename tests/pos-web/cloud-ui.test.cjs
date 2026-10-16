@@ -612,6 +612,19 @@ test('departure form uses latest activity and server rejects an earlier time wit
  }finally{h.dom.window.close();}
 });
 
+test('legacy departure form reconstructs activity after the saved end and prefills a valid local time',{concurrency:false},async()=>{
+ const activity=new Date(Date.now()-10*60000).toISOString();
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});const o=C.execute(s,'newOrder',{name:'TEST Legacy Departure'});C.execute(s,'addLine',{orderId:o.id,productId:'agnis-2810'},new Date(Date.now()-40*60000).toISOString());C.execute(s,'addLine',{orderId:o.id,productId:'agnis-2810'},activity);const saved=s.orders.find(x=>x.id===o.id);saved.visitEndedAt=new Date(Date.now()-30*60000).toISOString();delete saved.visitLastActivityAt;for(const e of s.audit)delete e.visitActivity;return s;});try{
+  const o=h.server.orders.find(o=>o.name==='TEST Legacy Departure'),before=structuredClone(h.server);
+  h.click('[data-action="account"][data-id="'+o.id+'"]');h.click('[data-action="customerProfile"]');h.click('[data-action="endVisit"]');
+  const input=h.w.document.querySelector('[name="endedAt"]');assert.equal(Date.parse(input.min),Date.parse(activity));assert.equal(Date.parse(input.value),Date.parse(input.min));
+  input.removeAttribute('min');const d=new Date(Date.parse(activity)-1000);input.value=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,23);
+  h.submit();await until(()=>h.w.document.querySelector('#dialog-error').textContent.includes('aktivit'),'legacy time rejected');assert.deepEqual(h.server,before);
+  input.value=input.getAttribute('value');h.submit();await until(()=>!h.w.document.querySelector('#dialog').open,'legacy end corrected');
+  assert.equal(h.server.orders.find(x=>x.id===o.id).visitEndedAt,activity);assert.deepEqual(h.server.orders.find(x=>x.id===o.id).lines,o.lines);assert.equal(h.server.receipts.length,0);
+ }finally{h.dom.window.close();}
+});
+
 for(const timing of ['before','after'])test('credit reversal UI '+timing+' lost response keeps one audited refund and terminal reference',{concurrency:false},async()=>{
  const h=await harness(s=>{C.execute(s,'openShift',{opening:0});const o=C.execute(s,'newOrder',{name:'TEST Credit Customer'});C.execute(s,'creditTopup',{orderId:o.id,amount:50000,method:'card',cardConfirmed:true});return s;});try{
   const order=h.server.orders.find(o=>o.name==='TEST Credit Customer'),entry=h.server.creditLedger[0];

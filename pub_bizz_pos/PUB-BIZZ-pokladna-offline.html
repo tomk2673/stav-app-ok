@@ -2988,10 +2988,10 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
   const VISIT_IDLE_MINUTES = 120;
   const visitFields = ['visitId','visitStartedAt','visitLastActivityAt','visitEndedAt','visitEndEstimated','visitHasCarriedBalance'];
   function clearVisit(order) { for (const field of visitFields) delete order[field]; }
-  function visitSessions(state, order, now = new Date().toISOString()) {
+  function visitSessions(state, order, now = new Date().toISOString(), {ignoreSavedEnd = false} = {}) {
     const start = Date.parse(order?.visitStartedAt), clock = Date.parse(now);
     if (!Number.isFinite(start) || !Number.isFinite(clock) || start > clock) return [];
-    const manualEnd = Date.parse(order.visitEndedAt), limit = Number.isFinite(manualEnd) ? Math.min(clock,manualEnd) : clock;
+    const manualEnd = ignoreSavedEnd ? NaN : Date.parse(order.visitEndedAt), limit = Number.isFinite(manualEnd) ? Math.min(clock,manualEnd) : clock;
     const times = new Set([start]);
     for (const event of state.audit || []) {
       if (own(event,'visitActivity')) {
@@ -3073,9 +3073,9 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       check(o.revision === p.revision, 'Účet se změnil. Znovu otevři profil.');
       const ended = Date.parse(p.endedAt || now), began = Date.parse(o.visitStartedAt);
       check(Number.isFinite(ended) && ended >= began && ended <= Date.parse(now), 'Odchod musí být mezi začátkem návštěvy a současností.');
-      // Resolve the current session BEFORE applying the requested end; using that
-      // end as a filter would hide the very orders/payments we must validate.
-      const latest = visitSessions(s,o,now).slice(-1)[0];
+      // Validate without either the requested or previously saved end: a legacy
+      // incorrect end must not hide the very orders/payments we must validate.
+      const latest = visitSessions(s,o,now,{ignoreSavedEnd:true}).slice(-1)[0];
       const lastActivity = Math.max(began,Date.parse(latest?.lastActivityAt) || began,Date.parse(o.visitLastActivityAt) || began);
       check(ended >= lastActivity, 'Odchod nesmí být před poslední evidovanou aktivitou návštěvy (objednávkou nebo průběžnou platbou).');
       o.visitEndedAt = new Date(ended).toISOString(); o.visitEndEstimated = false;
@@ -3865,10 +3865,12 @@ function paymentLabel(r) {
 }
 function endVisit() {
   const o=getOrder();if(!customerAccount(o)||!o.visitStartedAt)return;
-  const sessions=C.visitSessions(state,o),last=sessions[sessions.length-1];
-  const at=last?.endedAt||new Date().toISOString(),d=new Date(at);
+  const now=new Date().toISOString(),sessions=C.visitSessions(state,o,now),last=sessions[sessions.length-1];
+  const activity=C.visitSessions(state,o,now,{ignoreSavedEnd:true}).slice(-1)[0];
+  const minimumAt=activity?.lastActivityAt || o.visitStartedAt;
+  const d=new Date(Math.max(Date.parse(last?.endedAt||now),Date.parse(minimumAt)));
   const localDate=at=>{const date=new Date(at);return new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,23);};
-  const local=localDate(d),minimum=localDate(last?.lastActivityAt || o.visitStartedAt);
+  const local=localDate(d),minimum=localDate(minimumAt);
   showDialog('Host odešel',`<p class="help">Ukončí se pouze návštěva zákazníka <strong>${E(o.name)}</strong>. Nezaplacená částka <strong>${fmt(C.sum(o.lines))}</strong> zůstane na jeho účtu.</p><label class="field">Čas odchodu<input type="datetime-local" step="0.001" name="endedAt" min="${E(minimum)}" value="${E(local)}" required></label><p class="help">Čas nesmí předcházet poslední objednávce nebo průběžné platbě. Automaticky předvyplněný konec je odhad podle aktivity.</p>`,f=>command('endVisit',{orderId:o.id,revision:o.revision,endedAt:new Date(String(f.get('endedAt'))).toISOString()}),'Ukončit návštěvu',()=>{render();toast('Návštěva ukončená. Účet zůstává otevřený.');});
 }
 function productSalesCounts() {

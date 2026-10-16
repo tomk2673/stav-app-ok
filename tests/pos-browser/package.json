@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "test": "node compat-flow.cjs",
+    "test:invoices": "node invoice-flow.cjs",
     "test:service-workers": "node service-worker-navigation.cjs",
     "install-browsers": "node node_modules/pw109/cli.js install chromium && node node_modules/pw115/cli.js install firefox && node node_modules/pwmodern/cli.js install chromium webkit"
   },

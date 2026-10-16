@@ -126,6 +126,27 @@ for(const prefix of ['../pub_bizz_pos/','../supabase/functions/pub-bizz-pos/']){
   const end=f.run('endVisit',{orderId:f.id,revision:f.order().revision,endedAt:'2026-10-14T21:45:00Z'},'2026-10-15T21:00:00Z');
   assert.equal(end.lastActivityAt,'2026-10-14T21:00:00.000Z');assert.equal(end.durationMinutes,45);C.validate(f.s);
  });
+ test(prefix+'correcting a legacy saved departure cannot hide later audited orders or partial payments',()=>{
+  for(const partial of [false,true]){
+   const f=setup();f.run('addLine',{orderId:f.id,productId:'agnis-2810',quantity:3},'2026-10-14T21:00:00Z');
+   f.run('addLine',{orderId:f.id,productId:'agnis-2810'},'2026-10-14T21:30:00Z');
+   if(partial){const lock=f.run('beginPayment',{orderId:f.id,revision:f.order().revision},'2026-10-14T21:40:00Z');f.run('checkout',{orderId:f.id,revision:f.order().revision,paymentToken:lock.token,operationId:crypto.randomUUID(),selected:[{id:f.order().lines[0].id,quantity:1}],mode:'cash',received:20000},'2026-10-14T21:40:00Z');}
+   const state=structuredClone(f.s),o=state.orders.find(o=>o.id===f.id);o.visitEndedAt='2026-10-14T21:10:00.000Z';delete o.visitLastActivityAt;
+   for(const e of state.audit)delete e.visitActivity;
+   const before=structuredClone(state),last=partial?'2026-10-14T21:40:00.000Z':'2026-10-14T21:30:00.000Z';
+   assert.throws(()=>D.run(state,'endVisit',{orderId:o.id,revision:o.revision,endedAt:'2026-10-14T21:20:00Z'},actor,[],'2026-10-14T22:00:00Z'),/aktivit/);assert.deepEqual(state,before);
+   const valid=D.run(state,'endVisit',{orderId:o.id,revision:o.revision,endedAt:last},actor,[],'2026-10-14T22:00:00Z');assert.equal(valid.result.lastActivityAt,last);assert.equal(valid.result.durationMinutes,partial?40:30);C.validate(valid.state);
+  }
+ });
+ test(prefix+'legacy debt settlement after a saved end does not become physical activity during correction',()=>{
+  const f=setup();f.run('addLine',{orderId:f.id,productId:'agnis-2810',quantity:3},'2026-10-14T21:00:00Z');
+  f.run('endVisit',{orderId:f.id,revision:f.order().revision,endedAt:'2026-10-14T21:30:00Z'},'2026-10-14T22:00:00Z');
+  const lock=f.run('beginPayment',{orderId:f.id,revision:f.order().revision},'2026-10-15T20:00:00Z');
+  f.run('checkout',{orderId:f.id,revision:f.order().revision,paymentToken:lock.token,operationId:crypto.randomUUID(),selected:[{id:f.order().lines[0].id,quantity:1}],mode:'cash',received:20000},'2026-10-15T20:00:00Z');
+  const state=structuredClone(f.s),o=state.orders.find(o=>o.id===f.id);delete o.visitLastActivityAt;for(const e of state.audit)delete e.visitActivity;
+  const out=D.run(state,'endVisit',{orderId:o.id,revision:o.revision,endedAt:'2026-10-14T21:45:00Z'},actor,[],'2026-10-15T21:00:00Z');
+  assert.equal(out.result.lastActivityAt,'2026-10-14T21:00:00.000Z');assert.equal(out.result.durationMinutes,45);C.validate(out.state);
+ });
  test(prefix+'merged mixed spend and split credit payments never become exact visitor spend per hour',()=>{
   const f=setup(),target=f.run('newOrder',{name:'TEST Credit Payer'},'2026-10-14T20:02:00Z').id,order=()=>f.s.orders.find(o=>o.id===target);
   f.run('creditTopup',{orderId:target,amount:50000,method:'cash'},'2026-10-14T20:03:00Z');

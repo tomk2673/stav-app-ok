@@ -97,7 +97,9 @@ Spojení účtů přesouvá pouze dluh a položky, nikoli fyzickou návštěvu n
 
 Ruční odchod se před uložením porovná s poslední skutečnou aktivitou současné návštěvy z metadat i auditu. Započítá se objednávka, zvýšení počtu kusů a průběžná úhrada aktivní návštěvy; snížení počtu, platební rezervace a pozdější doplacení ukončené návštěvy přítomnost neprodlužují. Formulář používá stejnou dolní mez v místním čase, rozhodující kontrolu provádí server. Neplatný požadavek nemění stav ani audit.
 
-Oprava návštěv z 16. 10. 2026 nevyžaduje novou databázovou migraci ani přepis uložených účtů. Postup vydání: kompletní testy → aktualizovaný synchronizovaný Edge bundle se zapnutým `verify_jwt` → web a PWA cache `2.0.17`. Nouzová HTML kopie je generovaná z týchž zdrojů. Při návratu na předchozí verzi použít celý předchozí bundle i web; nová auditní pole jsou zpětně kompatibilní. Starší chybně sloučené návštěvy se automaticky nepřipisují jinému hostovi, protože spojení účtů nedokazuje totožnost osob.
+Oprava návštěv z 16. 10. 2026 nevyžaduje novou databázovou migraci ani přepis uložených účtů. Postup vydání: kompletní testy → aktualizovaný synchronizovaný Edge bundle se zapnutým `verify_jwt` → web a PWA cache `2.0.18`. Nouzová HTML kopie je generovaná z týchž zdrojů. Při návratu na předchozí verzi použít celý předchozí bundle i web; nová auditní pole jsou zpětně kompatibilní. Starší chybně sloučené návštěvy se automaticky nepřipisují jinému hostovi, protože spojení účtů nedokazuje totožnost osob.
+
+Při opravě již uloženého odchodu kontrola dočasně ignoruje také starou hranici konce. Pozdější skutečná objednávka či průběžná platba v auditu tak zůstane viditelná i u starého stavu bez mezipaměti poslední aktivity. Formulář podle téže aktivity opraví dolní mez i neplatně starou předvyplněnou hodnotu. Doplacení starého dluhu se stále rozpoznává z aktivity/auditního markeru nebo neměnného dokladu a nepřidává fyzickou přítomnost.
 
 ## Kredit a přenos nezaplacené spotřeby
 

@@ -293,10 +293,12 @@ function paymentLabel(r) {
 }
 function endVisit() {
   const o=getOrder();if(!customerAccount(o)||!o.visitStartedAt)return;
-  const sessions=C.visitSessions(state,o),last=sessions[sessions.length-1];
-  const at=last?.endedAt||new Date().toISOString(),d=new Date(at);
+  const now=new Date().toISOString(),sessions=C.visitSessions(state,o,now),last=sessions[sessions.length-1];
+  const activity=C.visitSessions(state,o,now,{ignoreSavedEnd:true}).slice(-1)[0];
+  const minimumAt=activity?.lastActivityAt || o.visitStartedAt;
+  const d=new Date(Math.max(Date.parse(last?.endedAt||now),Date.parse(minimumAt)));
   const localDate=at=>{const date=new Date(at);return new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,23);};
-  const local=localDate(d),minimum=localDate(last?.lastActivityAt || o.visitStartedAt);
+  const local=localDate(d),minimum=localDate(minimumAt);
   showDialog('Host odešel',`<p class="help">Ukončí se pouze návštěva zákazníka <strong>${E(o.name)}</strong>. Nezaplacená částka <strong>${fmt(C.sum(o.lines))}</strong> zůstane na jeho účtu.</p><label class="field">Čas odchodu<input type="datetime-local" step="0.001" name="endedAt" min="${E(minimum)}" value="${E(local)}" required></label><p class="help">Čas nesmí předcházet poslední objednávce nebo průběžné platbě. Automaticky předvyplněný konec je odhad podle aktivity.</p>`,f=>command('endVisit',{orderId:o.id,revision:o.revision,endedAt:new Date(String(f.get('endedAt'))).toISOString()}),'Ukončit návštěvu',()=>{render();toast('Návštěva ukončená. Účet zůstává otevřený.');});
 }
 function productSalesCounts() {

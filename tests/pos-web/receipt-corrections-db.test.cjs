@@ -259,6 +259,21 @@ test('SQL departure keeps unpaid money and stock, and rejects forged financial c
  }finally{await f.db.close();}
 });
 
+test('SQL correcting a legacy saved departure uses all audited activity without touching money or stock',async()=>{
+ const f=await fixture('cash',true,true,true);try{
+  const at=minutes=>new Date(Date.now()-minutes*60000).toISOString(),id=f.target.id,order=()=>f.s.orders.find(o=>o.id===id);
+  await f.run('addLine',{orderId:id,productId:'agnis-2810',quantity:3},f.staff,at(40));
+  await f.run('addLine',{orderId:id,productId:'agnis-2810'},f.staff,at(10));
+  const lock=(await f.run('beginPayment',{orderId:id,revision:order().revision},f.staff,at(6))).result;
+  const payment=(await f.run('checkout',{orderId:id,revision:order().revision,paymentToken:lock.token,operationId:crypto.randomUUID(),selected:[{id:order().lines[0].id,quantity:1}],mode:'cash',received:5500},f.staff,at(5))).result;
+  order().visitEndedAt=at(30);delete order().visitLastActivityAt;for(const event of f.s.audit)delete event.visitActivity;
+  await f.db.query('update pos_registers set state=$1 where venue_id=$2',[JSON.stringify(f.s),f.venue]);
+  const before=await f.snapshot();await assert.rejects(()=>f.run('endVisit',{orderId:id,revision:order().revision,endedAt:at(15)},f.staff),/aktivit/);assert.deepEqual(await f.snapshot(),before);
+  const end=(await f.run('endVisit',{orderId:id,revision:order().revision,endedAt:payment.at},f.staff)).result;
+  assert.equal(end.lastActivityAt,payment.at);const after=await f.snapshot();assert.deepEqual(after.stock,before.stock);assert.deepEqual(after.receipts,before.receipts);C.validate(f.s);
+ }finally{await f.db.close();}
+});
+
 test('SQL merge preserves both visitors, carried stock and wallets through partial payment, departure and repeated visits',async()=>{
  const I=require('../../pub_bizz_pos/customer.js'),f=await fixture('cash',true,true,true);try{
   const time=minutes=>new Date(Date.now()-(90-minutes)*60000).toISOString();

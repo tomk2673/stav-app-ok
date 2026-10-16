@@ -1,7 +1,7 @@
-const CACHE = 'pub-guru-shell-v10-navigation';
+const CACHE = 'pub-guru-shell-v13-invoice-ai-integrated';
 const APP_SHELL = [
   './start.html', './index.html', './invoice-review.html', './closings.html', './styles.css', './app.js',
-  './closings.js', './invoice-review.js', './backend.js', './roles.js', './navigation.js', './data-sync.js',
+  './invoice-accounting.js', './invoice-numbers.js', './invoice-review-v1.html', './invoice-review-v2.js', './invoice-capture.html', './invoice-capture-v3.js', './ai-accountant.js', './closings.js', './invoice-review.js', './backend.js', './roles.js', './navigation.js', './data-sync.js',
   './operations-backend.js', './invoice-backend.js', './invoice-ui-guard.js', './closing-role-guard.js',
   './app-config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'
 ];
@@ -12,7 +12,7 @@ self.addEventListener('activate', event => event.waitUntil((async()=>{
   await self.clients.claim();
 })()));
 self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
+  if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin || new URL(event.request.url).pathname.startsWith('/api/')) return;
   event.respondWith((async()=>{
     const cache=await caches.open(CACHE),hit=await cache.match(event.request);
     const navigation=event.request.mode==='navigate';

@@ -47,3 +47,9 @@ test('POS installed-app start is canonical and root worker retirement does not d
  assert.equal(manifest.start_url,'./index.html');
  for(const relative of ['sw.js','pub_bizz_pos/sw.js','pub_guru/sw.js'])assert.doesNotMatch(fs.readFileSync(path.join(root,relative),'utf8'),/indexedDB\s*\.\s*deleteDatabase|localStorage\s*\.\s*clear/);
 });
+test('invoice API readiness never replays or stores a cached authenticated response',()=>{
+ const w=worker('pub_guru');w.hit=new Response('{"configured":true}',{status:200});
+ const request={...w.request,url:'https://pos.test/api/invoice-vision?organization_id=test',mode:'cors'};
+ assert.equal(w.dispatch('fetch',request),undefined);assert.equal(w.dispatch('fetch',request),undefined);
+ assert.equal(w.saved.length,0,'browser handles API requests directly without a service-worker cache');
+});

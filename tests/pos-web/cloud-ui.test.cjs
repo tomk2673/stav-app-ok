@@ -588,13 +588,27 @@ test('a lost reservation response freezes payment until its result is recovered,
 });
 
 test('customer departure UI freezes the visit while keeping the whole unpaid account',{concurrency:false},async()=>{
- const h=await harness(s=>{C.execute(s,'openShift',{opening:0});const o=C.execute(s,'newOrder',{name:'Lukas Novobilsky'});C.execute(s,'addLine',{orderId:o.id,productId:'agnis-2810',quantity:2},new Date(Date.now()-30*60000).toISOString());return s;});try{
-  const o=h.server.orders.find(o=>o.name==='Lukas Novobilsky'),before=structuredClone(o.lines);
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});const o=C.execute(s,'newOrder',{name:'TEST Visit Customer'});C.execute(s,'addLine',{orderId:o.id,productId:'agnis-2810',quantity:2},new Date(Date.now()-30*60000).toISOString());return s;});try{
+  const o=h.server.orders.find(o=>o.name==='TEST Visit Customer'),before=structuredClone(o.lines);
   h.click('[data-action="account"][data-id="'+o.id+'"]');h.click('[data-action="customerProfile"]');
   h.click('[data-action="endVisit"]');assert.match(h.w.document.querySelector('#dialog-body').textContent,/zůstane/);h.submit();
   await until(()=>!h.w.document.querySelector('#dialog').open&&h.server.orders.find(x=>x.id===o.id).visitEndedAt,'departure saved');
   assert.deepEqual(h.server.orders.find(x=>x.id===o.id).lines,before);assert.equal(h.server.receipts.length,0);
   h.click('[data-action="customerProfile"]');assert.match(h.w.document.querySelector('#dialog-body').textContent,/Návštěva je ukončená/);
+ }finally{h.dom.window.close();}
+});
+
+test('departure form uses latest activity and server rejects an earlier time without changing any account',{concurrency:false},async()=>{
+ const activity=new Date(Date.now()-10*60000).toISOString();
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});const o=C.execute(s,'newOrder',{name:'TEST Departure Guard'});C.execute(s,'addLine',{orderId:o.id,productId:'agnis-2810'},new Date(Date.now()-40*60000).toISOString());C.execute(s,'addLine',{orderId:o.id,productId:'agnis-2810'},activity);return s;});try{
+  const o=h.server.orders.find(o=>o.name==='TEST Departure Guard'),before=structuredClone(h.server);
+  h.click('[data-action="account"][data-id="'+o.id+'"]');h.click('[data-action="customerProfile"]');h.click('[data-action="endVisit"]');
+  const input=h.w.document.querySelector('[name="endedAt"]'),local=at=>{const d=new Date(at);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,23);};
+  assert.equal(Date.parse(input.min),Date.parse(activity));
+  input.value=local(Date.parse(activity)-1000);h.submit();await until(()=>h.w.document.querySelector('#dialog-error').textContent.includes('aktivit'),'earlier departure rejected');
+  assert.deepEqual(h.server,before);assert.equal(h.w.document.querySelector('#dialog').open,true);
+  input.value=local(activity);h.submit();await until(()=>!h.w.document.querySelector('#dialog').open,'boundary departure saved');
+  assert.equal(h.server.orders.find(x=>x.id===o.id).visitEndedAt,activity);assert.equal(h.server.receipts.length,0);
  }finally{h.dom.window.close();}
 });
 

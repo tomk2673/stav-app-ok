@@ -295,8 +295,9 @@ function endVisit() {
   const o=getOrder();if(!customerAccount(o)||!o.visitStartedAt)return;
   const sessions=C.visitSessions(state,o),last=sessions[sessions.length-1];
   const at=last?.endedAt||new Date().toISOString(),d=new Date(at);
-  const local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,19);
-  showDialog('Host odešel',`<p class="help">Ukončí se pouze návštěva zákazníka <strong>${E(o.name)}</strong>. Nezaplacená částka <strong>${fmt(C.sum(o.lines))}</strong> zůstane na jeho účtu.</p><label class="field">Čas odchodu<input type="datetime-local" step="1" name="endedAt" value="${E(local)}" required></label><p class="help">Pokud zákazník odešel dříve, oprav čas. Automaticky předvyplněný konec je odhad podle aktivity.</p>`,f=>command('endVisit',{orderId:o.id,revision:o.revision,endedAt:new Date(String(f.get('endedAt'))).toISOString()}),'Ukončit návštěvu',()=>{render();toast('Návštěva ukončená. Účet zůstává otevřený.');});
+  const localDate=at=>{const date=new Date(at);return new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,23);};
+  const local=localDate(d),minimum=localDate(last?.lastActivityAt || o.visitStartedAt);
+  showDialog('Host odešel',`<p class="help">Ukončí se pouze návštěva zákazníka <strong>${E(o.name)}</strong>. Nezaplacená částka <strong>${fmt(C.sum(o.lines))}</strong> zůstane na jeho účtu.</p><label class="field">Čas odchodu<input type="datetime-local" step="0.001" name="endedAt" min="${E(minimum)}" value="${E(local)}" required></label><p class="help">Čas nesmí předcházet poslední objednávce nebo průběžné platbě. Automaticky předvyplněný konec je odhad podle aktivity.</p>`,f=>command('endVisit',{orderId:o.id,revision:o.revision,endedAt:new Date(String(f.get('endedAt'))).toISOString()}),'Ukončit návštěvu',()=>{render();toast('Návštěva ukončená. Účet zůstává otevřený.');});
 }
 function productSalesCounts() {
   // Receipts come from the shared confirmed state; never count taps or unpaid orders.
@@ -361,7 +362,7 @@ function mergeOrders() {
   const source = structuredClone(getOrder());
   const targets = structuredClone(state.orders.filter(x => x.id !== source.id));
   if (!source.lines.length || source.paymentLock || !C.activeShift(state)) return;
-  showDialog('Spojit účty', `<p class="help">Všechny položky z účtu <strong>${E(source.name)}</strong> se přesunou na vybraný účet. Původní účet zůstane prázdný pro dalšího hosta.</p><label class="field">Spojit s účtem<select name="targetOrderId" required><option value="">Vyber stůl nebo zákazníka</option>${targets.map(o => `<option value="${E(o.id)}" ${o.paymentLock?'disabled':''}>${E(o.name)} · ${fmt(C.sum(o.lines))}${o.paymentLock?' · probíhá platba':''}</option>`).join('')}</select></label><div id="merge-summary" class="payment-summary merge-summary" role="status" aria-live="polite">Vyber účet pro zobrazení společné částky.</div>`, async f => {
+  showDialog('Spojit účty', `<p class="help">Všechny položky z účtu <strong>${E(source.name)}</strong> se přesunou na vybraný účet. Původní účet zůstane prázdný. Návštěvy a kredit obou hostů zůstávají oddělené; spojení neznamená odchod hosta.</p><label class="field">Spojit s účtem<select name="targetOrderId" required><option value="">Vyber stůl nebo zákazníka</option>${targets.map(o => `<option value="${E(o.id)}" ${o.paymentLock?'disabled':''}>${E(o.name)} · ${fmt(C.sum(o.lines))}${o.paymentLock?' · probíhá platba':''}</option>`).join('')}</select></label><div id="merge-summary" class="payment-summary merge-summary" role="status" aria-live="polite">Vyber účet pro zobrazení společné částky.</div>`, async f => {
     const target = targets.find(o => o.id === f.get('targetOrderId'));
     if (!target || target.paymentLock) throw new Error('Vyber dostupný účet pro spojení.');
     return command('mergeOrders', {orderId:source.id,revision:source.revision,targetOrderId:target.id,targetRevision:target.revision});

@@ -26,6 +26,11 @@ test('receipt reassignment moves spend and favorites to the corrected customer',
   assert.equal(I.profile(s,'Jana').spend,25000);
   assert.equal(I.productCounts(s,'Jana').get('beer'),3);
 });
+test('receipt reassignment does not transfer the physical visit to a different payer',()=>{
+ const s=state();s.receiptAssignments.b={orderId:'jana',orderName:'Jana',at:'2026-10-12T00:00:00Z'};
+ assert.equal(I.profile(s,'Petr').spend,25000);assert.equal(I.profile(s,'Petr').totalMinutes,120);
+ assert.equal(I.profile(s,'Jana').spend,10000);assert.equal(I.profile(s,'Jana').totalMinutes,0);
+});
 test('ranking excludes tables and quick sale',()=>{
   const s=state();
   s.receipts.push({id:'d',kind:'sale',orderId:'jana',orderName:'Jana',total:40000,at:'2026-10-12T00:00:00Z',lines:[{productId:'x',name:'X',price:40000,quantity:1}]});

@@ -135,13 +135,20 @@
     const manualEnd = Date.parse(order.visitEndedAt), limit = Number.isFinite(manualEnd) ? Math.min(clock,manualEnd) : clock;
     const times = new Set([start]);
     for (const event of state.audit || []) {
-      if (!['addLine','checkout'].includes(event.type) || (event.detail?.orderId || event.orderId) !== order.id) continue;
+      if (own(event,'visitActivity')) {
+        if (event.visitActivity?.orderId !== order.id) continue;
+      } else {
+        if (!['addLine','checkout'].includes(event.type) || (event.detail?.orderId || event.orderId) !== order.id) continue;
+        // Paying an already ended visit is debt settlement, not evidence of presence.
+        const receipt = event.type==='checkout' && (state.receipts || []).find(r=>r.id===event.receiptId);
+        if (receipt?.visitEndedAt && Date.parse(receipt.visitEndedAt)<Date.parse(receipt.at)) continue;
+      }
       const at = Date.parse(event.at); if (at >= start && at <= limit) times.add(at);
     }
     const last = Date.parse(order.visitLastActivityAt); if (last >= start && last <= limit) times.add(last);
     const idle = VISIT_IDLE_MINUTES * 60000, sessions = []; let began = start, activity = start;
     const row = (end, estimated, active = false) => ({id:began===start?(order.visitId || 'visit:'+order.id+':'+start):(order.visitId || 'visit:'+order.id)+'@'+began,
-      orderId:order.id,orderName:order.name,startedAt:new Date(began).toISOString(),endedAt:end===null?null:new Date(end).toISOString(),
+      orderId:order.id,orderName:order.name,customerId:order.customerId || null,startedAt:new Date(began).toISOString(),endedAt:end===null?null:new Date(end).toISOString(),
       durationMinutes:Math.max(0,Math.floor(((end===null?clock:end)-began)/60000)),lastActivityAt:new Date(activity).toISOString(),estimated,active,
       reason:active?'active':estimated?'idle':'manual'});
     for (const at of [...times].sort((a,b)=>a-b)) {
@@ -156,9 +163,23 @@
   function execute(s, type, p = {}, now = new Date().toISOString(), restoredLines, actorId = s.deviceId) {
     let result = null;
     const closedVisits = [];
+    let visitActivity = null;
     const sh = activeShift(s);
     const needShift = () => { check(sh, 'Nejdřív otevři směnu.'); return sh; };
     const order = () => { const o = s.orders.find(x => x.id === p.orderId); check(o, 'Účet už neexistuje.'); return o; };
+    const touchVisit = o => {
+      if (o.id === 'bar') return;
+      const sessions = visitSessions(s,o,now), active = sessions.find(v=>v.active);
+      closedVisits.push(...sessions.filter(v=>!v.active));
+      if (!o.visitId || !active) {
+        const carried = o.lines.length > 0; clearVisit(o); o.visitId = uid(); o.visitStartedAt = now;
+        if (carried) o.visitHasCarriedBalance = true;
+      } else if (active.startedAt !== new Date(o.visitStartedAt).toISOString()) {
+        o.visitId = active.id; o.visitStartedAt = active.startedAt; o.visitHasCarriedBalance = true;
+      }
+      o.visitLastActivityAt = now;
+      visitActivity = {orderId:o.id,visitId:o.visitId,at:now};
+    };
     if (type === 'openShift') {
       check(!sh, 'Směna už je otevřená.'); check(integer(p.opening), 'Neplatný počáteční vklad.');
       const next = { id: uid(), openedAt: now, closedAt: null, opening: p.opening, operator: clean(p.operator) || s.settings.operator, movements: [] };
@@ -193,11 +214,20 @@
       check(o.revision === p.revision, 'Účet se změnil. Znovu otevři profil.');
       const ended = Date.parse(p.endedAt || now), began = Date.parse(o.visitStartedAt);
       check(Number.isFinite(ended) && ended >= began && ended <= Date.parse(now), 'Odchod musí být mezi začátkem návštěvy a současností.');
+      // Resolve the current session BEFORE applying the requested end; using that
+      // end as a filter would hide the very orders/payments we must validate.
+      const latest = visitSessions(s,o,now).slice(-1)[0];
+      const lastActivity = Math.max(began,Date.parse(latest?.lastActivityAt) || began,Date.parse(o.visitLastActivityAt) || began);
+      check(ended >= lastActivity, 'Odchod nesmí být před poslední evidovanou aktivitou návštěvy (objednávkou nebo průběžnou platbou).');
       o.visitEndedAt = new Date(ended).toISOString(); o.visitEndEstimated = false;
       const sessions = visitSessions(s,o,now); closedVisits.push(...sessions.filter(v=>!v.active));
       result = {...sessions[sessions.length-1],type,at:now}; o.revision++;
     } else if (type === 'deleteOrder') {
-      const o = order(); check(o.id !== 'bar' && !o.lines.length, 'Smazat lze pouze prázdný pojmenovaný účet.'); s.orders = s.orders.filter(x => x.id !== o.id);
+      const o = order(); check(o.id !== 'bar' && !o.lines.length, 'Smazat lze pouze prázdný pojmenovaný účet.');
+      // Removing an empty account must not erase a visit retained after a merge.
+      // Account removal is not a confirmed departure, so label that end as an estimate.
+      closedVisits.push(...visitSessions(s,o,now).map(v=>v.active?{...v,active:false,endedAt:now,estimated:true,reason:'account_deleted'}:v));
+      s.orders = s.orders.filter(x => x.id !== o.id);
     } else if (type === 'mergeOrders') {
       needShift();
       const source = order(), target = s.orders.find(x => x.id === p.targetOrderId);
@@ -215,13 +245,15 @@
         else merged.push({ ...structuredClone(line), id: merged.some(x => x.id === line.id) ? uid() : line.id });
       }
       result = { type, orderId: target.id, name: target.name, sourceOrderId: source.id, sourceName: source.name,
-        movedQuantity: source.lines.reduce((n, l) => n + l.quantity, 0), sourceTotal, total };
-      if (source.visitStartedAt && (!target.visitStartedAt || Date.parse(source.visitStartedAt) < Date.parse(target.visitStartedAt))) {
-        target.visitStartedAt = source.visitStartedAt;
-        if (!target.visitId) target.visitId = source.visitId;
-      }
+        movedQuantity: source.lines.reduce((n, l) => n + l.quantity, 0), sourceTotal, total,
+        visitSnapshots: {source:visitSessions(s,source,now),target:visitSessions(s,target,now)} };
+      closedVisits.push(...result.visitSnapshots.source.filter(v=>!v.active),...result.visitSnapshots.target.filter(v=>!v.active));
+      // A transfer of a bill says nothing about either person's presence or identity.
+      // Keep both visits on their original accounts, even when the source is now empty.
+      // Imported spend cannot be attributed precisely to the target's physical visit.
+      if (target.visitId) target.visitHasCarriedBalance = true;
       target.lines = merged; target.revision++;
-      source.lines = []; clearVisit(source); source.revision++;
+      source.lines = []; source.revision++;
     } else if (type === 'loadCatalog') {
       if (s.catalogVersion === catalog.version) return null;
       for (const item of catalog.products) {
@@ -263,17 +295,7 @@
       const line = o.lines.find(x => sameLine(x,nextLine));
       check(!line || line.quantity + quantity <= 999, 'Limit množství je 999.');
       check(sum(o.lines) + portion.price * quantity <= 100000000, 'Překročen limit účtu.');
-      if (o.id !== 'bar') {
-        const sessions = visitSessions(s,o,now), active = sessions.find(v=>v.active);
-        closedVisits.push(...sessions.filter(v=>!v.active));
-        if (!o.lines.length || !o.visitId || !active) {
-          const carried = o.lines.length > 0; clearVisit(o); o.visitId = uid(); o.visitStartedAt = now;
-          if (carried) o.visitHasCarriedBalance = true;
-        } else if (active.startedAt !== new Date(o.visitStartedAt).toISOString()) {
-          o.visitId = active.id; o.visitStartedAt = active.startedAt; o.visitHasCarriedBalance = true;
-        }
-        o.visitLastActivityAt = now;
-      }
+      touchVisit(o);
       if (line) line.quantity += quantity;
       else o.lines.push({id:uid(),...nextLine,quantity});
       check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
@@ -287,6 +309,7 @@
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.');
       check(integer(p.quantity, 999) && p.quantity > 0, 'Vyber množství 1 až 999.');
       check(!l.stockIssue || p.quantity===l.quantity, 'Počet již vydaných porcí nelze přepsat. Další porce přidej z nabídky.');
+      if (p.quantity > l.quantity) touchVisit(o);
       l.quantity = p.quantity; check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
     } else if (type === 'checkout') {
       check(typeof p.operationId === 'string' && p.operationId.length > 10, 'Chybí identifikátor platby.');
@@ -297,6 +320,7 @@
       if(pay.credit){const customer=ensureCustomer(s,o,now);check(creditBalance(s,customer.id)>=pay.credit,'Na kreditu není dostatek prostředků.');}
       if (s.settings.vat === 'payer') check(lines.every(x => x.vatRate !== null), 'Na účtu chybí sazba DPH. Oprav položky před zaplacením.');
       const sessions = visitSessions(s,o,now), activeVisit = sessions.find(v=>v.active), latestVisit = sessions[sessions.length-1];
+      if (activeVisit) visitActivity = {orderId:o.id,visitId:activeVisit.id,at:now};
       closedVisits.push(...sessions.filter(v=>!v.active));
       const visitId = latestVisit?.id || o.visitId, visitStartedAt = latestVisit?.startedAt || o.visitStartedAt;
       s.sequence++;
@@ -414,7 +438,7 @@
     } else if (type === 'backup') s.lastBackup = now;
     else throw new Error('Neznámá operace.');
     s.revision++;
-    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : result?.receiptId || null, detail: structuredClone(p), ...(closedVisits.length ? { visits: structuredClone(closedVisits) } : {}), ...(type === 'endVisit' ? { visit: structuredClone(result) } : {}), ...(type === 'renameOrder' ? { rename: structuredClone(result) } : {}), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}), ...(type === 'reassignReceipt' ? { assignment: structuredClone(result) } : {}) });
+    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : result?.receiptId || null, detail: structuredClone(p), ...(['addLine','setLineQuantity','checkout'].includes(type)?{visitActivity}:{}), ...(closedVisits.length ? { visits: structuredClone(closedVisits) } : {}), ...(type === 'endVisit' ? { visit: structuredClone(result) } : {}), ...(type === 'renameOrder' ? { rename: structuredClone(result) } : {}), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}), ...(type === 'reassignReceipt' ? { assignment: structuredClone(result) } : {}) });
     return result;
   }
   function validate(s) {

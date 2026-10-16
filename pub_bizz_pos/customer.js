@@ -75,7 +75,7 @@
     }).sort((a,b) => b.points-a.points || b.spend-a.spend || a.name.localeCompare(b.name,'cs'));
   }
   function profile(state, name, currentOrder = null, now = new Date().toISOString()) {
-    const key = normalize(name), order=currentOrder||activeOrder(state,name), customerId=order?.customerId||null, sales = salesFor(state, name, customerId, order?.id), customer=customerId?(state.customers||[]).find(x=>x.id===customerId):null;
+    const key = normalize(name), order=currentOrder||activeOrder(state,name), customerId=order?.customerId||(state.customers||[]).find(c=>normalize(c.name)===key)?.id||null, sales = salesFor(state, name, customerId, order?.id), customer=customerId?(state.customers||[]).find(x=>x.id===customerId):null;
     const spend = sales.reduce((n,r) => n + r.total, 0);
     const itemMap = new Map();
     for (const receipt of sales) for (const line of receipt.lines || []) {
@@ -84,14 +84,19 @@
       row.name=line.name;row.serving=line.serving||row.serving;row.quantity+=line.quantity;row.spend+=line.price*line.quantity;itemMap.set(id,row);
     }
     const items = [...itemMap.values()].sort((a,b) => b.quantity-a.quantity || b.spend-a.spend || a.name.localeCompare(b.name,'cs'));
+    const ownsVisit = visit => {
+      if (visit.customerId) return !!customerId && visit.customerId===customerId;
+      const originalOrder=(state.orders || []).find(o=>o.id===visit.orderId);
+      return originalOrder ? originalOrder.id===(order?.id || activeOrder(state,name)?.id) : normalize(visit.orderName)===key;
+    };
     const completed = new Map();
     for (const receipt of state.receipts || []) {
-      if (receipt.kind !== 'sale' || normalize(receiptName(state, receipt)) !== key || !receipt.visitId || !receipt.visitEndedAt || !Number.isSafeInteger(receipt.visitDurationMinutes)) continue;
+      // Reassigning a payment changes spend, never the identity of the visitor.
+      if (receipt.kind !== 'sale' || !ownsVisit(receipt) || !receipt.visitId || !receipt.visitEndedAt || !Number.isSafeInteger(receipt.visitDurationMinutes)) continue;
       completed.set(receipt.visitId,{id:receipt.visitId,startedAt:receipt.visitStartedAt,endedAt:receipt.visitEndedAt,durationMinutes:receipt.visitDurationMinutes,estimated:receipt.visitEstimated===true});
     }
     for (const event of state.audit || []) for (const visit of event.visits || []) {
-      const visitName = (state.orders || []).find(o=>o.id===visit.orderId)?.name || visit.orderName;
-      if (normalize(visitName)===key && Number.isSafeInteger(visit.durationMinutes) && visit.durationMinutes>=0) completed.set(visit.id,visit);
+      if (ownsVisit(visit) && Number.isSafeInteger(visit.durationMinutes) && visit.durationMinutes>=0) completed.set(visit.id,visit);
     }
     const sessions = currentOrder && normalize(currentOrder.name)===key ? C.visitSessions(state,currentOrder,now) : [];
     for (const visit of sessions.filter(v=>!v.active)) completed.set(visit.id,visit);

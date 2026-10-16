@@ -306,6 +306,39 @@ async function smallShotFlow(browser,base,width){
   return {width,threeSmallShots:true,plusKeepsSize:true,splitKeepsRemainder:true,reloadKeepsSize:true};
  }finally{await context.close();}
 }
+async function visitFlow(browser,base,width){
+ const context=await contextFor(browser,{width,timezoneId:'Europe/Prague'}),f=fixture(),errors=[];
+ const at=minutes=>new Date(Date.now()-minutes*60000).toISOString();
+ C.execute(f.state,'openShift',{opening:0});
+ const source=C.execute(f.state,'newOrder',{name:'TEST Visitor A'}).id,target=C.execute(f.state,'newOrder',{name:'TEST Visitor B'}).id;
+ C.execute(f.state,'addLine',{orderId:source,productId:'agnis-2810'},at(45));
+ C.execute(f.state,'addLine',{orderId:source,productId:'agnis-2810'},at(10));
+ C.execute(f.state,'addLine',{orderId:target,productId:'agnis-2810',quantity:2},at(30));
+ const order=id=>f.state.orders.find(o=>o.id===id),a=structuredClone(order(source)),b=structuredClone(order(target));
+ await context.route(api+'/**',f.route);const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
+ try{
+  await page.goto(base+'/pub_bizz_pos/index.html');await page.locator('[name="email"]').fill('owner@example.test');await page.locator('[name="password"]').fill('test-password');await page.locator('#login-form button').click();
+  const select=async name=>{await page.locator('#account-search').fill(name);await page.locator('#account-results [data-action="account"]').first().click();};
+  await select('TEST Visitor A');await page.locator('[data-action="mergeOrders"]').click();
+  assert.match(await page.locator('#dialog-body').textContent(),/Návštěvy a kredit obou hostů zůstávají oddělené/);
+  await page.locator('[name="targetOrderId"]').selectOption(target);f.dropResponse();await page.locator('#dialog-submit').click();await page.locator('[data-action="retryPending"]').waitFor();
+  const requestId=await page.evaluate(()=>POSCloud.pending.requestId);await page.locator('#dialog .dialog-actions .close-dialog').click();await page.locator('[data-action="retryPending"]').click();
+  await until(page,()=>window.POSCloud&&!POSCloud.pending&&!POSCloud.busy&&document.querySelector('.receipt-head h2')?.textContent==='TEST Visitor B');
+  assert.equal(f.calls.filter(c=>c.requestId===requestId).length,2);assert.equal(f.state.audit.filter(e=>e.type==='mergeOrders').length,1);
+  for(const key of ['visitId','visitStartedAt','visitLastActivityAt','customerId']){assert.equal(order(source)[key],a[key]);assert.equal(order(target)[key],b[key]);}
+  await select('TEST Visitor A');await page.locator('[data-action="customerProfile"]').click();await page.locator('[data-action="endVisit"]').click();
+  const input=page.locator('[name="endedAt"]'),minimum=await input.getAttribute('min');
+  assert.equal(await input.evaluate(el=>new Date(el.min).toISOString()),a.visitLastActivityAt);
+  const earlier=await input.evaluate(el=>{const d=new Date(new Date(el.min).getTime()-1000);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,23);});
+  await input.fill(earlier);const count=f.calls.length;await page.locator('#dialog-submit').click();assert.equal(await input.evaluate(el=>el.validity.rangeUnderflow),true);assert.equal(f.calls.length,count,'native min stops a contradictory departure');
+  await input.evaluate(el=>el.removeAttribute('min'));await page.locator('#dialog-submit').click();await until(page,()=>document.querySelector('#dialog-error')?.textContent.includes('aktivit'));
+  assert.equal(order(source).visitEndedAt,undefined);assert.equal(f.state.receipts.length,0);
+  await input.fill(minimum);await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
+  assert.equal(order(source).visitEndedAt,a.visitLastActivityAt);assert.equal(order(source).lines.length,0);assert.equal(order(target).lines[0].quantity,4);
+  assert.equal(order(target).visitId,b.visitId);assert.deepEqual(errors,[]);
+  return {width,independentVisitors:true,mergeReplayOnce:true,localTimeMinimum:true,serverDepartureGuard:true};
+ }finally{await context.close();}
+}
 async function failures(browser,base){
   for(const mode of ['sdk','app','storage','quota','api']){
     const context=await contextFor(browser);try{
@@ -339,7 +372,7 @@ async function failures(browser,base){
       const browser=await require(profile.module)[profile.engine].launch(options);
       try{
         const result={browser:profile.name,version:browser.version(),os:process.platform,flows:[]};
-        for(const width of profile.widths){result.flows.push({...await flow(browser,base,width),smallShots:await smallShotFlow(browser,base,width)});console.log(profile.name+' '+width+'px: flow passed');}
+        for(const width of profile.widths){result.flows.push({...await flow(browser,base,width),smallShots:await smallShotFlow(browser,base,width),visits:await visitFlow(browser,base,width)});console.log(profile.name+' '+width+'px: flow passed');}
         result.failures=await failures(browser,base);results.push(result);console.log(JSON.stringify(result));
       }finally{await browser.close();}
     }

@@ -363,3 +363,16 @@ test('SQL unpaid missing recipe stays visible, resolves once after payment, and 
   assert.deepEqual((await f.db.query("select has_function_privilege('authenticated','public.pos_issue_stock_slice(uuid,int,int)','execute') client,has_function_privilege('service_role','public.pos_issue_stock_slice(uuid,int,int)','execute') service")).rows[0],{client:false,service:true});
  }finally{await f.db.close();}
 });
+
+test('SQL rollout accepts an in-flight legacy cash/card closing only before any wallet or unpaid stock exists',async()=>{
+ const f=await fixture('cash',false,true,true);try{
+  const command=D.run(f.s,'closeShift',{counted:27500},f.owner,[]);
+  delete command.result.stockIssueIds;
+  for(const key of ['credit','creditTopupCash','creditTopupCard','creditTopups','terminal','unpaidAccounts','unpaidTotal'])delete command.result.summary[key];
+  command.state.shifts[command.state.shifts.length-1]=structuredClone(command.result);
+  const before=await f.snapshot(),bad=structuredClone(command.result);bad.summary.cash++;
+  await assert.rejects(f.commit('closeShift',command.state,bad),/Close must preserve/);assert.deepEqual(await f.snapshot(),before);
+  await f.commit('closeShift',command.state,command.result);
+  assert.equal(Number((await f.db.query('select cash_amount,total_amount from closings')).rows[0].cash_amount),275);assert.deepEqual((await f.snapshot()).stock,before.stock);
+ }finally{await f.db.close();}
+});

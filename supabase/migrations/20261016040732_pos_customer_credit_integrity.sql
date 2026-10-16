@@ -135,7 +135,7 @@ end;$$;
 create or replace function public.pos_guard_close_issues(a jsonb,b jsonb,r jsonb,actor uuid) returns void
 language plpgsql set search_path='' as $$
 declare o jsonb;l jsonb;i jsonb;expected_orders jsonb:='[]';lines jsonb;issues jsonb:=coalesce(a->'stockIssues','[]');ids jsonb:='[]';changed int;recipe jsonb;sh jsonb;
- cash bigint;card bigint;credit bigint;tc bigint;td bigint;movements bigint;summary jsonb;debts jsonb;
+ cash bigint;card bigint;credit bigint;tc bigint;td bigint;movements bigint;summary jsonb;reported jsonb;debts jsonb;
 begin
  select value into sh from jsonb_array_elements(a->'shifts') where value->>'id'=r->>'id' and value->'closedAt'='null'::jsonb;
  if sh is null or r->>'closedAt' is null or exists(select 1 from jsonb_array_elements(a->'orders') x where x->'paymentLock' is not null)
@@ -159,8 +159,15 @@ begin
  select coalesce(sum((x->>'amount')::bigint),0) into movements from jsonb_array_elements(sh->'movements') x;
  select coalesce(jsonb_agg(jsonb_build_object('orderId',x->>'id','name',x->>'name','amount',(select sum((ln->>'price')::bigint*(ln->>'quantity')::bigint) from jsonb_array_elements(x->'lines') ln),'itemCount',(select sum((ln->>'quantity')::int) from jsonb_array_elements(x->'lines') ln)) order by n),'[]') into debts from jsonb_array_elements(a->'orders') with ordinality as t(x,n) where jsonb_array_length(x->'lines')>0;
  summary:=jsonb_build_object('cash',cash,'card',card,'credit',credit,'total',cash+card+credit,'count',(select count(*) from jsonb_array_elements(a->'receipts') x where x->>'shiftId'=sh->>'id' and x->>'kind'='sale'),'refunds',(select count(*) from jsonb_array_elements(a->'receipts') x where x->>'shiftId'=sh->>'id' and x->>'kind'='refund'),'movements',movements,'opening',(sh->>'opening')::bigint,'creditTopupCash',tc,'creditTopupCard',td,'creditTopups',tc+td,'expected',(sh->>'opening')::bigint+cash+tc+movements,'terminal',card+td,'unpaidAccounts',debts,'unpaidTotal',(select coalesce(sum((x->>'amount')::bigint),0) from jsonb_array_elements(debts) x));
- if b->'orders' is distinct from expected_orders or coalesce(b->'stockIssues','[]') is distinct from issues or r->'stockIssueIds' is distinct from ids
-    or r->'summary' is distinct from summary or (r->>'counted')::bigint<0 or (r->>'difference')::bigint is distinct from (r->>'counted')::bigint-(summary->>'expected')::bigint
+ -- During the schema -> Edge rollout an in-flight old Edge may close an empty,
+ -- never-funded register. Accept its legacy zero-credit summary only in that
+ -- dormant state; accounts with any wallet history or unpaid issue need V2.
+ reported:=r->'summary';
+ if not (reported ? 'credit') and jsonb_array_length(coalesce(a->'creditLedger','[]'))=0 and debts='[]'::jsonb and credit=0 then
+  reported:=reported||jsonb_build_object('credit',0,'creditTopupCash',0,'creditTopupCard',0,'creditTopups',0,'terminal',card,'unpaidAccounts','[]'::jsonb,'unpaidTotal',0);
+ end if;
+ if b->'orders' is distinct from expected_orders or coalesce(b->'stockIssues','[]') is distinct from issues or coalesce(r->'stockIssueIds','[]') is distinct from ids
+    or reported is distinct from summary or (r->>'counted')::bigint<0 or (r->>'difference')::bigint is distinct from (r->>'counted')::bigint-(summary->>'expected')::bigint
     or r-array['summary','closedAt','counted','difference','stockIssueIds'] is distinct from sh-array['summary','closedAt','counted','difference','stockIssueIds']
     or b-array['revision','audit','orders','shifts','stockIssues'] is distinct from a-array['revision','audit','orders','shifts','stockIssues']
     or b->'shifts' is distinct from (select jsonb_agg(case when x->>'id'=sh->>'id' then r else x end order by n) from jsonb_array_elements(a->'shifts') with ordinality as t(x,n))

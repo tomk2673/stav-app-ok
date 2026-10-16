@@ -16,15 +16,41 @@
   }
   function receiptName(state, receipt) {
     const account = C.receiptAccount(state, receipt);
+    const assigned=Object.prototype.hasOwnProperty.call(state.receiptAssignments||{},receipt.id);
+    const customerId=assigned?account.customerId:receipt.customerId;
+    const customer=(state.customers||[]).find(c=>c.id===customerId);
+    if(customer)return customer.name;
     return (state.orders || []).find(o => o.id === account.orderId)?.name || account.orderName;
   }
-  function salesFor(state, name) {
-    const key = normalize(name);
-    return validSales(state).filter(r => normalize(receiptName(state, r)) === key);
+  function activeOrder(state,name) {
+    const key=normalize(name);
+    return (state.orders||[]).find(o=>o.id!=='bar'&&normalize(o.name)===key)||null;
   }
-  function productCounts(state, name) {
+  function orderAliases(state,order) {
+    const aliases=new Set([normalize(order?.name)]);
+    if(!order)return aliases;
+    for(const event of state.audit||[]) {
+      const r=event?.rename;
+      if(event?.type==='renameOrder'&&r?.orderId===order.id){aliases.add(normalize(r.previousName));aliases.add(normalize(r.name));}
+    }
+    return aliases;
+  }
+  function salesFor(state, name, customerId = null, orderId = null) {
+    const order=orderId?(state.orders||[]).find(o=>o.id===orderId):activeOrder(state,name);
+    if(!order&&!customerId)return [];
+    const id=customerId||order?.customerId||null, aliases=orderAliases(state,order);
+    return validSales(state).filter(r => {
+      const assigned=Object.prototype.hasOwnProperty.call(state.receiptAssignments||{},r.id), account=C.receiptAccount(state,r);
+      const target=(state.orders||[]).find(o=>o.id===account.orderId);
+      const owner=assigned?(account.customerId??target?.customerId):r.customerId;
+      // An explicit assignment always wins; the original payer still owns any wallet refund.
+      if(owner)return !!id&&owner===id;
+      return target?target.id===order?.id:aliases.has(normalize(receiptName(state,r)));
+    });
+  }
+  function productCounts(state, name, customerId = null, orderId = null) {
     const counts = new Map();
-    for (const receipt of salesFor(state, name)) for (const line of receipt.lines || []) {
+    for (const receipt of salesFor(state, name, customerId, orderId)) for (const line of receipt.lines || []) {
       counts.set(line.productId, (counts.get(line.productId) || 0) + line.quantity);
     }
     return counts;
@@ -49,7 +75,7 @@
     }).sort((a,b) => b.points-a.points || b.spend-a.spend || a.name.localeCompare(b.name,'cs'));
   }
   function profile(state, name, currentOrder = null, now = new Date().toISOString()) {
-    const key = normalize(name), sales = salesFor(state, name);
+    const key = normalize(name), order=currentOrder||activeOrder(state,name), customerId=order?.customerId||null, sales = salesFor(state, name, customerId, order?.id), customer=customerId?(state.customers||[]).find(x=>x.id===customerId):null;
     const spend = sales.reduce((n,r) => n + r.total, 0);
     const itemMap = new Map();
     for (const receipt of sales) for (const line of receipt.lines || []) {
@@ -78,10 +104,13 @@
     const exactMinutes = exactVisits.reduce((n,v)=>n+v.durationMinutes,0);
     const currentMinutes = activeVisit?.durationMinutes || 0;
     const board = leaderboard(state), rankIndex = board.findIndex(x=>x.key===key);
+    const payments=[...sales].sort((a,b)=>String(b.at).localeCompare(String(a.at))).map(r=>({id:r.id,number:r.number,at:r.at,total:r.total,cash:r.cash||0,card:r.card||0,credit:r.credit||0}));
+    const openAmount=order?C.sum(order.lines||[]):0;
     return {
-      name, spend, points:Math.floor(spend / POINT_VALUE), pointValueCzk:POINT_VALUE/100,
+      name, customerId:customer?.id||order?.customerId||null, creditBalance:customer?C.creditBalance(state,customer.id):order?.customerId?C.creditBalance(state,order.customerId):0,
+      spend, openAmount, points:Math.floor(spend / POINT_VALUE), pointValueCzk:POINT_VALUE/100,
       rank:rankIndex<0?null:rankIndex+1, competitors:board.length,
-      receiptCount:sales.length, itemCount:items.reduce((n,x)=>n+x.quantity,0), items,
+      receiptCount:sales.length, itemCount:items.reduce((n,x)=>n+x.quantity,0), items, payments,
       visitCount:visits.length, totalMinutes, averageMinutes:visits.length?Math.round(totalMinutes/visits.length):0,
       spendPerHour:exactMinutes?Math.round(timedSpend*60/exactMinutes):0, timedSpend, exactMinutes,
       estimatedVisitCount:visits.filter(v=>v.estimated).length, activeVisit, lastVisit:sessions[sessions.length-1] || null,

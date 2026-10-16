@@ -264,6 +264,11 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
 .customer-drinks th,.customer-drinks td{padding:10px 11px}
 @media(max-width:630px){.customer-profile-button{padding:5px 8px;min-height:32px}.customer-stats{gap:7px}.customer-stats>div{padding:11px}.customer-stats strong{font-size:1.02rem}.customer-drinks{max-height:250px}}
 
+
+.payment-buttons.with-credit{grid-template-columns:repeat(3,minmax(0,1fr))}
+.paycredit{background:#c7d7ff;color:#18243f}
+.payment-methods.credit-enabled{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:630px){.payment-buttons.with-credit{gap:6px}.payment-buttons.with-credit button{font-size:.82rem;padding-left:6px;padding-right:6px}.payment-methods.credit-enabled{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
   <script>(function(root){'use strict';
 if(!root.globalThis) root.globalThis=root;
@@ -2861,8 +2866,29 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
   const integer = (x, max = 100000000) => Number.isSafeInteger(x) && x >= 0 && x <= max;
   const clean = (s, max = 120) => String(s || '').trim().slice(0, max);
   const own = (o, key) => Object.prototype.hasOwnProperty.call(o, key);
+  const normalizeCustomerName = value => String(value || '').toLocaleLowerCase('cs').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const accountNumber = name => String(name || '').match(/^(?:st[ůu]l\s*#?\s*)?(\d+)\b/i)?.[1] || '';
+  const customerLike = name => { const key=normalizeCustomerName(name); return !!key && key!=='rychly prodej' && !accountNumber(name); };
+  function findCustomer(s, name) {
+    const key=normalizeCustomerName(name);
+    return (s.customers||[]).find(x=>normalizeCustomerName(x.name)===key||(x.aliases||[]).some(a=>normalizeCustomerName(a)===key))||null;
+  }
+  function ensureCustomer(s, o, now = new Date().toISOString()) {
+    check(o && o.id !== 'bar' && customerLike(o.name), 'Kredit lze použít jen u pojmenovaného zákazníka.');
+    s.customers ||= [];
+    let customer=o.customerId?s.customers.find(x=>x.id===o.customerId):null;
+    if(!customer) customer=findCustomer(s,o.name);
+    check(!customer || !s.orders.some(x=>x.id!==o.id&&x.customerId===customer.id), 'Tento zákazník už má otevřený účet pod jiným jménem.');
+    if(!customer){customer={id:uid(),name:o.name,aliases:[o.name],createdAt:now};s.customers.push(customer);}
+    customer.aliases ||= [];
+    if(!customer.aliases.some(a=>normalizeCustomerName(a)===normalizeCustomerName(o.name)))customer.aliases.push(o.name);
+    customer.name=o.name;o.customerId=customer.id;
+    return customer;
+  }
+  const creditBalance = (s, customerId) => (s.creditLedger||[]).filter(x=>x.customerId===customerId).reduce((n,x)=>n+x.amount,0);
   const sameLine = (a, b) => ['productId', 'sourceCode', 'stockProductId', 'name', 'serving', 'price', 'vatRate', 'servingMl', 'baseServingMl'].every(k => a[k] === b[k])
-    && own(a, 'stockRecipe') === own(b, 'stockRecipe') && JSON.stringify(a.stockRecipe) === JSON.stringify(b.stockRecipe);
+    && own(a, 'stockRecipe') === own(b, 'stockRecipe') && JSON.stringify(a.stockRecipe) === JSON.stringify(b.stockRecipe)
+    && !a.stockIssue && !b.stockIssue;
   const receiptAccount = (s, r) => own(s.receiptAssignments || {}, r.id) ? s.receiptAssignments[r.id] : { orderId: r.orderId, orderName: r.orderName };
   const shotCategories = new Set(['Destiláty','Likéry','Rumy','Whisky','Brandy']);
   function shotVolumeMl(product) {
@@ -2920,7 +2946,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     return { schema: 1, deviceId: uid(), venueId: uid(), revision: 0, sequence: 0, catalogVersion: catalog.version,
       settings: { venue: 'ZTRACENÝ BAR', company: '', address: '', ico: '', dic: '', vat: 'unknown', operator: 'Obsluha' },
       products: structuredClone(catalog.products),
-      orders: [{ id: 'bar', name: 'Rychlý prodej', lines: [], revision: 0 }], shifts: [], receipts: [], receiptAssignments: {}, audit: [], lastBackup: null };
+      orders: [{ id: 'bar', name: 'Rychlý prodej', lines: [], revision: 0 }], shifts: [], receipts: [], receiptAssignments: {}, customers: [], creditLedger: [], stockIssues: [], audit: [], lastBackup: null };
   }
   const activeShift = s => s.shifts.find(x => !x.closedAt);
   function totals(s, shiftId) {
@@ -2928,9 +2954,15 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     const receipts = s.receipts.filter(x => x.shiftId === shiftId);
     const cash = receipts.reduce((n, x) => n + x.cash, 0);
     const card = receipts.reduce((n, x) => n + x.card, 0);
+    const credit = receipts.reduce((n, x) => n + (x.credit || 0), 0);
+    const topups=(s.creditLedger||[]).filter(x=>x.shiftId===shiftId&&['topup','reversal'].includes(x.type));
+    const creditTopupCash=topups.filter(x=>x.method==='cash').reduce((n,x)=>n+x.amount,0);
+    const creditTopupCard=topups.filter(x=>x.method==='card').reduce((n,x)=>n+x.amount,0);
     const movements = (sh?.movements || []).reduce((n, x) => n + x.amount, 0);
-    return { cash, card, total: cash + card, count: receipts.filter(x => x.kind === 'sale').length,
-      refunds: receipts.filter(x => x.kind === 'refund').length, movements, opening: sh?.opening || 0, expected: (sh?.opening || 0) + cash + movements };
+    return { cash, card, credit, total: cash + card + credit, count: receipts.filter(x => x.kind === 'sale').length,
+      refunds: receipts.filter(x => x.kind === 'refund').length, movements, opening: sh?.opening || 0,
+      creditTopupCash, creditTopupCard, creditTopups:creditTopupCash+creditTopupCard,
+      expected: (sh?.opening || 0) + cash + creditTopupCash + movements, terminal:card+creditTopupCard };
   }
   function selectedLines(order, selected) {
     check(Array.isArray(selected) && selected.length > 0, 'Vyber položky k zaplacení.');
@@ -2943,14 +2975,15 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
   }
   function payment(raw, mode, received, splitCash) {
     check(integer(raw) && raw > 0, 'Účet musí mít kladnou hodnotu.');
-    check(['cash', 'card', 'split'].includes(mode), 'Vyber způsob platby.');
+    check(['cash', 'card', 'split', 'credit'].includes(mode), 'Vyber způsob platby.');
     const total = mode === 'cash' ? Math.round(raw / 100) * 100 : raw;
     check(total > 0, 'Částka po zaokrouhlení musí být kladná.');
-    const cash = mode === 'cash' ? total : mode === 'card' ? 0 : splitCash;
+    const cash = mode === 'cash' ? total : mode === 'split' ? splitCash : 0;
     check(integer(cash) && cash <= total && (mode !== 'split' || cash % 100 === 0), 'Hotovost zadej v celých Kč, nejvýš do výše účtu.');
-    const card = total - cash;
+    const credit = mode === 'credit' ? total : 0;
+    const card = mode === 'card' ? total : mode === 'split' ? total - cash : 0;
     check(integer(received) && received >= cash, 'Přijatá hotovost je nižší než částka k úhradě.');
-    return { total, cash, card, received, change: received - cash, rounding: total - raw, mode };
+    return { total, cash, card, credit, received, change: received - cash, rounding: total - raw, mode };
   }
   const VISIT_IDLE_MINUTES = 120;
   const visitFields = ['visitId','visitStartedAt','visitLastActivityAt','visitEndedAt','visitEndEstimated','visitHasCarriedBalance'];
@@ -2979,7 +3012,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     else sessions.push(row(null,false,true));
     return sessions;
   }
-  function execute(s, type, p = {}, now = new Date().toISOString(), restoredLines) {
+  function execute(s, type, p = {}, now = new Date().toISOString(), restoredLines, actorId = s.deviceId) {
     let result = null;
     const closedVisits = [];
     const sh = activeShift(s);
@@ -2993,6 +3026,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       check(clean(p.name), 'Zadej název účtu.');
       check(!s.orders.some(x => x.name.toLocaleLowerCase('cs') === clean(p.name).toLocaleLowerCase('cs')), 'Tento účet už existuje.');
       result = { id: uid(), name: clean(p.name), lines: [], revision: 0 }; s.orders.push(result);
+      if(customerLike(result.name))ensureCustomer(s,result,now);
     } else if (type === 'renameOrder') {
       const o = order();
       check(o.id !== 'bar', 'Rychlý prodej nelze přejmenovat.');
@@ -3002,6 +3036,14 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       const name = p.name.trim();
       check(!s.orders.some(x => x.id !== o.id && x.name.toLocaleLowerCase('cs') === name.toLocaleLowerCase('cs')), 'Tento účet už existuje.');
       result = { type, orderId: o.id, previousName: o.name, name, at: now };
+      if(o.customerId&&!customerLike(name))check(creditBalance(s,o.customerId)===0,'Zákazníka s kreditem nelze změnit na stůl. Nejdřív kredit vyčerpej nebo vrať.');
+      const customer=(s.customers||[]).find(x=>x.id===o.customerId), collision=customerLike(name)?findCustomer(s,name):null;
+      check(!collision || collision.id===o.customerId,'Toto jméno patří jinému zákazníkovi. Kredit nelze sloučit přejmenováním.');
+      if(customer&&customerLike(name)){
+        customer.aliases ||= [];
+        for(const alias of [o.name,name])if(!customer.aliases.some(x=>normalizeCustomerName(x)===normalizeCustomerName(alias)))customer.aliases.push(alias);
+        customer.name=name;
+      } else if(!customerLike(name)) delete o.customerId;
       o.name = name; o.revision++;
     } else if (type === 'endVisit') {
       const o = order();
@@ -3096,12 +3138,14 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
     } else if (type === 'removeLine') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.'); check(clean(p.reason), 'Doplň důvod opravy.');
+      check(!l.stockIssue, 'Tato porce už byla vydaná do skladu. Oprava spotřeby vyžaduje skladovou korekci vedoucího.');
       l.quantity--; o.lines = o.lines.filter(x => x.quantity > 0);
       if (!o.lines.length) { clearVisit(o); }
       o.revision++;
     } else if (type === 'setLineQuantity') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.');
       check(integer(p.quantity, 999) && p.quantity > 0, 'Vyber množství 1 až 999.');
+      check(!l.stockIssue || p.quantity===l.quantity, 'Počet již vydaných porcí nelze přepsat. Další porce přidej z nabídky.');
       l.quantity = p.quantity; check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
     } else if (type === 'checkout') {
       check(typeof p.operationId === 'string' && p.operationId.length > 10, 'Chybí identifikátor platby.');
@@ -3109,13 +3153,19 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       needShift(); const o = order(); check(o.revision === p.revision, 'Účet se změnil v jiném okně. Znovu otevři platbu.');
       const lines = selectedLines(o, p.selected); const pay = payment(sum(lines), p.mode, p.received, p.splitCash);
       check(!pay.card || p.cardConfirmed === true, 'Nejdřív potvrď úspěšnou platbu na terminálu.');
+      if(pay.credit){const customer=ensureCustomer(s,o,now);check(creditBalance(s,customer.id)>=pay.credit,'Na kreditu není dostatek prostředků.');}
       if (s.settings.vat === 'payer') check(lines.every(x => x.vatRate !== null), 'Na účtu chybí sazba DPH. Oprav položky před zaplacením.');
       const sessions = visitSessions(s,o,now), activeVisit = sessions.find(v=>v.active), latestVisit = sessions[sessions.length-1];
       closedVisits.push(...sessions.filter(v=>!v.active));
       const visitId = latestVisit?.id || o.visitId, visitStartedAt = latestVisit?.startedAt || o.visitStartedAt;
       s.sequence++;
-      result = { id: uid(), operationId: p.operationId, number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, kind: 'sale', at: now, shiftId: sh.id, orderId: o.id, orderName: o.name, deviceId: s.deviceId, venueId: s.venueId, operator: sh.operator, settings: { ...s.settings }, lines, ...pay, ...(visitId && visitStartedAt ? { visitId, visitStartedAt } : {}) };
-      for (const line of lines) o.lines.find(x => x.id === line.id).quantity -= line.quantity;
+      result = { id: uid(), operationId: p.operationId, number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, kind: 'sale', at: now, shiftId: sh.id, orderId: o.id, orderName: o.name, customerId:o.customerId||null, deviceId: s.deviceId, venueId: s.venueId, operator: sh.operator, settings: { ...s.settings }, lines, ...pay, ...(visitId && visitStartedAt ? { visitId, visitStartedAt } : {}) };
+      for (const line of lines) {
+        const original=o.lines.find(x=>x.id===line.id);
+        // Copy the source range: later partial payments must consume distinct portions.
+        if(original.stockIssue){line.stockIssue=structuredClone(original.stockIssue);original.stockIssue={...original.stockIssue,offset:original.stockIssue.offset+line.quantity};}
+        original.quantity-=line.quantity;
+      }
       o.lines = o.lines.filter(x => x.quantity > 0);
       if (visitId && visitStartedAt) {
         if (latestVisit?.estimated || o.visitHasCarriedBalance || sessions.length > 1) result.visitEstimated = true;
@@ -3129,13 +3179,15 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
         else if (latestVisit?.endedAt) { o.visitEndedAt=latestVisit.endedAt; o.visitEndEstimated=latestVisit.estimated===true; }
       }
       s.receipts.push(result); o.revision++;
+      if(pay.credit)(s.creditLedger||=[]).push({id:uid(),type:'spend',customerId:result.customerId,customerName:result.orderName,orderId:o.id,shiftId:sh.id,amount:-pay.credit,method:'credit',receiptId:result.id,at:now,actorId});
     } else if (type === 'refund') {
       needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
       check(sale && sale.shiftId === sh.id, 'Vratku lze provést pouze k prodeji v právě otevřené směně.');
       check(!s.receipts.some(x => x.refundOf === sale.id), 'Tento doklad už má vratku.');
       const terminalConfirmation = refundVerification(sale, p, now);
-      s.sequence++; result = { ...sale, ...receiptAccount(s, sale), id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0 };
+      s.sequence++; result = { ...sale, ...receiptAccount(s, sale), customerId:sale.customerId||null, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, credit: -(sale.credit||0), rounding: -sale.rounding, received: 0, change: 0 };
       s.receipts.push(result);
+      if(result.credit<0)(s.creditLedger||=[]).push({id:uid(),type:'refund',customerId:sale.customerId,customerName:result.orderName,orderId:result.orderId,shiftId:sh.id,amount:-result.credit,method:'credit',receiptId:result.id,refundOf:sale.id,at:now,actorId});
     } else if (type === 'restoreReceipt') {
       needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
       check(sale && sale.shiftId === sh.id, 'Na stůl lze vrátit pouze doklad z právě otevřené směny.');
@@ -3146,7 +3198,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       const merged = structuredClone(target.lines);
       for (const item of sale.lines) {
         // The server may split a historically substituted line into its actual stock recipes.
-        const parts = restoredLines?.[item.id] || [item];
+        const parts = item.stockIssue ? [item] : restoredLines?.[item.id] || [item];
         check(parts.reduce((n,x) => n+x.quantity,0) === item.quantity, 'Nesedí původní skladový odpis.');
         for (const part of parts) {
           const restored = { ...structuredClone(item), ...structuredClone(part) };
@@ -3158,8 +3210,9 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       check(sum(merged) <= 100000000, 'Po vrácení by účet překročil limit.');
       // Restoring an old bill changes the balance, not the customer's presence.
       target.lines = merged; target.revision++;
-      s.sequence++; result = { ...sale, ...account, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, rounding: -sale.rounding, received: 0, change: 0, restoredToOrderId: target.id, restoredToOrderName: target.name };
+      s.sequence++; result = { ...sale, ...account, customerId:sale.customerId||null, id: uid(), operationId: uid(), number: `${s.deviceId.slice(0, 4).toUpperCase()}-${String(s.sequence).padStart(6, '0')}`, at: now, kind: 'refund', refundOf: sale.id, reason: clean(p.reason), terminalConfirmation, total: -sale.total, cash: -sale.cash, card: -sale.card, credit: -(sale.credit||0), rounding: -sale.rounding, received: 0, change: 0, restoredToOrderId: target.id, restoredToOrderName: target.name };
       s.receipts.push(result);
+      if(result.credit<0)(s.creditLedger||=[]).push({id:uid(),type:'refund',customerId:sale.customerId,customerName:result.orderName,orderId:result.orderId,shiftId:sh.id,amount:-result.credit,method:'credit',receiptId:result.id,refundOf:sale.id,at:now,actorId});
     } else if (type === 'reassignReceipt') {
       needShift(); const sale = s.receipts.find(x => x.id === p.receiptId && x.kind === 'sale');
       check(sale && sale.shiftId === sh.id && !s.receipts.some(x => x.refundOf === sale.id), 'Přiřadit lze pouze platný prodej z právě otevřené směny.');
@@ -3168,14 +3221,51 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
       check(previous.orderId === p.previousOrderId, 'Přiřazení dokladu se změnilo. Otevři opravu znovu.');
       check(target.id !== previous.orderId, 'Doklad už je přiřazený k tomuto stolu.');
       check(clean(p.reason), 'Doplň důvod opravy.');
-      result = { type, receiptId: sale.id, orderId: target.id, orderName: target.name, previousOrderId: previous.orderId, previousOrderName: previous.orderName, reason: clean(p.reason), at: now };
-      s.receiptAssignments = { ...s.receiptAssignments, [sale.id]: { orderId: target.id, orderName: target.name, at: now } };
+      result = { type, receiptId: sale.id, orderId: target.id, orderName: target.name, customerId:target.customerId||null, previousOrderId: previous.orderId, previousOrderName: previous.orderName, reason: clean(p.reason), at: now };
+      s.receiptAssignments = { ...s.receiptAssignments, [sale.id]: { orderId: target.id, orderName: target.name, customerId:target.customerId||null, at: now } };
+    } else if(type==='creditTopup' || type==='creditReverse') {
+      const duplicate=p.operationId&&(s.creditLedger||[]).find(x=>x.operationId===p.operationId);
+      if(duplicate)return {...duplicate,balance:creditBalance(s,duplicate.customerId)};
+      needShift();s.creditLedger||=[];
+      if(type==='creditTopup'){
+        const o=order();
+        check(integer(p.amount)&&p.amount>=1000,'Dobití musí být od 10 Kč do 1 000 000 Kč.');
+        check(['cash','card'].includes(p.method),'Vyber hotovost nebo kartu.');
+        check(p.method!=='cash'||p.amount%100===0,'Hotovostní dobití zadej v celých Kč.');
+        check(p.method!=='card'||p.cardConfirmed===true,'Potvrď úspěšné dobití kartou na terminálu.');
+        if(o.paymentLock)check(o.paymentLock.purpose==='creditTopup'&&o.paymentLock.token===p.paymentToken&&o.paymentLock.method===p.method&&o.paymentLock.amount===p.amount&&o.paymentLock.shiftId===sh.id,'Dobití nesouhlasí s připravenou platbou.');
+        const customer=ensureCustomer(s,o,now);
+        result={id:uid(),type:'topup',customerId:customer.id,customerName:customer.name,orderId:o.id,shiftId:sh.id,amount:p.amount,method:p.method,cardConfirmed:p.method==='card',at:now,actorId};
+        delete o.paymentLock;
+      }else{
+        const original=s.creditLedger.find(x=>x.id===p.entryId&&x.type==='topup');
+        check(original,'Původní dobití neexistuje.');
+        check(!s.creditLedger.some(x=>x.reversalOf===original.id),'Toto dobití už bylo stornované.');
+        check(creditBalance(s,original.customerId)>=original.amount,'Kredit už byl čerpán. Nejdřív ověř a vyřeš chybně uhrazené doklady.');
+        const terminalConfirmation=refundVerification({card:original.method==='card'?original.amount:0},p,now);
+        result={id:uid(),type:'reversal',customerId:original.customerId,customerName:original.customerName,orderId:original.orderId,shiftId:sh.id,amount:-original.amount,method:original.method,reversalOf:original.id,reason:clean(p.reason),terminalConfirmation,at:now,actorId};
+        if(terminalConfirmation)terminalConfirmation.actorId=actorId;
+      }
+      if(p.operationId)result.operationId=p.operationId;
+      s.creditLedger.push(result);result={...result,balance:creditBalance(s,result.customerId)};
     } else if (type === 'cashMovement') {
       needShift(); check(Number.isSafeInteger(p.amount) && Math.abs(p.amount) <= 100000000 && p.amount !== 0, 'Neplatná částka.'); check(clean(p.reason), 'Doplň důvod pohybu hotovosti.');
       sh.movements.push({ id: uid(), at: now, amount: p.amount, reason: clean(p.reason) });
     } else if (type === 'closeShift') {
-      needShift(); check(!s.orders.some(x => x.lines.length), 'Zůstaly nezaplacené účty. Nejdřív je vyrovnej.'); check(integer(p.counted), 'Zadej spočítanou hotovost.');
-      sh.summary = totals(s, sh.id); sh.counted = p.counted; sh.difference = p.counted - sh.summary.expected; sh.closedAt = now; result = sh;
+      needShift();
+      check(!s.orders.some(x=>x.paymentLock),'Nejdřív dokonči nebo uvolni všechny rozpracované platby.');
+      check(!s.orders.some(x => x.lines.length && !customerLike(x.name)), 'Před uzávěrkou doplať rychlý prodej a běžné stoly. Nezaplacený pojmenovaný zákazník může zůstat otevřený.');
+      check(integer(p.counted), 'Zadej spočítanou hotovost.');
+      const issues=[];s.stockIssues||=[];
+      for(const o of s.orders)for(const line of o.lines)if(!line.stockIssue){
+        const issue={id:uid(),kind:'issue',number:'VÝDEJ · '+o.name,at:now,shiftId:sh.id,orderId:o.id,orderName:o.name,venueId:s.venueId,actorId,
+          lines:[{...structuredClone(line),stockRecipe:own(line,'stockRecipe')?structuredClone(line.stockRecipe):recipeForLine(line,s.recipes?.[line.productId]||null)}]};
+        line.stockRecipe=structuredClone(issue.lines[0].stockRecipe);line.stockIssue={id:issue.id,offset:0};
+        s.stockIssues.push(issue);issues.push(issue);o.revision++;
+      }
+      const unpaidAccounts=s.orders.filter(x=>x.lines.length&&customerLike(x.name)).map(x=>({orderId:x.id,name:x.name,amount:sum(x.lines),itemCount:x.lines.reduce((n,l)=>n+l.quantity,0)}));
+      const unpaidTotal=unpaidAccounts.reduce((n,x)=>n+x.amount,0);
+      sh.summary = {...totals(s, sh.id),unpaidAccounts,unpaidTotal}; sh.counted = p.counted; sh.difference = p.counted - sh.summary.expected; sh.closedAt = now; sh.stockIssueIds=issues.map(x=>x.id);result = sh;
     } else if (type === 'settings') {
       check(['unknown', 'payer', 'nonpayer'].includes(p.vat), 'Neplatné nastavení DPH.');
       check(clean(p.venue), 'Zadej název podniku.');
@@ -3207,12 +3297,39 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     }
     for (const r of s.receipts) {
       check(['sale','refund'].includes(r.kind) && Array.isArray(r.lines) && r.lines.length && r.settings && typeof r.settings.venue === 'string' && s.shifts.some(x => x.id === r.shiftId), 'Poškozený doklad.');
-      check([r.total,r.cash,r.card,r.rounding].every(Number.isSafeInteger) && r.total === r.cash + r.card, 'Nesedí součet dokladu.');
+      const credit=r.credit||0;
+      check([r.total,r.cash,r.card,credit,r.rounding].every(Number.isSafeInteger) && r.total === r.cash + r.card + credit, 'Nesedí součet dokladu.');
       if (r.visitId !== undefined || r.visitStartedAt !== undefined) check(typeof r.visitId === 'string' && typeof r.visitStartedAt === 'string' && !Number.isNaN(Date.parse(r.visitStartedAt)), 'Poškozený začátek návštěvy na dokladu.');
       if (r.visitEndedAt !== undefined || r.visitDurationMinutes !== undefined) check(typeof r.visitEndedAt === 'string' && !Number.isNaN(Date.parse(r.visitEndedAt)) && integer(r.visitDurationMinutes, 10000000), 'Poškozený konec návštěvy na dokladu.');
       for (const l of r.lines) { check(integer(l.price) && integer(l.quantity, 999) && l.quantity > 0 && typeof l.name === 'string', 'Poškozená položka dokladu.'); validatePortion(l); }
       const sign = r.kind === 'sale' ? 1 : -1;
-      check(sign * sum(r.lines) + r.rounding === r.total && sign * r.cash >= 0 && sign * r.card >= 0, 'Nesedí položky dokladu.');
+      check(sign * sum(r.lines) + r.rounding === r.total && sign * r.cash >= 0 && sign * r.card >= 0 && sign * credit >= 0, 'Nesedí položky dokladu.');
+    }
+    if(s.customers!==undefined){
+      check(Array.isArray(s.customers)&&s.customers.length<100000&&s.customers.every(x=>x&&typeof x.id==='string'&&typeof x.name==='string'&&Array.isArray(x.aliases||[])), 'Poškozené zákaznické profily.');
+      check(new Set(s.customers.map(x=>x.id)).size===s.customers.length,'Duplicitní zákaznické profily.');
+    }
+    if(s.creditLedger!==undefined){
+      check(Array.isArray(s.creditLedger)&&s.creditLedger.length<100000,'Poškozená historie kreditu.');
+      check(new Set(s.creditLedger.map(x=>x.id)).size===s.creditLedger.length,'Duplicitní záznam kreditu.');
+      for(const x of s.creditLedger){
+        check(x&&typeof x.id==='string'&&(s.customers||[]).some(c=>c.id===x.customerId)&&Number.isSafeInteger(x.amount)&&x.amount!==0&&['topup','spend','refund','reversal'].includes(x.type)&&['cash','card','credit'].includes(x.method)&&typeof x.at==='string','Poškozený záznam kreditu.');
+        check(['topup','refund'].includes(x.type)?x.amount>0:x.amount<0,'Nesprávné znaménko pohybu kreditu.');
+        if(x.type==='reversal'){
+          const original=s.creditLedger.find(o=>o.id===x.reversalOf&&o.type==='topup');
+          check(original&&original.customerId===x.customerId&&original.method===x.method&&original.amount===-x.amount&&clean(x.reason),'Poškozené storno dobití.');
+          check(s.creditLedger.filter(o=>o.reversalOf===x.reversalOf).length===1,'Duplicitní storno dobití.');
+        }
+      }
+      for(const customer of s.customers||[])check(creditBalance(s,customer.id)>=0,'Kredit zákazníka nesmí být záporný.');
+    }
+    if(s.stockIssues!==undefined){
+      check(Array.isArray(s.stockIssues)&&s.stockIssues.length<100000&&new Set(s.stockIssues.map(x=>x.id)).size===s.stockIssues.length,'Poškozené skladové výdeje.');
+      for(const issue of s.stockIssues)check(typeof issue.id==='string'&&issue.kind==='issue'&&issue.lines?.length===1&&integer(issue.lines[0].quantity,999)&&issue.lines[0].quantity>0,'Poškozený skladový výdej.');
+    }
+    for(const line of [...s.orders.flatMap(o=>o.lines),...s.receipts.flatMap(r=>r.lines)])if(line.stockIssue){
+      const issue=(s.stockIssues||[]).find(x=>x.id===line.stockIssue.id);
+      check(issue&&integer(line.stockIssue.offset,999)&&line.stockIssue.offset+line.quantity<=issue.lines[0].quantity,'Poškozený odkaz na vydanou porci.');
     }
     if (s.receiptAssignments !== undefined) {
       check(s.receiptAssignments && typeof s.receiptAssignments === 'object' && !Array.isArray(s.receiptAssignments), 'Poškozené přiřazení dokladů.');
@@ -3220,7 +3337,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     }
     return s;
   }
-  const api = { VISIT_IDLE_MINUTES, visitSessions, initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines, receiptAccount, shotVolumeMl, smallShot, recipeForLine };
+  const api = { VISIT_IDLE_MINUTES, visitSessions, initial, execute, money, sum, payment, activeShift, totals, validate, selectedLines, receiptAccount, shotVolumeMl, smallShot, recipeForLine, normalizeCustomerName, customerLike, findCustomer, ensureCustomer, creditBalance };
   if (typeof module !== 'undefined') module.exports = api; else root.POSCore = api;
 })(globalThis);
 
@@ -3243,15 +3360,41 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
   }
   function receiptName(state, receipt) {
     const account = C.receiptAccount(state, receipt);
+    const assigned=Object.prototype.hasOwnProperty.call(state.receiptAssignments||{},receipt.id);
+    const customerId=assigned?account.customerId:receipt.customerId;
+    const customer=(state.customers||[]).find(c=>c.id===customerId);
+    if(customer)return customer.name;
     return (state.orders || []).find(o => o.id === account.orderId)?.name || account.orderName;
   }
-  function salesFor(state, name) {
-    const key = normalize(name);
-    return validSales(state).filter(r => normalize(receiptName(state, r)) === key);
+  function activeOrder(state,name) {
+    const key=normalize(name);
+    return (state.orders||[]).find(o=>o.id!=='bar'&&normalize(o.name)===key)||null;
   }
-  function productCounts(state, name) {
+  function orderAliases(state,order) {
+    const aliases=new Set([normalize(order?.name)]);
+    if(!order)return aliases;
+    for(const event of state.audit||[]) {
+      const r=event?.rename;
+      if(event?.type==='renameOrder'&&r?.orderId===order.id){aliases.add(normalize(r.previousName));aliases.add(normalize(r.name));}
+    }
+    return aliases;
+  }
+  function salesFor(state, name, customerId = null, orderId = null) {
+    const order=orderId?(state.orders||[]).find(o=>o.id===orderId):activeOrder(state,name);
+    if(!order&&!customerId)return [];
+    const id=customerId||order?.customerId||null, aliases=orderAliases(state,order);
+    return validSales(state).filter(r => {
+      const assigned=Object.prototype.hasOwnProperty.call(state.receiptAssignments||{},r.id), account=C.receiptAccount(state,r);
+      const target=(state.orders||[]).find(o=>o.id===account.orderId);
+      const owner=assigned?(account.customerId??target?.customerId):r.customerId;
+      // An explicit assignment always wins; the original payer still owns any wallet refund.
+      if(owner)return !!id&&owner===id;
+      return target?target.id===order?.id:aliases.has(normalize(receiptName(state,r)));
+    });
+  }
+  function productCounts(state, name, customerId = null, orderId = null) {
     const counts = new Map();
-    for (const receipt of salesFor(state, name)) for (const line of receipt.lines || []) {
+    for (const receipt of salesFor(state, name, customerId, orderId)) for (const line of receipt.lines || []) {
       counts.set(line.productId, (counts.get(line.productId) || 0) + line.quantity);
     }
     return counts;
@@ -3276,7 +3419,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     }).sort((a,b) => b.points-a.points || b.spend-a.spend || a.name.localeCompare(b.name,'cs'));
   }
   function profile(state, name, currentOrder = null, now = new Date().toISOString()) {
-    const key = normalize(name), sales = salesFor(state, name);
+    const key = normalize(name), order=currentOrder||activeOrder(state,name), customerId=order?.customerId||null, sales = salesFor(state, name, customerId, order?.id), customer=customerId?(state.customers||[]).find(x=>x.id===customerId):null;
     const spend = sales.reduce((n,r) => n + r.total, 0);
     const itemMap = new Map();
     for (const receipt of sales) for (const line of receipt.lines || []) {
@@ -3305,10 +3448,13 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     const exactMinutes = exactVisits.reduce((n,v)=>n+v.durationMinutes,0);
     const currentMinutes = activeVisit?.durationMinutes || 0;
     const board = leaderboard(state), rankIndex = board.findIndex(x=>x.key===key);
+    const payments=[...sales].sort((a,b)=>String(b.at).localeCompare(String(a.at))).map(r=>({id:r.id,number:r.number,at:r.at,total:r.total,cash:r.cash||0,card:r.card||0,credit:r.credit||0}));
+    const openAmount=order?C.sum(order.lines||[]):0;
     return {
-      name, spend, points:Math.floor(spend / POINT_VALUE), pointValueCzk:POINT_VALUE/100,
+      name, customerId:customer?.id||order?.customerId||null, creditBalance:customer?C.creditBalance(state,customer.id):order?.customerId?C.creditBalance(state,order.customerId):0,
+      spend, openAmount, points:Math.floor(spend / POINT_VALUE), pointValueCzk:POINT_VALUE/100,
       rank:rankIndex<0?null:rankIndex+1, competitors:board.length,
-      receiptCount:sales.length, itemCount:items.reduce((n,x)=>n+x.quantity,0), items,
+      receiptCount:sales.length, itemCount:items.reduce((n,x)=>n+x.quantity,0), items, payments,
       visitCount:visits.length, totalMinutes, averageMinutes:visits.length?Math.round(totalMinutes/visits.length):0,
       spendPerHour:exactMinutes?Math.round(timedSpend*60/exactMinutes):0, timedSpend, exactMinutes,
       estimatedVisitCount:visits.filter(v=>v.estimated).length, activeVisit, lastVisit:sessions[sessions.length-1] || null,
@@ -3374,7 +3520,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
     const meta=POSCloud.meta,recipes=s.recipes||{},active=s.products.filter(p=>p.active),mapped=active.filter(p=>recipes[p.id]).length;
     const stock=new Map(meta.stock.map(x=>[x.id,x]));
     const readable=r=>r.mode==='no_stock'?'Bez odpisu · '+r.reason:r.components.map(c=>`${c.quantity} ${c.unit} ${stock.get(c.productId)?.name||'Nedostupná surovina'}`).join(' + ');
-    return `<section class="page"><div class="workspace-heading"><div><h1>Pokladna a sklad</h1><p>Stejné zásoby jako ve fakturách a inventurách PUB GURU.</p></div><span class="tag">${mapped} / ${active.length} položek nastaveno</span></div><div class="panel"><h3>Odpis podle jedné porce</h3><p>Pro každou položku vyber suroviny a množství z vašeho skladu. Koktejl může odepisovat několik surovin. Dokud receptura chybí, prodej zůstává ve frontě k doplnění. Výběr „bez odpisu“ je určen například pro službu.</p></div>${meta.issueCount?`<div class="panel"><h3>Odpisy ke kontrole · ${meta.issueCount}</h3><p>Po doplnění receptury můžeš chybějící odpis provést i k už zaplacenému prodeji.</p><div class="stock-issues">${meta.issues.map(i=>`<div class="stock-issue"><div><strong>${E(i.quantity)}× ${E(i.label)}</strong><p>${E(i.reason)} · ${E(i.receipt_id.slice(0,8))}</p></div>${i.status==='missing_recipe'?`<button class="secondary" data-action="${recipes[i.pos_product_id]?'resolveStock':'recipe'}" data-id="${E(recipes[i.pos_product_id]?i.receipt_id+':'+i.line_id:i.pos_product_id)}">${recipes[i.pos_product_id]?'Provést odpis':'Nastavit recepturu'}</button>`:'<span class="tag orange">Nedostatek kusů ve skladu</span>'}</div>`).join('')}</div>${meta.issueCount>meta.issues.length?'<p class="section-gap">Zobrazeno nejnovějších 200 záznamů. Další se načtou po vyřešení chybějících odpisů.</p>':''}</div>`:''}<div class="search"><label class="sr-only" for="recipe-search">Najít položku pro recepturu</label><input id="recipe-search" type="search" placeholder="Najít nápoj nebo číslo z Agnisu…"></div><div class="table-wrap"><table><thead><tr><th>Položka ceníku</th><th>Suroviny na jednu porci</th><th></th></tr></thead><tbody>${active.map(p=>`<tr data-recipe-search="${E(norm(p.name+' '+p.sourceCode))}"><td><strong>${E(p.name)}</strong><br><span class="muted small">Agnis #${E(p.sourceCode)}</span></td><td>${recipes[p.id]?E(readable(recipes[p.id])):'<span class="tag orange">Chybí receptura</span>'}</td><td><button class="secondary" data-action="recipe" data-id="${E(p.id)}">${recipes[p.id]?'Upravit':'Napojit sklad'}</button></td></tr>`).join('')}</tbody></table></div></section>`;
+    return `<section class="page"><div class="workspace-heading"><div><h1>Pokladna a sklad</h1><p>Stejné zásoby jako ve fakturách a inventurách PUB GURU.</p></div><span class="tag">${mapped} / ${active.length} položek nastaveno</span></div><div class="panel"><h3>Odpis podle jedné porce</h3><p>Pro každou položku vyber suroviny a množství z vašeho skladu. Koktejl může odepisovat několik surovin. Dokud receptura chybí, prodej zůstává ve frontě k doplnění. Výběr „bez odpisu“ je určen například pro službu.</p></div>${meta.issueCount?`<div class="panel"><h3>Odpisy ke kontrole · ${meta.issueCount}</h3><p>Po doplnění receptury můžeš chybějící odpis provést i k už zaplacenému prodeji.</p><div class="stock-issues">${meta.issues.map(i=>`<div class="stock-issue"><div><strong>${E(i.quantity)}× ${E(i.label)}</strong><p>${E(i.reason)} · ${E(i.receipt_id.slice(0,8))}</p></div>${['missing_recipe','awaiting_stock'].includes(i.status)?`<button class="secondary" data-action="${recipes[i.pos_product_id]?'resolveStock':'recipe'}" data-id="${E(recipes[i.pos_product_id]?i.receipt_id+':'+i.line_id:i.pos_product_id)}">${recipes[i.pos_product_id]?'Provést odpis':'Nastavit recepturu'}</button>`:'<span class="tag orange">Nedostatek kusů ve skladu</span>'}</div>`).join('')}</div>${meta.issueCount>meta.issues.length?'<p class="section-gap">Zobrazeno nejnovějších 200 záznamů. Další se načtou po vyřešení chybějících odpisů.</p>':''}</div>`:''}<div class="search"><label class="sr-only" for="recipe-search">Najít položku pro recepturu</label><input id="recipe-search" type="search" placeholder="Najít nápoj nebo číslo z Agnisu…"></div><div class="table-wrap"><table><thead><tr><th>Položka ceníku</th><th>Suroviny na jednu porci</th><th></th></tr></thead><tbody>${active.map(p=>`<tr data-recipe-search="${E(norm(p.name+' '+p.sourceCode))}"><td><strong>${E(p.name)}</strong><br><span class="muted small">Agnis #${E(p.sourceCode)}</span></td><td>${recipes[p.id]?E(readable(recipes[p.id])):'<span class="tag orange">Chybí receptura</span>'}</td><td><button class="secondary" data-action="recipe" data-id="${E(p.id)}">${recipes[p.id]?'Upravit':'Napojit sklad'}</button></td></tr>`).join('')}</tbody></table></div></section>`;
   }
   function bind(){document.querySelector('#recipe-search')?.addEventListener('input',e=>{const q=norm(e.target.value);document.querySelectorAll('[data-recipe-search]').forEach(r=>r.hidden=!r.dataset.recipeSearch.includes(q));});}
   function edit(s,id,dialog,command,toast){
@@ -3457,7 +3603,7 @@ function connection() {
   warning.hidden=!state||(!pending&&online);
   warning.innerHTML=pending?`<span><strong>Ověřujeme uloženou operaci.</strong> Platbu na terminálu neopakuj.</span>${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}`:'<span>Server není dostupný. Zobrazená data mohou být starší; placení vyžaduje spojení.</span>';
   if(state){$('#save-state').textContent=cloud.busy?'Ukládám na server…':pending?'Čeká na ověření':online?'Potvrzeno serverem':'Spojení přerušeno';$('#save-state').classList.toggle('error',!!pending||!online);}
-  const writeActions=['add','minus','restoreReceipt','newOrder','renameOrder','endVisit','deleteOrder','mergeOrders','openShift','payCash','payCard','paySplit','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
+  const writeActions=['add','minus','restoreReceipt','newOrder','renameOrder','endVisit','deleteOrder','mergeOrders','openShift','payCash','payCard','payCredit','paySplit','creditTopup','creditReverse','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
   document.querySelectorAll('[data-action]').forEach(b=>{if(writeActions.includes(b.dataset.action)){const lock=!!pending&&!cloud.busy||!online;if(lock&&!b.disabled){b.disabled=true;b.dataset.connectionDisabled='true';}else if(!lock&&b.dataset.connectionDisabled){b.disabled=false;delete b.dataset.connectionDisabled;}}});
 }
 function render() {
@@ -3549,7 +3695,7 @@ function renderPOS() {
   const o=getOrder(),sh=C.activeShift(state),activeProducts=state.products.filter(x=>x.active&&(entryServingMl!==20||C.smallShot(x))),cats=['Vše',...new Set(activeProducts.map(x=>x.category))];
   const canMerge=sh&&o.lines.length&&!o.paymentLock&&state.orders.some(x=>x.id!==o.id&&!x.paymentLock);
   const canResume=!o.paymentLock||o.paymentLock.actorId===window.POSCloud?.user?.id||['owner','manager'].includes(window.POSCloud?.meta.role);
-  const customer=customerAccount(o);
+  const customer=customerAccount(o), credit=customer?customerCredit(o):0;
   const accounts=state.orders.map(a=>`<button type="button" class="account ${a.id===o.id?'active':''}" data-action="account" data-id="${E(a.id)}" aria-pressed="${a.id===o.id}"><span class="account-number">${E(accountNumber(a)||'•')}</span><span class="account-name">${E(a.name)}<span class="account-amount">${a.lines.length?fmt(C.sum(a.lines)):'Prázdný účet'}</span></span></button>`).join('');
   const lines=o.lines.map(l=>`<div class="line"><div class="line-top"><span>${E(l.name)}${l.serving?`<small class="small"> · ${E(l.serving)}</small>`:''}</span><strong>${fmt(l.price*l.quantity)}</strong></div><div class="line-bottom"><span>${fmt(l.price)} / ks</span><div class="quantity"><button type="button" data-action="minus" data-id="${E(l.id)}" aria-label="Odebrat ${E(l.name)}">−</button><button type="button" class="quantity-tap" data-action="quantityPad" data-id="${E(l.id)}" aria-label="Množství ${E(l.name)}">${l.quantity}×</button><button type="button" data-action="add" data-id="${E(l.productId)}" data-serving-ml="${l.servingMl||''}" aria-label="Přidat ${E(l.name)}">+</button></div></div></div>`).join('');
   return `<div class="pos-layout">
@@ -3566,7 +3712,7 @@ function renderPOS() {
       <div class="categories" aria-label="Kategorie">${cats.map(c=>`<button type="button" class="category ${category===c?'active':''}" data-action="category" data-id="${E(c)}" aria-pressed="${category===c}">${E(c)}</button>`).join('')}</div>
       <div class="products" id="products"></div>
     </section>
-    <section class="receipt" aria-label="Aktuální účet"><div class="receipt-head"><div><h2>${E(o.name)}</h2><p>${o.lines.length?'Účet zůstává otevřený do zaplacení':'Připravený pro dalšího hosta'}</p></div><span class="receipt-number">${E(accountNumber(o)||'•')}</span></div><div class="receipt-tools">${o.id!=='bar'?btn('Přejmenovat','renameOrder','merge-account rename-account',o.paymentLock?'disabled':''):''}${btn('Spojit účty','mergeOrders','merge-account',canMerge?'':'disabled')}</div><div class="receipt-items">${lines||'<div class="receipt-empty"><span>≡</span><p>Účet je zatím prázdný.<br>Přidej první nápoj.</p></div>'}</div><div class="receipt-bottom"><div class="receipt-meta"><span>${o.lines.reduce((n,l)=>n+l.quantity,0)} ks na účtu</span>${o.id!=='bar'&&!o.lines.length?btn('Smazat účet','deleteOrder','splitbutton'):'<span>Ceny v Kč</span>'}</div><div class="receipt-total"><span>K zaplacení</span><strong>${fmt(C.sum(o.lines))}</strong></div><div class="payment-buttons">${btn('Hotově','payCash','paycash',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${btn('Kartou','payCard','paycard',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}</div>${btn('Rozdělit platbu / položky','paySplit','splitbutton',!sh||!o.lines.length||!canResume?'disabled':'')}</div></section>
+    <section class="receipt" aria-label="Aktuální účet"><div class="receipt-head"><div><h2>${E(o.name)}</h2><p>${o.lines.length?'Účet zůstává otevřený do zaplacení':'Připravený pro dalšího hosta'}</p></div><span class="receipt-number">${E(accountNumber(o)||'•')}</span></div><div class="receipt-tools">${o.id!=='bar'?btn('Přejmenovat','renameOrder','merge-account rename-account',o.paymentLock?'disabled':''):''}${btn('Spojit účty','mergeOrders','merge-account',canMerge?'':'disabled')}</div><div class="receipt-items">${lines||'<div class="receipt-empty"><span>≡</span><p>Účet je zatím prázdný.<br>Přidej první nápoj.</p></div>'}</div><div class="receipt-bottom"><div class="receipt-meta"><span>${o.lines.reduce((n,l)=>n+l.quantity,0)} ks na účtu</span>${o.id!=='bar'&&!o.lines.length?btn('Smazat účet','deleteOrder','splitbutton'):'<span>Ceny v Kč</span>'}</div><div class="receipt-total"><span>K zaplacení</span><strong>${fmt(C.sum(o.lines))}</strong></div><div class="payment-buttons ${customer?'with-credit':''}">${btn('Hotově','payCash','paycash',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${btn('Kartou','payCard','paycard',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${customer?btn(`Kredit ${fmt(credit)}`,'payCredit','paycredit',!sh||!o.lines.length||!!o.paymentLock||credit<C.sum(o.lines)?'disabled':''):''}</div>${btn('Rozdělit platbu / položky','paySplit','splitbutton',!sh||!o.lines.length||!canResume?'disabled':'')}</div></section>
   </div>`;
 }
 function quantityPickerHTML(name,initial,min=1,max=999,all=false) {
@@ -3612,6 +3758,10 @@ function quantityPad(lineId) {
 function customerAccount(order) {
   return !!Customer && order?.id !== 'bar' && Customer.isCustomerName(order?.name);
 }
+function customerCredit(order) {
+  const customer=order?.customerId?(state.customers||[]).find(x=>x.id===order.customerId):C.findCustomer?.(state,order?.name);
+  return customer?C.creditBalance(state,customer.id):0;
+}
 function durationText(minutes) {
   if (!Number.isFinite(minutes) || minutes <= 0) return '—';
   const h=Math.floor(minutes/60),m=Math.round(minutes%60);
@@ -3621,25 +3771,68 @@ function customerProfile() {
   const o=getOrder(); if(!customerAccount(o))return;
   const p=Customer.profile(state,o.name,o,new Date().toISOString());
   const rows=p.items.map(x=>`<tr><td><strong>${E(x.name)}</strong>${x.serving?`<br><span class="muted small">${E(x.serving)}</span>`:''}</td><td class="amount">${x.quantity}×</td><td class="amount">${fmt(x.spend)}</td></tr>`).join('');
+  const payments=p.payments.slice(0,12).map(r=>`<tr><td><strong>${date(r.at)}</strong><br><span class="muted small">${E(r.number||'Doklad')}</span></td><td>${paymentLabel(r)}</td><td class="amount">${fmt(r.total)}</td></tr>`).join('');
+  const canReverse=!window.POSCloud||['owner','manager'].includes(window.POSCloud.meta.role);
+  const deposits=(state.creditLedger||[]).filter(x=>x.customerId===p.customerId&&['topup','reversal'].includes(x.type)).reverse().map(x=>{
+    const reversed=state.creditLedger.some(y=>y.reversalOf===x.id);
+    return `<div class="summary-row"><span>${date(x.at)} · ${x.type==='reversal'?'Storno dobití':'Dobití'} · ${x.method==='card'?'kartou':'hotově'}${reversed?' · stornováno':''}</span><strong>${fmt(x.amount)}</strong>${canReverse&&x.type==='topup'&&!reversed?btn('Stornovat','creditReverse','textbutton',`data-id="${E(x.id)}" ${C.activeShift(state)?'':'disabled'}`):''}</div>`;
+  }).join('');
   const rank=p.rank?`#${p.rank} z ${p.competitors}`:'—';
   showDialog(o.name+` · zákazník`,`<div class="customer-profile">
     ${p.activeVisit?`<div class="customer-current"><span>Aktuální návštěva</span><strong>${p.currentMinutes?durationText(p.currentMinutes):'0 min'}</strong></div>`:p.lastVisit?'<p class="help">Návštěva je ukončená. Nezaplacený účet zůstává otevřený.</p>':''}
     ${o.visitStartedAt&&!o.paymentLock?btn('Host odešel · ukončit návštěvu','endVisit','secondary'):''}
     <div class="customer-stats">
+      <div><span>Kredit</span><strong>${fmt(p.creditBalance||0)}</strong></div>
       <div><span>Věrnostní body</span><strong>${p.points}</strong></div>
       <div><span>Pořadí</span><strong>${rank}</strong></div>
-      <div><span>Celkem utraceno</span><strong>${fmt(p.spend)}</strong></div>
+      <div><span>Historicky zaplaceno</span><strong>${fmt(p.spend)}</strong></div>
+      <div><span>Aktuálně nezaplaceno</span><strong>${fmt(p.openAmount||0)}</strong></div>
       <div><span>Položek</span><strong>${p.itemCount}</strong></div>
       <div><span>Návštěvy s časem</span><strong>${p.visitCount}</strong></div>
       <div><span>Čas návštěv${p.estimatedVisitCount?' · část odhadem':''}</span><strong>${durationText(p.totalMinutes)}</strong></div>
       <div><span>Průměr návštěvy</span><strong>${durationText(p.averageMinutes)}</strong></div>
       <div><span>Útrata / hod.</span><strong>${p.exactMinutes?fmt(p.spendPerHour):'—'}</strong></div>
     </div>
+    <div class="form-actions">${btn('Dobít kredit','creditTopup','primary',C.activeShift(state)?'':'disabled')}</div>
+    ${deposits?`<details class="section-gap"><summary>Dobití a storna kreditu</summary>${deposits}</details>`:''}
+    <p class="help customer-rules"><strong>Kredit</strong> jsou předplacené peníze, 1 Kč = 1 Kč. <strong>Věrnostní body</strong> jsou samostatná odměna a nejdou použít jako peníze. 1 bod získáš za každých 10 Kč skutečně zaplacené útraty.</p>
+    <div class="customer-detail"><span>Zaplacených dokladů: <strong>${p.receiptCount}</strong></span><span>Poslední platba: <strong>${p.lastAt?date(p.lastAt):'—'}</strong></span></div>
+    <h3>Jednotlivé zaplacené doklady</h3>
+    <div class="table-wrap customer-payments"><table><thead><tr><th>Datum</th><th>Úhrada</th><th class="amount">Částka</th></tr></thead><tbody>${payments||'<tr><td colspan="3" class="empty">Zatím žádný zaplacený doklad.</td></tr>'}</tbody></table></div>
     <p class="help customer-rules">1 bod za každých 10 Kč skutečně zaplacené útraty. Vratky se automaticky odečítají. Pořadí je podle bodů, ne podle množství alkoholu. Návštěva se po 2 hodinách bez další objednávky automaticky ukončí odhadem. Další objednávka začne novou návštěvu i na nezaplaceném účtu. Odchod lze potvrdit ručně. Odhady se nepoužívají pro útratu za hodinu.</p>
-    <div class="customer-detail"><span>Dokladů: <strong>${p.receiptCount}</strong></span><span>Poslední útrata: <strong>${p.lastAt?date(p.lastAt):'—'}</strong></span></div>
     <h3>Co nejčastěji bere</h3>
     <div class="table-wrap customer-drinks"><table><thead><tr><th>Položka</th><th class="amount">Počet</th><th class="amount">Útrata</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="empty">Po prvním zaplaceném dokladu se tu objeví statistika.</td></tr>'}</tbody></table></div>
   </div>`,null);
+}
+function creditTopup(prepared) {
+  const o=structuredClone(getOrder());if(!customerAccount(o))return;
+  const funding=prepared?.purpose==='creditTopup'?prepared:null;
+  if(funding){
+    showDialog('Dobít kredit · '+o.name,`<p class="help"><strong>${fmt(funding.amount)} kartou</strong> · účet je rezervovaný. Pokud už host zaplatil, platbu na terminálu neopakuj.</p><label class="inline-check"><input type="checkbox" name="cardConfirmed" required>Dobití kartou na terminálu proběhlo úspěšně.</label>`,f=>command('creditTopup',{orderId:o.id,amount:funding.amount,method:'card',paymentToken:funding.token,cardConfirmed:f.has('cardConfirmed')}),'Připsat kredit',r=>{toast(`Kredit dobit o ${fmt(r.amount)}`);customerProfile();});return;
+  }
+  showDialog('Dobít kredit · '+o.name,`
+    <p class="help">Kredit je předplacená peněžní hodnota. Dobití se eviduje odděleně od tržby za nápoje.</p>
+    <div class="form-grid">${field('Částka (Kč)','amount','','required inputmode="decimal" placeholder="500"')}<label class="field">Zaplaceno<select name="method"><option value="cash">Hotově</option><option value="card">Kartou</option></select></label></div>
+    <label class="inline-check" id="topup-card-confirm" hidden><input type="checkbox" name="cardConfirmed">Dobití kartou na terminálu proběhlo úspěšně.</label>`,
+    async form=>{
+      const amount=C.money(form.get('amount')),method=form.get('method');
+      if(window.POSCloud&&method==='card')return command('beginPayment',{orderId:o.id,revision:o.revision,purpose:'creditTopup',amount});
+      return command('creditTopup',{orderId:o.id,amount,method,cardConfirmed:form.has('cardConfirmed')});
+    },
+    'Připsat kredit',r=>{if(r.purpose==='creditTopup')return creditTopup(r);toast(`Kredit dobit o ${fmt(r.amount)} · zůstatek ${fmt(r.balance)}`);customerProfile();}
+  );
+  const form=$('#dialog-form'),select=form.elements.method,confirm=$('#topup-card-confirm');
+  const update=()=>{const card=select.value==='card',localCard=card&&!window.POSCloud;confirm.hidden=!localCard;form.elements.cardConfirmed.required=localCard;form.elements.cardConfirmed.checked=false;$('#dialog-submit').textContent=card&&window.POSCloud?'Připravit platbu kartou':'Připsat kredit';};
+  select.addEventListener('change',update);update();
+}
+function creditReverse(id) {
+  const entry=(state.creditLedger||[]).find(x=>x.id===id&&x.type==='topup');if(!entry)return;
+  const card=entry.method==='card';
+  showDialog('Stornovat dobití kreditu',`<p class="help"><strong>${E(entry.customerName)} · ${fmt(entry.amount)}</strong><br>${date(entry.at)} · ${card?'kartou':'hotově'}</p><p class="help">Vrátí se celé původní dobití. Záznam zůstane v historii. Pro správnou částku potom vytvoř nové dobití.</p>${field('Důvod storna','reason','','required maxlength="120"',true)}${card?'<label class="inline-check"><input type="checkbox" name="cardConfirmed" required>Vratka kartou na terminálu proběhla úspěšně.</label>'+field('Číslo storna / vratky z terminálu','terminalReference','','required maxlength="120"',true):'<p class="help">Vrať zákazníkovi uvedenou hotovost pouze jednou.</p>'}`,f=>command('creditReverse',{entryId:entry.id,reason:f.get('reason'),cardConfirmed:f.has('cardConfirmed'),terminalReference:f.get('terminalReference')||''}),'Potvrdit storno',()=>{toast('Dobití stornované.');customerProfile();});
+}
+function paymentLabel(r) {
+  const parts=[];if(r.cash)parts.push('Hotově');if(r.card)parts.push('Karta');if(r.credit)parts.push('Kredit');
+  return parts.length>1?'Kombinovaně · '+parts.join(' + '):(parts[0]||'—');
 }
 function endVisit() {
   const o=getOrder();if(!customerAccount(o)||!o.visitStartedAt)return;
@@ -3663,19 +3856,19 @@ function productSalesCounts() {
 }
 function renderProducts() {
   const norm = normalizeSearch;
-  const counts = productSalesCounts(), personal = customerAccount(getOrder()) ? Customer.productCounts(state,getOrder().name) : null;
+  const activeOrder=getOrder(), counts = productSalesCounts(), personal = customerAccount(activeOrder) ? Customer.productCounts(state,activeOrder.name,activeOrder.customerId||null,activeOrder.id) : null;
   const displayProducts = entryServingMl===20 ? state.products.map(p=>{const portion=C.smallShot(p);return portion?{...p,...portion}:null;}).filter(Boolean) : state.products;
   const products = displayProducts.filter(p => p.active && (query || category === 'Vše' || p.category === category) && norm(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(norm(query)))
     .sort((a, b) => (personal?.get(b.id) || 0) - (personal?.get(a.id) || 0) || (counts.get(b.id) || 0) - (counts.get(a.id) || 0));
   $('#products').innerHTML = products.map(p => `<button class="product" style="--category:${colors[p.category] || '#a5c99a'}" data-action="add" data-id="${E(p.id)}"><span class="product-cat">${E(p.category)}${p.sourceCode ? ` · #${E(p.sourceCode)}` : ''}</span><span class="product-name">${E(p.name)}</span>${p.serving ? `<span class="product-serving">${E(p.serving)}</span>` : ''}<span class="product-price ${p.price === null ? 'unset' : ''}">${p.price === null ? (p.priceNote ? E(p.priceNote) + ' · zadat cenu' : 'Doplnit cenu') : fmt(p.price)}</span><span class="product-plus">+</span></button>`).join('') + `<button class="product quick-product" data-action="newProduct"><span>+</span>Nová položka</button>`;
 }
 function renderHistory() {
-  const rows = [...state.receipts].reverse().map(r => `<tr><td><strong>${E(r.number)}</strong><br><span class="muted small">${date(r.at)}</span></td><td>${E(C.receiptAccount(state,r).orderName)}${state.receiptAssignments?.[r.id]?`<br><span class="muted small">Původně: ${E(r.orderName)}</span>`:''}<br><span class="tag ${r.kind === 'refund' ? 'orange' : ''}">${r.kind === 'refund' ? 'Vratka' : 'Zaplaceno'}</span></td><td>${r.cash && r.card ? 'Kombinovaně' : r.card ? 'Karta' : 'Hotově'}</td><td class="amount">${fmt(r.total)}</td><td class="table-actions">${btn('Doklad','receipt','secondary',`data-id="${E(r.id)}"`)}${r.kind === 'sale' && r.shiftId === C.activeShift(state)?.id && !state.receipts.some(x => x.refundOf === r.id) ? btn('Opravit','restoreReceipt','textbutton',`data-id="${E(r.id)}"`) : ''}</td></tr>`).join('');
+  const rows = [...state.receipts].reverse().map(r => `<tr><td><strong>${E(r.number)}</strong><br><span class="muted small">${date(r.at)}</span></td><td>${E(C.receiptAccount(state,r).orderName)}${state.receiptAssignments?.[r.id]?`<br><span class="muted small">Původně: ${E(r.orderName)}</span>`:''}<br><span class="tag ${r.kind === 'refund' ? 'orange' : ''}">${r.kind === 'refund' ? 'Vratka' : 'Zaplaceno'}</span></td><td>${paymentLabel(r)}</td><td class="amount">${fmt(r.total)}</td><td class="table-actions">${btn('Doklad','receipt','secondary',`data-id="${E(r.id)}"`)}${r.kind === 'sale' && r.shiftId === C.activeShift(state)?.id && !state.receipts.some(x => x.refundOf === r.id) ? btn('Opravit','restoreReceipt','textbutton',`data-id="${E(r.id)}"`) : ''}</td></tr>`).join('');
   return `<section class="page"><div class="workspace-heading"><div><h1>Doklady</h1><p>${window.POSCloud?'Prodeje, vratky a nákupní faktury celé provozovny.':'Prodeje a vratky z tohoto zařízení.'}</p></div><div class="actions">${window.POSCloud?btn('Nahrát faktury do AI účetního','invoiceUpload','primary'):''}${btn('Export CSV','csv')}</div></div>${window.POSCloud?'<div class="notice"><span><strong>PUB INVOICES · AI účetní</strong><br>Fotky, PDF i více dokladů najednou. AI účetní zkontroluje duplicity, položky, ceny, DPH, obaly a skladové mapování. Nejisté položky zastaví k ověření.</span>'+btn('Otevřít faktury','invoiceUpload','secondary')+'</div>':''}<div class="table-wrap"><table><thead><tr><th>Číslo / čas</th><th>Účet</th><th>Úhrada</th><th class="amount">Částka</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="empty">Zatím žádná platba. Doklady se objeví po zaplacení prvního účtu.</td></tr>'}</tbody></table></div></section>`;
 }
 function renderOverview() {
-  const sh = C.activeShift(state), t = sh ? C.totals(state, sh.id) : {total:0,cash:0,card:0,count:0,expected:0,opening:0,movements:0};
-  return `<section class="page"><div class="workspace-heading"><div><h1>${sh ? 'Dnešní směna' : 'Přehled směn'}</h1><p>${sh ? `Otevřeno ${date(sh.openedAt)} · ${E(sh.operator)}` : 'Otevři směnu a začni markovat.'}</p></div>${sh ? btn('Uzavřít směnu','closeShift','primary') : btn('Otevřít směnu','openShift','primary')}</div><div class="cards"><div class="stat lime"><span class="eyebrow">Tržba po vratkách</span><strong>${fmt(t.total)}</strong></div><div class="stat"><span class="eyebrow">Hotovostní tržba</span><strong>${fmt(t.cash)}</strong></div><div class="stat"><span class="eyebrow">Karetní tržba</span><strong>${fmt(t.card)}</strong></div><div class="stat"><span class="eyebrow">Počet prodejů</span><strong>${t.count}</strong></div></div>${sh ? `<div class="panel"><h3>Hotovost v pokladně</h3><div class="summary-row"><span class="muted">Počáteční vklad</span><strong>${fmt(t.opening)}</strong></div><div class="summary-row"><span class="muted">Vklady a výběry</span><strong>${fmt(t.movements)}</strong></div><div class="summary-row"><span class="muted">Očekávaná hotovost</span><strong>${fmt(t.expected)}</strong></div><div class="actions section-gap">${btn('Vklad / výběr','cashMovement')}${btn('Export CSV','csv')}${btn('Stáhnout zálohu','backup')}</div>${sh.movements.length ? `<div class="section-gap">${sh.movements.map(x => `<div class="summary-row small"><span>${date(x.at)} · ${E(x.reason)}</span><span>${fmt(x.amount)}</span></div>`).join('')}</div>` : ''}</div>` : ''}<div class="panel"><h3>Uzavřené směny</h3>${state.shifts.filter(x => x.closedAt).reverse().map(x => `<div class="summary-row"><span>${date(x.openedAt)} → ${date(x.closedAt)}<br><small class="muted">Hotovost: ${fmt(x.counted)} · rozdíl ${fmt(x.difference)}</small></span><strong>${fmt(x.summary.total)}</strong></div>`).join('') || '<p>Uzávěrky se tu zobrazí po skončení první směny.</p>'}</div></section>`;
+  const sh = C.activeShift(state), t = sh ? C.totals(state, sh.id) : {total:0,cash:0,card:0,credit:0,count:0,expected:0,opening:0,movements:0,creditTopupCash:0,creditTopupCard:0,creditTopups:0,terminal:0};
+  return `<section class="page"><div class="workspace-heading"><div><h1>${sh ? 'Dnešní směna' : 'Přehled směn'}</h1><p>${sh ? `Otevřeno ${date(sh.openedAt)} · ${E(sh.operator)}` : 'Otevři směnu a začni markovat.'}</p></div>${sh ? btn('Uzavřít směnu','closeShift','primary') : btn('Otevřít směnu','openShift','primary')}</div><div class="cards"><div class="stat lime"><span class="eyebrow">Tržba po vratkách</span><strong>${fmt(t.total)}</strong></div><div class="stat"><span class="eyebrow">Hotovostní tržba</span><strong>${fmt(t.cash)}</strong></div><div class="stat"><span class="eyebrow">Karetní tržba</span><strong>${fmt(t.card)}</strong></div><div class="stat"><span class="eyebrow">Kreditní tržba</span><strong>${fmt(t.credit)}</strong></div><div class="stat"><span class="eyebrow">Počet prodejů</span><strong>${t.count}</strong></div></div>${sh ? `<div class="panel"><h3>Hotovost v pokladně</h3><div class="summary-row"><span class="muted">Počáteční vklad</span><strong>${fmt(t.opening)}</strong></div><div class="summary-row"><span class="muted">Prodej hotově</span><strong>${fmt(t.cash)}</strong></div><div class="summary-row"><span class="muted">Dobití kreditu hotově</span><strong>${fmt(t.creditTopupCash)}</strong></div><div class="summary-row"><span class="muted">Vklady a výběry</span><strong>${fmt(t.movements)}</strong></div><div class="summary-row"><span class="muted">Očekávaná hotovost</span><strong>${fmt(t.expected)}</strong></div><div class="actions section-gap">${btn('Vklad / výběr','cashMovement')}${btn('Export CSV','csv')}${btn('Stáhnout zálohu','backup')}</div>${sh.movements.length ? `<div class="section-gap">${sh.movements.map(x => `<div class="summary-row small"><span>${date(x.at)} · ${E(x.reason)}</span><span>${fmt(x.amount)}</span></div>`).join('')}</div>` : ''}</div><div class="panel"><h3>Předplacený kredit</h3><div class="summary-row"><span class="muted">Dobití hotově</span><strong>${fmt(t.creditTopupCash)}</strong></div><div class="summary-row"><span class="muted">Dobití kartou</span><strong>${fmt(t.creditTopupCard)}</strong></div><div class="summary-row"><span class="muted">Celkem dobito</span><strong>${fmt(t.creditTopups)}</strong></div><div class="summary-row"><span class="muted">Tržba zaplacená kreditem</span><strong>${fmt(t.credit)}</strong></div><div class="summary-row"><span class="muted">Terminál celkem včetně dobití</span><strong>${fmt(t.terminal)}</strong></div></div>` : ''}<div class="panel"><h3>Uzavřené směny</h3>${state.shifts.filter(x => x.closedAt).reverse().map(x => `<div class="summary-row"><span>${date(x.openedAt)} → ${date(x.closedAt)}<br><small class="muted">Hotovost ${fmt(x.summary.cash)} · karta ${fmt(x.summary.card)} · kredit ${fmt(x.summary.credit||0)} · dobití ${fmt(x.summary.creditTopups||0)}<br>Hotovost v zásuvce: ${fmt(x.counted)} · rozdíl ${fmt(x.difference)}</small></span><strong>${fmt(x.summary.total)}</strong></div>`).join('') || '<p>Uzávěrky se tu zobrazí po skončení první směny.</p>'}</div></section>`;
 }
 function renderCatalog() {
   return `<section class="page"><div class="workspace-heading"><div><h1>Nápojový lístek</h1><p>Ceny se do otevřených účtů zpětně nepřepisují.</p></div><div class="actions">${btn('Hromadně vložit','bulkProducts')}${btn('+ Nová položka','newProduct','primary')}</div></div><div class="table-wrap"><table><thead><tr><th>Položka</th><th>Kategorie</th><th>Porce</th><th class="amount">Cena</th><th></th></tr></thead><tbody>${state.products.filter(x => x.active).map(p => `<tr><td><strong>${E(p.name)}</strong>${p.sourceCode ? `<br><span class="muted small">Agnis #${E(p.sourceCode)}</span>` : ''}</td><td>${E(p.category)}</td><td>${E(p.serving) || '—'}</td><td class="amount">${p.price === null ? '<span class="tag orange">Chybí cena</span>' : fmt(p.price)}</td><td class="table-actions">${btn('Upravit','editProduct','secondary',`data-id="${E(p.id)}"`)}${btn('Skrýt','archiveProduct','textbutton',`data-id="${E(p.id)}"`)}</td></tr>`).join('')}</tbody></table></div></section>`;
@@ -3742,24 +3935,32 @@ async function pay(mode, resume=false) {
   const o=structuredClone(getOrder());if(!o.lines.length)return;
   const delayReservation=window.POSCloud&&mode==='split'&&!resume;
   let reservation=window.POSCloud?(resume?o.paymentLock:delayReservation?null:await command('beginPayment',{orderId:o.id,revision:o.revision})):null;
+  let cardReservation=null,cardReservationFailed=false;
   const operationId=crypto.randomUUID();let partial=mode==='split';
   let paymentMode=partial?'cash':mode,receivedTouched=false,splitTouched=false;
   const selected=()=>o.lines.map(l=>({id:l.id,quantity:Number($('#dialog-form').elements['line-'+l.id].value)})).filter(x=>x.quantity>0);
-  showDialog(partial?'Rozdělit účet':mode==='cash'?'Zaplatit hotově':'Zaplatit kartou',`
+  const canCredit=!!customerAccount(o);
+  showDialog(partial?'Rozdělit účet':mode==='cash'?'Zaplatit hotově':mode==='credit'?'Zaplatit kreditem':'Zaplatit kartou',`
     <p class="help" id="payment-help">${partial?'Klepni na položku a vyber počet kusů. Zbytek zůstane na účtu.':'Zaplatit celý účet, nebo rozdělit jen vybrané položky.'}</p>${!partial?'<button type="button" class="secondary" data-payment-reset>Rozdělit po položkách</button>':''}${resume?'<p class="help">Pokud host už platil, platbu na terminálu neopakuj. Zapiš pouze skutečně zaplacenou část.</p>':''}
     ${o.lines.map(l=>`<input type="hidden" name="line-${E(l.id)}" value="${partial?0:l.quantity}">`).join('')}
     <div class="payment-items" id="payment-items"></div><div id="payment-qty-editor" hidden></div>
     <div class="payment-checkout" id="payment-checkout">
-      <div class="payment-methods" aria-label="Způsob platby"><button type="button" data-payment-mode="cash">Hotově</button><button type="button" data-payment-mode="card">Kartou</button><button type="button" data-payment-mode="split">Kombinovaně</button></div>
+      <div class="payment-methods ${canCredit?'credit-enabled':''}" aria-label="Způsob platby"><button type="button" data-payment-mode="cash">Hotově</button><button type="button" data-payment-mode="card">Kartou</button><button type="button" data-payment-mode="split">Kombinovaně</button>${canCredit?'<button type="button" data-payment-mode="credit">Kredit</button>':''}</div>
       <div class="payment-summary" id="payment-summary"></div>
       <div class="form-grid"><div id="split-cash-field">${field('Z toho hotově (Kč)','splitCash','0','inputmode="decimal"')}</div><div id="received-field">${field('Přijato v hotovosti (Kč)','received','0','inputmode="decimal"')}</div></div>
       <label class="inline-check" id="card-confirm-field"><input type="checkbox" name="cardConfirmed">Platba kartou na terminálu proběhla úspěšně.</label>
     </div>`, async f=>{
       for(const l of o.lines){const q=Number(f.get('line-'+l.id));if(!Number.isSafeInteger(q)||q<0||q>l.quantity)throw new Error('Neplatný počet kusů.');}
+      if(cardReservation)await cardReservation;
+      if(cardReservationFailed)throw new Error('Platbu se nepodařilo připravit. Zkontroluj uloženou operaci a otevři platbu znovu.');
       if(window.POSCloud&&!reservation) reservation=await command('beginPayment',{orderId:o.id,revision:o.revision});
-      return await command('checkout',{orderId:o.id,revision:o.revision,operationId,paymentToken:reservation?.token,selected:selected(),mode:paymentMode,received:paymentMode==='card'?0:C.money(f.get('received')),splitCash:paymentMode==='split'?C.money(f.get('splitCash')):0,cardConfirmed:f.has('cardConfirmed')});
+      return await command('checkout',{orderId:o.id,revision:o.revision,operationId,paymentToken:reservation?.token,selected:selected(),mode:paymentMode,received:['card','credit'].includes(paymentMode)?0:C.money(f.get('received')),splitCash:paymentMode==='split'?C.money(f.get('splitCash')):0,cardConfirmed:f.has('cardConfirmed')});
     },'Potvrdit zaplacení',finishPayment);
   const signal=window.paymentAbort.signal,form=$('#dialog-form');
+  function prepareCard() {
+    if(reservation||cardReservation||cardReservationFailed||signal.aborted)return;
+    cardReservation=command('beginPayment',{orderId:o.id,revision:o.revision}).then(r=>{reservation=r;}).catch(e=>{cardReservationFailed=true;if(!signal.aborted)$('#dialog-error').textContent=e.message;}).finally(()=>{cardReservation=null;if(!signal.aborted&&$('#dialog').open)preview();});
+  }
   function renderItems() {
     $('#payment-items').innerHTML=o.lines.map(l=>{
       const q=Number(form.elements['line-'+l.id].value);
@@ -3767,18 +3968,21 @@ async function pay(mode, resume=false) {
     }).join('');
   }
   function preview() {
-    $('#split-cash-field').hidden=paymentMode!=='split';$('#received-field').hidden=paymentMode==='card';
-    form.elements.splitCash.required=paymentMode==='split';form.elements.received.required=paymentMode!=='card';
+    $('#split-cash-field').hidden=paymentMode!=='split';$('#received-field').hidden=['card','credit'].includes(paymentMode);
+    form.elements.splitCash.required=paymentMode==='split';form.elements.received.required=!['card','credit'].includes(paymentMode);
     document.querySelectorAll('[data-payment-mode]').forEach(b=>{const active=b.dataset.paymentMode===paymentMode;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
     try{
       const raw=C.sum(C.selectedLines(o,selected()));
       if(paymentMode==='split'&&!splitTouched)form.elements.splitCash.value='0';
       const cash=paymentMode==='cash'?Math.round(raw/100)*100:paymentMode==='split'?C.money(form.elements.splitCash.value):0;
       if(!receivedTouched)form.elements.received.value=inputMoney(cash);
-      const received=paymentMode==='card'?0:C.money(form.elements.received.value),p=C.payment(raw,paymentMode,Math.max(cash,received),cash);
-      form.elements.cardConfirmed.required=p.card>0;$('#card-confirm-field').hidden=p.card===0;
-      $('#dialog-submit').disabled=received<cash;
-      $('#payment-summary').innerHTML=`<div class="summary-row total"><span>K úhradě</span><strong>${fmt(p.total)}</strong></div>${p.rounding?`<div class="summary-row"><span>Zaokrouhlení</span><span>${fmt(p.rounding)}</span></div>`:''}${paymentMode==='split'?`<div class="summary-row"><span>Na terminálu</span><strong>${fmt(p.card)}</strong></div>`:''}${paymentMode!=='card'?`<div class="summary-row"><span>${received<cash?'Ještě chybí':'Vrátit hostovi'}</span><strong>${fmt(Math.abs(received-cash))}</strong></div>`:'<span class="muted small">Částku zadej na samostatném terminálu.</span>'}`;
+      const received=['card','credit'].includes(paymentMode)?0:C.money(form.elements.received.value),p=C.payment(raw,paymentMode,Math.max(cash,received),cash);
+      const cardReady=!window.POSCloud||!p.card||!!reservation;
+      form.elements.cardConfirmed.required=p.card>0;$('#card-confirm-field').hidden=p.card===0||!cardReady;
+      const balance=canCredit?customerCredit(o):0,creditMissing=Math.max(0,p.credit-balance);
+      $('#dialog-submit').disabled=received<cash||creditMissing>0||!cardReady;
+      $('#payment-summary').innerHTML=`<div class="summary-row total"><span>K úhradě</span><strong>${fmt(p.total)}</strong></div>${p.rounding?`<div class="summary-row"><span>Zaokrouhlení</span><span>${fmt(p.rounding)}</span></div>`:''}${paymentMode==='split'?`<div class="summary-row"><span>Na terminálu</span><strong>${fmt(p.card)}</strong></div>`:''}${paymentMode==='credit'?`<div class="summary-row"><span>Kredit před platbou</span><strong>${fmt(balance)}</strong></div><div class="summary-row"><span>${creditMissing?'Na kreditu chybí':'Kredit po platbě'}</span><strong>${fmt(creditMissing||balance-p.credit)}</strong></div>`:paymentMode!=='card'?`<div class="summary-row"><span>${received<cash?'Ještě chybí':'Vrátit hostovi'}</span><strong>${fmt(Math.abs(received-cash))}</strong></div>`:'<span class="muted small">Částku zadej na samostatném terminálu.</span>'}`;
+      if(!cardReady){$('#payment-summary').innerHTML+='<p class="help">Nejdřív připravujeme rezervaci. Zatím neprováděj platbu na terminálu.</p>';prepareCard();}
     }catch(e){$('#payment-summary').textContent=e.message;$('#dialog-submit').disabled=true;form.elements.cardConfirmed.required=false;$('#card-confirm-field').hidden=true;}
   }
   function returnToItems() {
@@ -3811,7 +4015,7 @@ async function pay(mode, resume=false) {
 function receiptHTML(r) {
   const s=r.settings, sign=r.kind==='refund'?-1:1, vat={};
   for(const l of r.lines){if(l.vatRate!==null){const key=String(l.vatRate); const gross=l.price*l.quantity*sign; const tax=Math.round(gross*l.vatRate/(100+l.vatRate)); const v=vat[key]||(vat[key]={base:0,tax:0}); v.base+=gross-tax;v.tax+=tax;}}
-  return `<div class="receipt-preview"><header><h3>${E(s.venue)}</h3>${s.company?`<div>${E(s.company)}</div>`:''}${s.address?`<div>${E(s.address)}</div>`:''}${s.ico?`<div>IČ: ${E(s.ico)}${s.dic?' · DIČ: '+E(s.dic):''}</div>`:''}<div class="section-gap">${r.kind==='refund'?'VRATKA':'PRODEJNÍ DOKLAD'} ${E(r.number)}</div><div>${date(r.at)} · ${E(r.operator)}</div><div>${E(r.orderName)}</div></header><hr><table><tbody>${r.lines.map(l=>`<tr><td>${l.quantity}× ${E(l.name)} ${E(l.serving)}<br><span class="muted">${fmt(l.price)} / ks</span></td><td class="amount">${fmt(l.price*l.quantity*sign)}</td></tr>`).join('')}</tbody></table><hr>${r.rounding?`<div class="summary-row"><span>Zaokrouhlení</span><span>${fmt(r.rounding)}</span></div>`:''}<div class="summary-row total"><span>Celkem</span><strong>${fmt(r.total)}</strong></div>${r.cash?`<div class="summary-row"><span>Hotově</span><span>${fmt(r.cash)}</span></div>`:''}${r.card?`<div class="summary-row"><span>Kartou</span><span>${fmt(r.card)}</span></div>`:''}${r.change?`<div class="summary-row"><span>Přijato / vráceno</span><span>${fmt(r.received)} / ${fmt(r.change)}</span></div>`:''}${s.vat==='payer'?`<hr>${Object.entries(vat).map(([rate,v])=>`<div class="small">DPH ${E(rate)} % · základ ${fmt(v.base)} · daň ${fmt(v.tax)}</div>`).join('')}`:''}${r.reason?`<p class="section-gap">Důvod vratky: ${E(r.reason)}</p>`:''}${r.terminalConfirmation?`<p class="small">Ověření vratky na terminálu: ${E(r.terminalConfirmation.reference)} · ${date(r.terminalConfirmation.at)}</p>`:''}${state.receiptAssignments?.[r.id]?`<p class="small">Aktuální přiřazení: ${E(C.receiptAccount(state,r).orderName)} · ${date(state.receiptAssignments[r.id].at)}</p>`:''}<div class="footnote">${s.vat==='unknown'?'Provozní záznam — režim DPH není nastaven.':s.vat==='nonpayer'?'Provozovatel není plátcem DPH.':''}${!s.company||!s.ico||!s.address?'<br>Údaje provozovatele nejsou kompletní.':''}<br>PUB-BIZZ · Děkujeme za návštěvu.</div></div>`;
+  return `<div class="receipt-preview"><header><h3>${E(s.venue)}</h3>${s.company?`<div>${E(s.company)}</div>`:''}${s.address?`<div>${E(s.address)}</div>`:''}${s.ico?`<div>IČ: ${E(s.ico)}${s.dic?' · DIČ: '+E(s.dic):''}</div>`:''}<div class="section-gap">${r.kind==='refund'?'VRATKA':'PRODEJNÍ DOKLAD'} ${E(r.number)}</div><div>${date(r.at)} · ${E(r.operator)}</div><div>${E(r.orderName)}</div></header><hr><table><tbody>${r.lines.map(l=>`<tr><td>${l.quantity}× ${E(l.name)} ${E(l.serving)}<br><span class="muted">${fmt(l.price)} / ks</span></td><td class="amount">${fmt(l.price*l.quantity*sign)}</td></tr>`).join('')}</tbody></table><hr>${r.rounding?`<div class="summary-row"><span>Zaokrouhlení</span><span>${fmt(r.rounding)}</span></div>`:''}<div class="summary-row total"><span>Celkem</span><strong>${fmt(r.total)}</strong></div>${r.cash?`<div class="summary-row"><span>Hotově</span><span>${fmt(r.cash)}</span></div>`:''}${r.card?`<div class="summary-row"><span>Kartou</span><span>${fmt(r.card)}</span></div>`:''}${r.credit?`<div class="summary-row"><span>Kredit</span><span>${fmt(r.credit)}</span></div>`:''}${r.change?`<div class="summary-row"><span>Přijato / vráceno</span><span>${fmt(r.received)} / ${fmt(r.change)}</span></div>`:''}${s.vat==='payer'?`<hr>${Object.entries(vat).map(([rate,v])=>`<div class="small">DPH ${E(rate)} % · základ ${fmt(v.base)} · daň ${fmt(v.tax)}</div>`).join('')}`:''}${r.reason?`<p class="section-gap">Důvod vratky: ${E(r.reason)}</p>`:''}${r.terminalConfirmation?`<p class="small">Ověření vratky na terminálu: ${E(r.terminalConfirmation.reference)} · ${date(r.terminalConfirmation.at)}</p>`:''}${state.receiptAssignments?.[r.id]?`<p class="small">Aktuální přiřazení: ${E(C.receiptAccount(state,r).orderName)} · ${date(state.receiptAssignments[r.id].at)}</p>`:''}<div class="footnote">${s.vat==='unknown'?'Provozní záznam — režim DPH není nastaven.':s.vat==='nonpayer'?'Provozovatel není plátcem DPH.':''}${!s.company||!s.ico||!s.address?'<br>Údaje provozovatele nejsou kompletní.':''}<br>PUB-BIZZ · Děkujeme za návštěvu.</div></div>`;
 }
 function receiptDialog(r) { showDialog(r.kind==='refund'?'Vratka uložená':'Zaplaceno',receiptHTML(r),async()=>{ $('#print-area').innerHTML=receiptHTML(r); window.print(); },'Vytisknout doklad'); }
 function terminalRefundFields(r) {
@@ -3825,7 +4029,7 @@ function finishReceiptCorrection(r) {
 function receiptCorrection(id) {
   const r=state.receipts.find(x=>x.id===id);if(!r)return;
   const account=C.receiptAccount(state,r), manager=!window.POSCloud||['owner','manager'].includes(POSCloud.meta.role||POSCloud.venue?.role);
-  showDialog('Opravit doklad',`<p class="help">${E(r.number)} · ${fmt(r.total)} · ${E(account.orderName)}</p>${manager?'<label class="field">Co opravit<select name="correction"><option value="reassign">Změnit stůl — platba zůstává</option><option value="restore">Vrátit platbu a položky na stůl</option></select></label>':''}<div id="receipt-assignment"><label class="field">Správný stůl / zákazník<select name="targetOrderId" required><option value="">Vyber účet</option>${state.orders.filter(o=>o.id!==account.orderId).map(o=>`<option value="${E(o.id)}">${E(o.name)}</option>`).join('')}</select></label><p class="help">Doklad zůstane zaplacený. Položky se znovu neúčtují.</p></div>${manager?`<fieldset id="receipt-reversal" hidden disabled><p class="help">${r.cash?`Nejprve vrať ${fmt(r.cash)} hotově. `:''}${r.card?`Nejprve zruš nebo vrať ${fmt(r.card)} na terminálu a ověř výsledek. `:''}Poté se celá platba stornuje a položky budou znovu k zaplacení na ${E(account.orderName)}.</p>${field('Důvod vratky','reason','','required maxlength="120"')}${terminalRefundFields(r)}</fieldset>`:'<p class="help">Skutečnou vratku může zapsat vedoucí nebo majitel.</p>'}`,f=>f.get('correction')==='restore'?command('restoreReceipt',{receiptId:id,reason:f.get('reason'),cardConfirmed:f.has('cardConfirmed'),terminalReference:f.get('terminalReference')}):command('reassignReceipt',{receiptId:id,targetOrderId:f.get('targetOrderId'),previousOrderId:account.orderId,reason:'Oprava přiřazení účtu'}),'Změnit stůl',finishReceiptCorrection);
+  showDialog('Opravit doklad',`<p class="help">${E(r.number)} · ${fmt(r.total)} · ${E(account.orderName)}</p>${manager?'<label class="field">Co opravit<select name="correction"><option value="reassign">Změnit stůl — platba zůstává</option><option value="restore">Vrátit platbu a položky na stůl</option></select></label>':''}<div id="receipt-assignment"><label class="field">Správný stůl / zákazník<select name="targetOrderId" required><option value="">Vyber účet</option>${state.orders.filter(o=>o.id!==account.orderId).map(o=>`<option value="${E(o.id)}">${E(o.name)}</option>`).join('')}</select></label><p class="help">Doklad zůstane zaplacený. Položky se znovu neúčtují.</p></div>${manager?`<fieldset id="receipt-reversal" hidden disabled><p class="help">${r.cash?`Nejprve vrať ${fmt(r.cash)} hotově. `:''}${r.card?`Nejprve zruš nebo vrať ${fmt(r.card)} na terminálu a ověř výsledek. `:''}${r.credit?`Kredit ${fmt(r.credit)} se vrátí zákazníkovi. `:''}Poté se celá platba stornuje a položky budou znovu k zaplacení na ${E(account.orderName)}.</p>${field('Důvod vratky','reason','','required maxlength="120"')}${terminalRefundFields(r)}</fieldset>`:'<p class="help">Skutečnou vratku může zapsat vedoucí nebo majitel.</p>'}`,f=>f.get('correction')==='restore'?command('restoreReceipt',{receiptId:id,reason:f.get('reason'),cardConfirmed:f.has('cardConfirmed'),terminalReference:f.get('terminalReference')}):command('reassignReceipt',{receiptId:id,targetOrderId:f.get('targetOrderId'),previousOrderId:account.orderId,reason:'Oprava přiřazení účtu'}),'Změnit stůl',finishReceiptCorrection);
   const form=$('#dialog-form');
   form.elements.correction?.addEventListener('change',()=>{
     const financial=form.elements.correction.value==='restore';
@@ -3845,17 +4049,33 @@ async function backup(){await downloadBackup(await Store.read());if(!window.POSC
 
 function csv(){
   const cell=v=>{let s=String(v??''); if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
-  const rows=[['doklad','datum','typ','ucet','polozka','porce','pocet','cena_kc','celkem_polozka_kc','dph_procent','doklad_hotove_kc','doklad_karta_kc','doklad_zaokrouhleni_kc','směna_id','produkt_id','sklad_id','prirazeny_ucet']];
-  for(const r of state.receipts)r.lines.forEach((l,i)=>rows.push([r.number,r.at,r.kind,r.orderName,l.name,l.serving,l.quantity*(r.kind==='refund'?-1:1),inputMoney(l.price),inputMoney(l.price*l.quantity*(r.kind==='refund'?-1:1)),l.vatRate??'',i===0?inputMoney(r.cash):'',i===0?inputMoney(r.card):'',i===0?inputMoney(r.rounding):'',r.shiftId,l.productId,l.stockProductId,C.receiptAccount(state,r).orderName]));
+  const rows=[['doklad','datum','typ','ucet','polozka','porce','pocet','cena_kc','celkem_polozka_kc','dph_procent','doklad_hotove_kc','doklad_karta_kc','doklad_kredit_kc','doklad_zaokrouhleni_kc','směna_id','produkt_id','sklad_id','prirazeny_ucet']];
+  for(const r of state.receipts)r.lines.forEach((l,i)=>rows.push([r.number,r.at,r.kind,r.orderName,l.name,l.serving,l.quantity*(r.kind==='refund'?-1:1),inputMoney(l.price),inputMoney(l.price*l.quantity*(r.kind==='refund'?-1:1)),l.vatRate??'',i===0?inputMoney(r.cash):'',i===0?inputMoney(r.card):'',i===0?inputMoney(r.credit||0):'',i===0?inputMoney(r.rounding):'',r.shiftId,l.productId,l.stockProductId,C.receiptAccount(state,r).orderName]));
   download(`PUB-BIZZ-prodeje-${new Date().toISOString().slice(0,10)}.csv`,'\uFEFF'+rows.map(r=>r.map(cell).join(';')).join('\r\n'),'text/csv;charset=utf-8');toast('CSV připravené ke stažení.');
 }
-function closeShift(){ const sh=C.activeShift(state);if(!sh)return;if(state.orders.some(x=>x.lines.length)){toast('Nejdřív zaplať všechny rozdělané účty.',true);return;}const t=C.totals(state,sh.id);showDialog('Uzavřít směnu',`<div class="payment-summary"><div class="summary-row"><span>Tržba</span><strong>${fmt(t.total)}</strong></div><div class="summary-row"><span>Očekávaná hotovost</span><strong>${fmt(t.expected)}</strong></div></div>${field('Spočítaná hotovost v zásuvce (Kč)','counted','','required inputmode="decimal"')}<p class="help section-gap">Směna se uzamkne. Doklady zůstanou uložené a stáhne se úplná záloha.</p>`,f=>command('closeShift',{counted:C.money(f.get('counted'))}),'Uzavřít a zálohovat',async()=>{view='overview';render();await backup();});}
+function closeShift(){ const sh=C.activeShift(state);if(!sh)return;
+  if(state.orders.some(x=>x.paymentLock)){toast('Nejdřív dokonči nebo uvolni všechny rozpracované platby.',true);return;}
+  const blocked=state.orders.filter(x=>x.lines.length&&!C.customerLike(x.name));
+  if(blocked.length){toast('Nejdřív doplať rychlý prodej a běžné stoly. Pojmenovaný zákazník může zůstat nezaplacený.',true);return;}
+  const debts=state.orders.filter(x=>x.lines.length&&C.customerLike(x.name)).map(x=>({name:x.name,amount:C.sum(x.lines),items:x.lines.reduce((n,l)=>n+l.quantity,0)}));
+  const debtTotal=debts.reduce((n,x)=>n+x.amount,0),t=C.totals(state,sh.id);
+  showDialog('Uzavřít směnu',`<div class="payment-summary"><div class="summary-row"><span>Tržba celkem</span><strong>${fmt(t.total)}</strong></div><div class="summary-row"><span>Hotově</span><strong>${fmt(t.cash)}</strong></div><div class="summary-row"><span>Kartou</span><strong>${fmt(t.card)}</strong></div><div class="summary-row"><span>Kreditem</span><strong>${fmt(t.credit)}</strong></div><hr><div class="summary-row"><span>Dobití kreditu hotově</span><strong>${fmt(t.creditTopupCash)}</strong></div><div class="summary-row"><span>Dobití kreditu kartou</span><strong>${fmt(t.creditTopupCard)}</strong></div><div class="summary-row"><span>Terminál celkem</span><strong>${fmt(t.terminal)}</strong></div><div class="summary-row"><span>Očekávaná hotovost</span><strong>${fmt(t.expected)}</strong></div></div>${debts.length?`<div class="panel debt-summary"><h3>Neuhrazené účty · nejsou v tržbě</h3>${debts.map(d=>`<div class="summary-row"><span>${E(d.name)} · ${d.items} ks</span><strong>${fmt(d.amount)}</strong></div>`).join('')}<div class="summary-row total"><span>Celkem nezaplaceno</span><strong>${fmt(debtTotal)}</strong></div><p class="help">Tyto účty zůstanou otevřené do další směny. Spotřebu zapíše samostatná výdejka; chybějící receptury nebo zásoby zůstanou ve Skladu ke kontrole. Doplacení už vydané porce znovu neodepíše.</p></div>`:''}${field('Spočítaná hotovost v zásuvce (Kč)','counted','','required inputmode="decimal"')}<p class="help section-gap">Dobití kreditu je oddělené od tržby za nápoje, aby se peníze nezapočítaly dvakrát.</p>`,f=>command('closeShift',{counted:C.money(f.get('counted'))}),'Uzavřít a zálohovat',async()=>{view='overview';render();await backup();});}
+function checkPayment(){
+  const o=structuredClone(getOrder()),creditOption=customerAccount(o)?'<option value="credit">Pokračovat v platbě kreditem</option>':'';
+  if(o.paymentLock?.purpose==='creditTopup'){
+    showDialog('Rozpracované dobití kreditu',`<p class="help">${E(o.name)} · ${fmt(o.paymentLock.amount)} kartou. Ověř stav terminálu; úspěšnou platbu neopakuj.</p><label class="field">Co provést<select name="operation"><option value="complete">Dokončit zápis dobití</option><option value="cancel">Host nezaplatil — uvolnit účet</option></select></label><label class="inline-check"><input type="checkbox" name="checked" required>Stav platby jsem zkontroloval/a.</label>`,async f=>{if(f.get('operation')==='cancel')await command('cancelPayment',{orderId:o.id,paymentToken:o.paymentLock.token,terminalChecked:f.has('checked'),reason:'Ověřené zrušení nepřijatého dobití'});return f.get('operation');},'Pokračovat',operation=>{if(operation==='complete')creditTopup(o.paymentLock);});return;
+  }
+  showDialog('Rozpracovaná platba',`<p class="help">Ověř u obsluhy a na terminálu, zda už host platil. Pokud už platba proběhla, platbu na terminálu neopakuj.</p><label class="field">Co provést<select name="operation"><option value="cash">Pokračovat v hotovostní platbě</option><option value="card">Pokračovat v karetní platbě</option><option value="split">Pokračovat v rozdělení účtu</option>${creditOption}<option value="cancel">Host nezaplatil — uvolnit účet</option></select></label><label class="inline-check"><input type="checkbox" name="checked" required>Stav platby jsem zkontroloval/a.</label>`,async f=>{
+    if(f.get('operation')==='cancel')await command('cancelPayment',{orderId:o.id,paymentToken:o.paymentLock.token,terminalChecked:f.has('checked'),reason:'Obsluha ověřila, že host nezaplatil'});
+    return f.get('operation');
+  },'Pokračovat',operation=>{if(operation!=='cancel')return pay(operation,true);});
+}
 function bulkProducts(){showDialog('Hromadně vložit ceník',`<p class="help">Každý řádek: <strong>název; cena; kategorie; porce; DPH</strong>. Poslední tři údaje lze vynechat. Existující položky se shodným názvem a porcí se aktualizují.</p><label class="field">Položky<textarea name="rows" rows="9" required placeholder="Název nápoje; cena v Kč; kategorie; porce; DPH %"></textarea></label>`,async f=>{const rows=String(f.get('rows')).split(/\r?\n/).filter(x=>x.trim());if(rows.length>300)throw new Error('Najednou lze vložit nejvýš 300 položek.');const items=rows.map((row,i)=>{const [name,price,category='Ostatní',serving='',rate='']=row.split(';').map(x=>x.trim());if(!name||!price)throw new Error(`Na řádku ${i+1} chybí název nebo cena.`);return {name,price:C.money(price),category,serving,vatRate:rate===''?null:Number(rate.replace(',','.'))};});await command('importProducts',{items});},'Uložit ceník',()=>toast('Ceník byl uložený.'));}
 const actions={
   quantityPad:id=>quantityPad(id),
   entryCount:id=>{entryQuantity=Number(id);updateEntryContext();},entryQuantity:entryQuantityPad,
   smallShot:()=>{entryServingMl=entryServingMl===20?undefined:20;if(entryServingMl===20){const shots=state.products.filter(p=>p.active&&C.smallShot(p));if(!shots.some(p=>p.category===category))category='Vše';if(query&&!shots.some(p=>normalizeSearch(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(normalizeSearch(query))))query='';}render();},
-  account:id=>selectAccount(id),customerProfile,endVisit,category:async id=>{category=id;query='';render();},openShift,renameOrder,mergeOrders,
+  account:id=>selectAccount(id),customerProfile,creditTopup,creditReverse,endVisit,category:async id=>{category=id;query='';render();},openShift,renameOrder,mergeOrders,
   newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta (nepovinné)','name',accountQuery.trim(),'maxlength="120" placeholder="Bez vyplnění = rychlý prodej"'),f=>{
     const name=String(f.get('name')||'').trim();
     return name?command('newOrder',{name}):{id:'bar'};
@@ -3864,8 +4084,8 @@ const actions={
   add:async (id,button)=>{const p=state.products.find(x=>x.id===id);if(!p)return;const fromCatalog=button?.classList.contains('product'),quantity=fromCatalog?entryQuantity:1,servingMl=fromCatalog?entryServingMl:button?.dataset.servingMl==='20'?20:undefined,orderId=current;if(p.price===null){editProduct(id,true,{orderId,quantity,servingMl});return;}if(!C.activeShift(state)){openShift();return;}entryQuantity=1;updateEntryContext();await command('addLine',{orderId,productId:id,quantity,servingMl},true);},
   minus:async id=>{await command('removeLine',{orderId:current,lineId:id,reason:'Oprava namarkování'},true);},
   newProduct:()=>editProduct(),editProduct:id=>editProduct(id),archiveProduct:id=>showDialog('Skrýt položku',`<p class="help">${E(state.products.find(x=>x.id===id)?.name)} zmizí z nabídky. Existující účty a doklady zůstanou.</p>`,()=>command('archiveProduct',{id}),'Skrýt'),
-  checkPayment:()=>{const o=structuredClone(getOrder());showDialog('Rozpracovaná platba','<p class="help">Ověř u obsluhy a na terminálu, zda už host platil. Pokud už platba proběhla, pokračuj jejím zapsáním a na terminálu ji neopakuj. Rezervace po zavření okna zůstává.</p><label class="field">Co provést<select name="operation"><option value="cash">Pokračovat v hotovostní platbě</option><option value="card">Pokračovat v karetní platbě</option><option value="split">Pokračovat v rozdělení účtu</option><option value="cancel">Host nezaplatil — uvolnit účet</option></select></label><label class="inline-check"><input type="checkbox" name="checked" required>Stav platby jsem zkontroloval/a.</label>',async f=>{if(f.get('operation')==='cancel')await command('cancelPayment',{orderId:o.id,paymentToken:o.paymentLock.token,terminalChecked:f.has('checked'),reason:'Obsluha ověřila, že host nezaplatil'});return f.get('operation');},'Pokračovat',operation=>{if(operation!=='cancel')return pay(operation,true);});},
-  payCash:()=>pay('cash'),payCard:()=>pay('card'),paySplit:()=>pay('split',!!getOrder().paymentLock),
+  checkPayment,
+  payCash:()=>pay('cash'),payCard:()=>pay('card'),payCredit:()=>pay('credit'),paySplit:()=>pay('split',!!getOrder().paymentLock),
   receipt:id=>receiptDialog(state.receipts.find(x=>x.id===id)),
   restoreReceipt:receiptCorrection,
   refund:id=>{const r=state.receipts.find(x=>x.id===id);showDialog('Vrátit celý doklad',`<p class="help">Doklad ${E(r.number)} · ${fmt(r.total)}. Vrací se stejným způsobem jako původní platba. Vratka se uloží samostatně.</p>${field('Důvod vratky','reason','','required maxlength="120"')}${window.POSCloud?'<label class="inline-check"><input type="checkbox" name="restock">Zboží se fyzicky vrátilo a chci ho vrátit na sklad.</label>':''}${terminalRefundFields(r)}`,f=>command('refund',{receiptId:id,reason:f.get('reason'),cardConfirmed:f.has('cardConfirmed'),terminalReference:f.get('terminalReference'),restock:f.has('restock')}),'Zapsat vratku',receiptDialog);},

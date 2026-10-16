@@ -92,3 +92,23 @@ Regrese: `node --test tests/pub-bizz-receipt-corrections.test.js` ověřuje oba 
 Doba návštěvy je oddělená od dlužné částky. Po 120 minutách bez objednávky nebo průběžné platby se návštěva ukončí odhadem; další objednávka začne novou návštěvu na stejném účtu. Starší stav se odvozuje z auditní historie, aby se dnešní objednávka nepočítala od včerejší noci. Profil nabízí „Host odešel“ s opravitelným časem odchodu. Příkaz `endVisit` mění jen metadata návštěvy a audit; doklady, položky, dluh a sklad zůstávají stejné. Odhadované intervaly a útraty obsahující převedený dluh se nepovažují za přesný podklad pro útratu za hodinu. Vratka starého dokladu sama nezakládá návštěvu.
 
 Regrese: `tests/pub-bizz-visits.test.js`, test odchodu v `tests/pos-web/cloud-ui.test.cjs` a skutečná PostgreSQL transakce v `tests/pos-web/receipt-corrections-db.test.cjs`. Databázový guard odmítne současnou změnu finančních dat.
+
+## Kredit a přenos nezaplacené spotřeby
+
+Kredit jsou předplacené Kč, oddělené od věrnostních bodů. Profil zákazníka nabízí **Dobít kredit** a historii **Dobití a storna kreditu**. Owner/manager u původního vkladu zvolí **Stornovat**, vyplní důvod a vrátí celé dobití. Karetní storno vyžaduje potvrzení úspěšné vratky na terminálu a její číslo. Čerpané dobití nelze stornovat do záporného zůstatku. Oprava částky znamená storno původního a nové správné dobití; historie se nemaže. Storno patří do aktuální otevřené směny i u staršího vkladu.
+
+Karetní dobití má nejprve krok **Připravit platbu kartou**: zarezervuje účet a částku i u prázdného zákazníka. Až poté se provede terminál a potvrdí připsání. Zavřené rozpracované dobití se dokončí přes **Ověřit platbu**, nebo se po kontrole terminálu uvolní bez připsání. Totéž platí pro dělenou karetní úhradu: samotné otevření dělení účet nezamkne, výběr karetní úhrady připraví rezervaci před zobrazením potvrzení terminálu. Během těchto rezervací nelze uzavřít směnu.
+
+Přejmenování zachovává zákaznické ID a aliasy i po smazání prázdného účtu a novém založení pod novým jménem. Nesmí sloučit dva zákazníky nebo dva současně otevřené aliasy. Opravené přiřazení dokladu má ve statistikách přednost před původním zákazníkem; vratka kreditu se přesto vrací původnímu plátci.
+
+Uzávěrka odmítne jakoukoli platební rezervaci, včetně prázdného účtu. Nezaplacené běžné stoly se musí vyřešit, pojmenovaný zákazník může přejít do další směny. Při uzávěrce vzniknou pro dosud nevydané řádky **nefinanční výdejky** se zachycenou porcí, recepturou, množstvím, směnou a aktérem. Mají vlastní typ `issue` v neměnném úložišti POS dokumentů; nepatří do `state.receipts`, tržeb, bodů ani počtu finančních prodejů.
+
+Nezaplacené a později zaplacené porce si nesou odkaz na výdejku a rozsah porcí. Doplacení, částečná platba, spojení účtů ani další uzávěrka stejné porce znovu neodepisují. **Vrátit platbu a položky na stůl** obnoví dluh s původním výdejem bez fiktivního fyzického příjmu. Skutečná fyzická vratka vrací pouze skutečně odepsané suroviny daných porcí, včetně náhrad a kusových nedostatků. Již vydané množství nelze z účtu prostě smazat nebo snížit; fyzickou spotřebu opravuje vedoucí skladovou korekcí. Nové porce se přidávají běžně.
+
+Chybějící receptura nebo zásoba zůstane ve **Skladu → Odpisy ke kontrole** u výdejky. Doplnění odpisu funguje i po zaplacení a právě jednou. Do vyřešení jde o nevyřešenou spotřebu pro inventuru. Fyzická vratka takových porcí vyžaduje nejdřív ověřit původní odpis; finanční vratka a vrácení dluhu na účet zůstávají dostupné.
+
+Vyúčtování odděluje tržby **Hotově / Kartou / Kreditem** od čistých dobití po stornech. Očekávaná hotovost zahrnuje hotovostní vklady a storna, celkový terminál karetní vklady a storna. Dobití nevytváří druhou tržbu za nápoje.
+
+Pořadí vydání: aktuální main včetně migrace návštěv → `20261015002500_pos_customer_credit.sql` → `20261016040732_pos_customer_credit_integrity.sql` → synchronizovaný Edge bundle se zapnutým `verify_jwt` → web a nouzová kopie s cache `2.0.16`. Inicializace prázdných polí peněženek zvýší revizi, aby souběžné požadavky načetly aktuální stav. Migrace zachovávají živé skladové funkce, náhrady, oprávnění a atomické uzávěrky.
+
+Regrese: `tests/pub-bizz-credit-integrity.test.js` pro obě kopie lokálního a serverového jádra, SQL scénáře v `tests/pos-web/receipt-corrections-db.test.cjs`, DOM a Chromium/WebKit pro telefon i PC. Zahrnují aliasy, přiřazení, storna, souběh uzávěrky s rezervací, výdeje, náhrady, nedostatky, stejné UUID a rollback při chybě auditu. Používají pouze syntetická data v izolovaných databázích nebo simulovaný transport, bez skutečných zákaznických plateb.

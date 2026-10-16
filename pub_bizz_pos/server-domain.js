@@ -4,8 +4,8 @@
   const C = typeof module !== 'undefined' ? require('./core.js') : root.POSCore;
   const L = typeof module !== 'undefined' ? require('./loyalty.js') : root.POSLoyalty;
   const manager = new Set(['owner', 'manager']);
-  const staffCommands = new Set(['openShift', 'newOrder', 'renameOrder', 'endVisit', 'deleteOrder', 'mergeOrders', 'addLine', 'removeLine', 'setLineQuantity', 'beginPayment', 'cancelPayment', 'checkout', 'reassignReceipt', 'backup', 'redeemReward']);
-  const managerCommands = new Set(['product', 'archiveProduct', 'importProducts', 'refund', 'restoreReceipt', 'cashMovement', 'closeShift', 'settings', 'recipe', 'resolveStock', 'loyaltyConfig']);
+  const staffCommands = new Set(['openShift', 'newOrder', 'renameOrder', 'endVisit', 'deleteOrder', 'mergeOrders', 'addLine', 'removeLine', 'setLineQuantity', 'beginPayment', 'cancelPayment', 'checkout', 'reassignReceipt', 'creditTopup', 'backup', 'redeemReward']);
+  const managerCommands = new Set(['product', 'archiveProduct', 'importProducts', 'refund', 'restoreReceipt', 'creditReverse', 'cashMovement', 'closeShift', 'settings', 'recipe', 'resolveStock', 'loyaltyConfig']);
   const check = (ok, message) => { if (!ok) throw new Error(message); };
   function restoredStockLines(sale, records) {
     const result = {};
@@ -44,12 +44,22 @@
     check(staffCommands.has(type) || (manager.has(actor.role) && managerCommands.has(type)), 'Tuto operaci může provést vedoucí nebo majitel.');
     const p = structuredClone(payload || {}), s = structuredClone(state);
     s.recipes ||= {};
+    s.customers ||= [];
+    s.creditLedger ||= [];
     let result = null;
     const order = s.orders.find(o=>o.id===p.orderId);
     if (['addLine','removeLine','setLineQuantity','deleteOrder'].includes(type)) check(!order?.paymentLock, 'Na tomto účtu právě probíhá platba. Nejdřív ji dokonči nebo zkontroluj rezervaci.');
     if (type === 'checkout') {
       check(order?.paymentLock && order.paymentLock.token===p.paymentToken, 'Účet není rezervovaný pro tuto platbu. Otevři platbu znovu.');
+      check(order.paymentLock.purpose!=='creditTopup','Nejdřív dokonči nebo uvolni rozpracované dobití kreditu.');
       check(order.paymentLock.actorId===actor.id || manager.has(actor.role), 'Platbu dokončuje jiná obsluha.');
+    }
+    if(type==='creditTopup'){
+      if(p.method==='card'){
+        check(p.cardConfirmed===true,'Potvrď úspěšné dobití kartou na terminálu.');
+        check(order?.paymentLock?.purpose==='creditTopup','Nejdřív připrav karetní dobití a rezervuj účet.');
+      }
+      if(order?.paymentLock)check(order.paymentLock.purpose==='creditTopup'&&order.paymentLock.token===p.paymentToken&&(order.paymentLock.actorId===actor.id||manager.has(actor.role)),'Na účtu právě probíhá jiná platba.');
     }
     if(type==='loyaltyConfig'){
       check(typeof p.enabled==='boolean'&&Number.isSafeInteger(p.threshold)&&p.threshold>=10000&&p.threshold<=100000,'Zadej částku od 100 do 1 000 Kč.');
@@ -61,10 +71,12 @@
       check(p.fulfilled===true&&String(p.note||'').trim(),'Nejdřív splň odměnu a napiš skladbu nebo poznámku.');
       reward.status='redeemed';reward.redeemedAt=now;reward.redeemedBy=actor.id;reward.note=String(p.note).trim().slice(0,160);result=structuredClone(reward);
     } else if (type === 'beginPayment') {
-      check(C.activeShift(s) && order?.lines.length, 'Účet nemá položky nebo není otevřená směna.');
+      const funding=p.purpose==='creditTopup';
+      check(C.activeShift(s) && order && (funding?C.customerLike(order.name)&&order.id!=='bar':order.lines.length), 'Účet nemá položky nebo není otevřená směna.');
+      if(funding)check(Number.isSafeInteger(p.amount)&&p.amount>=1000&&p.amount<=100000000,'Dobití musí být od 10 Kč do 1 000 000 Kč.');
       check(order.revision===p.revision, 'Účet se změnil. Otevři platbu znovu.');
       check(!order.paymentLock, 'Účet už je rezervovaný pro platbu. Nejdřív zkontroluj rozpracovanou platbu.');
-      result={token:crypto.randomUUID(),actorId:actor.id,at:now};order.paymentLock=result;
+      result={token:crypto.randomUUID(),actorId:actor.id,at:now,...(funding?{purpose:'creditTopup',amount:p.amount,method:'card',shiftId:C.activeShift(s).id}:{})};order.paymentLock=result;
     } else if (type === 'cancelPayment') {
       check(order?.paymentLock?.token===p.paymentToken, 'Rezervace už není platná. Obnov účet.');
       check(order.paymentLock.actorId===actor.id || manager.has(actor.role), 'Rezervaci může uvolnit původní obsluha nebo vedoucí.');
@@ -93,7 +105,7 @@
       result = { version: (old?.version || 0) + 1, mode: p.mode, reason, selection:'available', components: components.map(c => ({productId:c.productId, quantity:c.quantity, unit:c.unit, alternatives:c.alternatives||[]})), updatedAt:now, updatedBy:actor.id };
       s.recipes[p.productId] = result;
     } else if (type === 'resolveStock') {
-      const receipt = s.receipts.find(r => r.id === p.receiptId && r.kind === 'sale');
+      const receipt = s.receipts.find(r => r.id === p.receiptId && r.kind === 'sale') || (s.stockIssues||[]).find(r=>r.id===p.receiptId);
       const line = receipt?.lines.find(l => l.id === p.lineId);
       check(line && s.recipes[line.productId], 'Nejdřív nastav recepturu prodané položky.');
       check(!s.receipts.some(r => r.refundOf === receipt.id && r.restock), 'Zboží už bylo vrácené. Případnou opravu proveď v PUB GURU.');
@@ -101,7 +113,12 @@
     } else {
       // receiptStock is loaded by the authenticated Edge Function, never from command payload.
       const restored = type==='restoreReceipt' ? restoredStockLines(s.receipts.find(r=>r.id===p.receiptId&&r.kind==='sale'),receiptStock) : undefined;
-      result = C.execute(s, type, p, now, restored);
+      if(type==='checkout'&&p.mode==='credit'){
+        const customer=C.ensureCustomer(s,order,now);
+        const due=C.payment(C.sum(C.selectedLines(order,p.selected)),'credit',0,0).credit;
+        check(C.creditBalance(s,customer.id)>=due,`Na kreditu chybí ${((due-C.creditBalance(s,customer.id))/100).toLocaleString('cs-CZ')} Kč.`);
+      }
+      result = C.execute(s, type, p, now, restored, actor.id);
       if (type === 'checkout' && result) {
         delete order.paymentLock;
         result.actorId = actor.id;

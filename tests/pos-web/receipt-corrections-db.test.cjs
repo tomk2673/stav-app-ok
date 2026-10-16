@@ -47,9 +47,9 @@ async function fixture(mode='cash',mapped=true,substitutions=false,deployedCommi
  const commit=async(type,state,result,actor=owner,request=crypto.randomUUID(),hash=type,expected=s.revision)=>{
   const r=await db.query('select pos_commit($1,$2,$3,$4,$5,$6,$7,$8) as result',[venue,actor.id,request,hash,expected,type,JSON.stringify(state),result==null?null:JSON.stringify(result)]);return r.rows[0].result;
  };
- const run=async(type,p,actor=owner)=>{
+ const run=async(type,p,actor=owner,at=new Date().toISOString())=>{
   if(type==='creditTopup'&&p.method==='card'&&p.cardConfirmed===true&&!s.orders.find(o=>o.id===p.orderId)?.paymentLock){const o=s.orders.find(o=>o.id===p.orderId),lock=(await run('beginPayment',{orderId:o.id,revision:o.revision,purpose:'creditTopup',amount:p.amount},actor)).result;p={...p,paymentToken:lock.token};}
-  const records=type==='restoreReceipt'?(await db.query('select line_id,status,recipe from pos_stock_lines where receipt_id=$1',[p.receiptId])).rows:[];const command=D.run(s,type,p,actor,stock,new Date().toISOString(),records);const r=await commit(type,command.state,command.result,actor);s=command.state;return {result:command.result,requestResult:r};
+  const records=type==='restoreReceipt'?(await db.query('select line_id,status,recipe from pos_stock_lines where receipt_id=$1',[p.receiptId])).rows:[];const command=D.run(s,type,p,actor,stock,at,records);const r=await commit(type,command.state,command.result,actor);s=command.state;return {result:command.result,requestResult:r};
  };
  await run('openShift',{opening:0});const target=(await run('newOrder',{name:'Stůl 2'},staff)).result;
  if(mapped)await run('recipe',{productId:'agnis-2810',version:0,mode:'recipe',components:[{productId:liquid,unit:'ml',quantity:40},{productId:counted,unit:'ks',quantity:1}]});
@@ -256,6 +256,36 @@ test('SQL departure keeps unpaid money and stock, and rejects forged financial c
   assert.deepEqual(f.s.orders.find(o=>o.id===order.id).lines,order.lines);
   assert.deepEqual({receipts:f.s.receipts,sequence:f.s.sequence,shifts:f.s.shifts},financial);
   const audit=after.audit.find(a=>a.event_type==='pos.endVisit');assert.ok(audit);assert.equal(audit.after_data.visit.orderId,order.id);
+ }finally{await f.db.close();}
+});
+
+test('SQL merge preserves both visitors, carried stock and wallets through partial payment, departure and repeated visits',async()=>{
+ const I=require('../../pub_bizz_pos/customer.js'),f=await fixture('cash',true,true,true);try{
+  const time=minutes=>new Date(Date.now()-(90-minutes)*60000).toISOString();
+  const source=(await f.run('newOrder',{name:'TEST Visit Source'},f.staff,time(0))).result.id;
+  const target=(await f.run('newOrder',{name:'TEST Visit Payer'},f.staff,time(0))).result.id;
+  const order=id=>f.s.orders.find(o=>o.id===id),mark=async(id,at)=>f.run('addLine',{orderId:id,productId:'agnis-2810',quantity:2},f.staff,at);
+  await mark(source,time(1));await mark(target,time(2));
+  await f.run('creditTopup',{orderId:target,amount:50000,method:'cash'},f.staff,time(3));
+  await f.run('closeShift',{counted:C.totals(f.s,C.activeShift(f.s).id).expected},f.owner,time(3));
+  await f.run('openShift',{opening:0},f.staff,time(3));
+  const a=structuredClone(order(source)),b=structuredClone(order(target)),before=await f.snapshot(),wallets=structuredClone(f.s.creditLedger);
+  await f.run('mergeOrders',{orderId:source,revision:a.revision,targetOrderId:target,targetRevision:b.revision},f.staff,time(4));
+  const after=await f.snapshot();assert.deepEqual(after.receipts,before.receipts);assert.deepEqual(after.stock,before.stock);assert.deepEqual(f.s.creditLedger,wallets);
+  for(const key of ['visitId','visitStartedAt','visitLastActivityAt','customerId']){assert.equal(order(source)[key],a[key]);assert.equal(order(target)[key],b[key]);}
+  const audit=after.audit.find(e=>e.event_type==='pos.mergeOrders');assert.equal(audit.after_data.merge.visitSnapshots.source[0].customerId,a.customerId);assert.equal(audit.after_data.merge.visitSnapshots.target[0].customerId,b.customerId);
+  const lock=(await f.run('beginPayment',{orderId:target,revision:order(target).revision},f.staff,time(5))).result;
+  const sale=(await f.run('checkout',{orderId:target,revision:order(target).revision,paymentToken:lock.token,operationId:crypto.randomUUID(),selected:[{id:order(target).lines[0].id,quantity:1}],mode:'credit',received:0},f.staff,time(6))).result;
+  assert.equal(sale.total,5500);assert.equal(C.creditBalance(f.s,b.customerId),44500);assert.equal(C.creditBalance(f.s,a.customerId),0);
+  const paid=await f.snapshot();
+  assert.deepEqual(paid.stock,after.stock,'previously issued portions are not deducted again at partial payment');
+  await assert.rejects(()=>f.run('endVisit',{orderId:target,revision:order(target).revision,endedAt:time(5)},f.staff,time(7)),/aktivit/);assert.deepEqual(await f.snapshot(),paid);
+  await f.run('endVisit',{orderId:target,revision:order(target).revision,endedAt:time(7)},f.staff,time(8));
+  const ended=await f.snapshot();assert.deepEqual(ended.stock,paid.stock);assert.deepEqual(ended.receipts,paid.receipts);assert.equal(C.sum(order(target).lines),16500);
+  assert.equal(I.profile(f.s,order(source).name,order(source),time(9)).activeVisit.id,a.visitId);
+  await f.run('endVisit',{orderId:source,revision:order(source).revision,endedAt:time(10)},f.staff,time(11));
+  await mark(source,time(12));assert.notEqual(order(source).visitId,a.visitId);assert.equal(I.profile(f.s,order(source).name,order(source),time(13)).visitCount,1);
+  assert.equal(I.profile(f.s,order(target).name,order(target),time(13)).timedSpend,0);C.validate(f.s);
  }finally{await f.db.close();}
 });
 

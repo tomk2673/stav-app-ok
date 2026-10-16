@@ -93,6 +93,12 @@ Doba návštěvy je oddělená od dlužné částky. Po 120 minutách bez objedn
 
 Regrese: `tests/pub-bizz-visits.test.js`, test odchodu v `tests/pos-web/cloud-ui.test.cjs` a skutečná PostgreSQL transakce v `tests/pos-web/receipt-corrections-db.test.cjs`. Databázový guard odmítne současnou změnu finančních dat.
 
+Spojení účtů přesouvá pouze dluh a položky, nikoli fyzickou návštěvu nebo zákaznickou identitu. Oba účty si ponechají vlastní začátek, poslední aktivitu a ruční odchod. Prázdný zdrojový účet dál ukazuje původního hosta; jeho další objednávka v aktivním intervalu pokračuje ve stejné návštěvě. Audit spojení obsahuje snímky obou návštěv se zákaznickými ID. Smazání prázdného účtu zachová interval v auditu; neukončený konec je při smazání označený jako odhad. Útrata převedených položek se řídí zaplaceným účtem a nepoužívá se jako přesná útrata za hodinu cizí návštěvy. Přeřazení dokladu také nepřevádí fyzickou návštěvu na plátce.
+
+Ruční odchod se před uložením porovná s poslední skutečnou aktivitou současné návštěvy z metadat i auditu. Započítá se objednávka, zvýšení počtu kusů a průběžná úhrada aktivní návštěvy; snížení počtu, platební rezervace a pozdější doplacení ukončené návštěvy přítomnost neprodlužují. Formulář používá stejnou dolní mez v místním čase, rozhodující kontrolu provádí server. Neplatný požadavek nemění stav ani audit.
+
+Oprava návštěv z 16. 10. 2026 nevyžaduje novou databázovou migraci ani přepis uložených účtů. Postup vydání: kompletní testy → aktualizovaný synchronizovaný Edge bundle se zapnutým `verify_jwt` → web a PWA cache `2.0.17`. Nouzová HTML kopie je generovaná z týchž zdrojů. Při návratu na předchozí verzi použít celý předchozí bundle i web; nová auditní pole jsou zpětně kompatibilní. Starší chybně sloučené návštěvy se automaticky nepřipisují jinému hostovi, protože spojení účtů nedokazuje totožnost osob.
+
 ## Kredit a přenos nezaplacené spotřeby
 
 Kredit jsou předplacené Kč, oddělené od věrnostních bodů. Profil zákazníka nabízí **Dobít kredit** a historii **Dobití a storna kreditu**. Owner/manager u původního vkladu zvolí **Stornovat**, vyplní důvod a vrátí celé dobití. Karetní storno vyžaduje potvrzení úspěšné vratky na terminálu a její číslo. Čerpané dobití nelze stornovat do záporného zůstatku. Oprava částky znamená storno původního a nové správné dobití; historie se nemaže. Storno patří do aktuální otevřené směny i u staršího vkladu.

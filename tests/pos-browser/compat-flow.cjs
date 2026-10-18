@@ -219,6 +219,11 @@ async function flow(browser,base,width){
     assert.equal(await page.locator('[data-action="payCredit"]').isDisabled(),false,'funded customer can pay with credit');
     await page.locator('[data-action="payCredit"]').click();
     await page.locator('#dialog .close-dialog').first().click();
+    await until(page,()=>!document.querySelector('#dialog').open);
+    assert.equal(f.state.orders.find(o=>o.name==='Žaneta').paymentLock,undefined,'abandoned credit dialog remains editable');
+    await page.locator('[data-action="payCard"]').click();await page.locator('[name="cardConfirmed"]').waitFor();
+    await page.reload();await page.locator('.product').first().waitFor();
+    await page.locator('#account-search').fill('zaneta');await page.locator('#account-results [data-action="account"]').first().click();
     await until(page,()=>!document.querySelector('#dialog').open&&!!document.querySelector('[data-action="checkPayment"]'));
     assert.ok(f.state.orders.find(o=>o.name==='Žaneta').paymentLock);
     await page.locator('[data-action="checkPayment"]').click();
@@ -349,6 +354,29 @@ async function visitFlow(browser,base,width){
   return {width,independentVisitors:true,mergeReplayOnce:true,localTimeMinimum:true,serverDepartureGuard:true,legacySavedEndCorrected:true};
  }finally{await context.close();}
 }
+async function cancellationFlow(browser,base,width){
+  const context=await contextFor(browser,{width}),f=fixture(),errors=[];
+  C.execute(f.state,'openShift',{opening:0});C.execute(f.state,'addLine',{orderId:'bar',productId:'agnis-2810',quantity:2});
+  await context.route(api+'/**',f.route);const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(10000);
+  try{
+    await page.goto(base+'/pub_bizz_pos/index.html');await page.locator('[name="email"]').fill('owner@example.test');await page.locator('[name="password"]').fill('test-password');await page.locator('#login-form button').click();await page.locator('.product').first().waitFor();
+    const lines=structuredClone(f.state.orders[0].lines);
+    await page.locator('[data-action="payCash"]').click();await page.locator('[name="received"]').waitFor();await page.keyboard.press('Escape');await until(page,()=>!document.querySelector('#dialog').open);
+    assert.equal(f.state.orders[0].paymentLock,undefined);assert.equal(f.calls.filter(c=>c.type==='beginPayment').length,0);
+    await page.locator('[data-action="payCard"]').click();await page.locator('[name="cardConfirmed"]').waitFor();
+    await page.locator('#dialog .dialog-actions .close-dialog').click();assert.equal(await page.locator('#dialog-title').textContent(),'Zrušit rozpracovanou platbu');
+    await page.locator('#dialog-submit').click();assert.ok(f.state.orders[0].paymentLock,'unchecked cancellation is not submitted');assert.equal(f.calls.filter(c=>c.type==='cancelPayment').length,0);
+    await page.locator('[name="checked"]').check();await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
+    assert.equal(f.state.orders[0].paymentLock,undefined);assert.deepEqual(f.state.orders[0].lines,lines);assert.equal(f.state.receipts.length,0);
+    await page.locator('[data-action="payCard"]').click();await page.locator('[name="cardConfirmed"]').waitFor();await page.reload();await page.locator('[data-action="cancelPayment"]').waitFor();
+    await page.locator('[data-action="cancelPayment"]').click();await page.locator('[name="checked"]').check();f.dropResponse();await page.locator('#dialog-submit').click();
+    await until(page,()=>POSCloud.pending?.type==='cancelPayment'&&!POSCloud.busy);const id=await page.evaluate(()=>POSCloud.pending.requestId);
+    await page.locator('#dialog .dialog-head .close-dialog').click();await page.locator('[data-action="retryPending"]').click();await until(page,()=>!POSCloud.pending&&!document.querySelector('#dialog').open);
+    assert.equal(f.calls.filter(c=>c.requestId===id).length,2);assert.equal(f.state.orders[0].paymentLock,undefined);assert.deepEqual(f.state.orders[0].lines,lines);assert.equal(f.state.receipts.length,0);
+    await page.locator('.line [data-action="add"]').click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='3×');assert.equal(f.state.orders[0].lines[0].quantity,3);assert.deepEqual(errors,[]);
+    return {cashDismissed:true,cardCancelled:true,legacyReload:true,lostResponseRecovered:true,itemsPreserved:true};
+  }finally{await context.close();}
+}
 async function failures(browser,base){
   for(const mode of ['sdk','app','storage','quota','api']){
     const context=await contextFor(browser);try{
@@ -382,7 +410,7 @@ async function failures(browser,base){
       const browser=await require(profile.module)[profile.engine].launch(options);
       try{
         const result={browser:profile.name,version:browser.version(),os:process.platform,flows:[]};
-        for(const width of profile.widths){result.flows.push({...await flow(browser,base,width),smallShots:await smallShotFlow(browser,base,width),visits:await visitFlow(browser,base,width)});console.log(profile.name+' '+width+'px: flow passed');}
+        for(const width of profile.widths){result.flows.push({...await flow(browser,base,width),cancellation:await cancellationFlow(browser,base,width),smallShots:await smallShotFlow(browser,base,width),visits:await visitFlow(browser,base,width)});console.log(profile.name+' '+width+'px: flow passed');}
         result.failures=await failures(browser,base);results.push(result);console.log(JSON.stringify(result));
       }finally{await browser.close();}
     }

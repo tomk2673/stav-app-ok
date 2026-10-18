@@ -1,1 +1,6 @@
 node_modules/
+.env
+.env.*
+!.env.example
+tests/fixtures/invoice-vision/live-results.json
+supabase/.temp/

@@ -19,29 +19,26 @@
     return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  async function compressImage(file) {
-    if (!file.type.startsWith('image/')) return { blob: file, mime: file.type || 'application/octet-stream', ext: file.type === 'application/pdf' ? 'pdf' : 'bin' };
-    const image = new Image();
-    const url = URL.createObjectURL(file);
-    image.src = url;
-    await image.decode();
+  function originalFormat(file) {
+    const types={'image/jpeg':'jpg','image/png':'png','image/heic':'heic','image/heif':'heif','application/pdf':'pdf'};
+    const mime=file.type||(/\.heic$/i.test(file.name)?'image/heic':/\.heif$/i.test(file.name)?'image/heif':'');
+    if(!types[mime])throw new Error('Originál musí být JPEG, PNG, HEIC/HEIF nebo PDF.');
+    if(!file.size||file.size>8*1024*1024)throw new Error('Originál dokladu musí mít nejvýše 8 MB.');
+    return {mime,ext:types[mime]};
+  }
 
-    const maxSide = 2200;
-    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
-    const width = Math.max(1, Math.round(image.naturalWidth * scale));
-    const height = Math.max(1, Math.round(image.naturalHeight * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d', { alpha: false });
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, width, height);
-    ctx.drawImage(image, 0, 0, width, height);
-    URL.revokeObjectURL(url);
-
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.78));
-    if (!blob) throw new Error('Nepodařilo se připravit fotografii.');
-    return { blob, mime: 'image/jpeg', ext: 'jpg' };
+  async function preserveOriginal(file,ctx,fingerprint) {
+    const {mime,ext}=originalFormat(file);
+    const path=`${ctx.organization.id}/${ctx.venue.id}/${ctx.user.id}/original-${fingerprint}.${ext}`;
+    const bucket=db().storage.from('invoice-sources');
+    const upload=await bucket.upload(path,file,{contentType:mime,cacheControl:'3600',upsert:false});
+    if(upload.error) {
+      if(!['409','Duplicate'].includes(String(upload.error.statusCode||upload.error.status||upload.error.error)))throw upload.error;
+      const saved=await bucket.download(path);
+      if(saved.error)throw saved.error;
+      if(!saved.data||await sha256(saved.data)!==fingerprint)throw new Error('Uložený originál neodpovídá vybranému souboru.');
+    }
+    return {path,mime,ext};
   }
 
   function setProgress(text, pct) {
@@ -74,17 +71,10 @@
     const duplicate = await duplicateExists(ctx, fingerprint);
     if (duplicate) return { status: 'duplicate' };
 
-    const prepared = await compressImage(file);
     const jobId = crypto.randomUUID();
-    const path = `${ctx.organization.id}/${ctx.venue.id}/${ctx.user.id}/${jobId}.${prepared.ext}`;
-
     if (progressLabel) setProgress(`${progressLabel} · odesílám`, 45);
-    const upload = await db().storage.from('invoice-sources').upload(path, prepared.blob, {
-      contentType: prepared.mime,
-      cacheControl: '3600',
-      upsert: false
-    });
-    if (upload.error) throw upload.error;
+    const prepared=await preserveOriginal(file,ctx,fingerprint);
+    const path=prepared.path;
 
     const insert = await db().from('invoice_capture_jobs').insert({
       id: jobId,
@@ -99,7 +89,8 @@
     });
 
     if (insert.error) {
-      await db().storage.from('invoice-sources').remove([path]);
+      // A lost response can mean the job WAS inserted. Keep immutable bytes
+      // for reconciliation/retry rather than deleting a committed job's source.
       throw insert.error;
     }
 
@@ -186,7 +177,7 @@
     return { queued, duplicates, failed, completedAssetIds };
   }
 
-  window.PubGuruFastCapture = { queueFiles, queueNativeImages, isBusy:()=>busy };
+  window.PubGuruFastCapture = { queueFiles, queueNativeImages, preserveOriginal, isBusy:()=>busy };
 
   document.addEventListener('change', event => {
     const target = event.target;

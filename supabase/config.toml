@@ -1,0 +1,4 @@
+[functions.invoice-drive-import]
+# This is an import-only capability, not a user's Supabase session JWT.
+# The handler verifies it in the private credential table for every request.
+verify_jwt = false

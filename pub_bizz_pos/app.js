@@ -8,7 +8,7 @@ const fmt = n => new Intl.NumberFormat('cs-CZ', { style:'currency', currency:'CZ
 const inputMoney = n => String(n / 100).replace('.', ',');
 const date = d => new Date(d).toLocaleString('cs-CZ', {timeZone:'Europe/Prague', day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
 const colors = {'Pivo':'#f1c986','Destiláty':'#b1bcf3','Nealko':'#8acbb6','Víno':'#dbabd6','Koktejly':'#efaa91','Likéry':'#b6c49f','Rumy':'#daba8b','Whisky':'#e2b46a','Brandy':'#e3aa9e','Teplé nápoje':'#c6ba91','Snacks':'#98b8df'};
-let state, view = 'pos', current = 'bar', category = 'Vše', query = '', toastTimer, submitting = false;
+let state, view = 'pos', current = 'bar', category = 'Vše', query = '', toastTimer, submitting = false, dialogCancel;
 let accountQuery = '', accountSearchOpen = false, entryQuantity = 1, entryServingMl;
 let salesHistory, salesCounts;
 const normalizeSearch = value => String(value).toLocaleLowerCase('cs').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
@@ -29,15 +29,18 @@ function renderPOSFast(){
   const accounts=live.querySelector('.accounts'),receipt=live.querySelector('.receipt');
   if(accounts&&nextAccounts)accounts.replaceWith(nextAccounts);
   if(receipt&&nextReceipt)receipt.replaceWith(nextReceipt);
+  const notice=live.querySelector('#payment-reservation'),nextNotice=fresh.querySelector('#payment-reservation');
+  if(notice&&nextNotice)notice.replaceWith(nextNotice);
   updateEntryContext();
   if(accountSearchOpen)renderAccountResults();
   const bill=$('#mobile-bill');if(bill)bill.innerHTML=`<span>${E(getOrder().name)} · ${getOrder().lines.reduce((n,l)=>n+l.quantity,0)} ks</span><strong>${fmt(C.sum(getOrder().lines))} →</strong>`;
   $('#save-state').textContent=window.POSCloud?'Potvrzeno serverem':'Uloženo v tomto zařízení';$('#save-state').classList.remove('error');connection();
 }
 function field(label, name, value = '', extra = '', full = false) { return `<label class="field${full ? ' full' : ''}">${label}<input name="${name}" value="${E(value)}" ${extra}></label>`; }
-function showDialog(title, body, submit, label = 'Uložit', onDone) {
+function showDialog(title, body, submit, label = 'Uložit', onDone, onCancel) {
   window.paymentAbort?.abort();
   const d = $('#dialog'); if (d.open) d.close();
+  dialogCancel = onCancel;
   $('#dialog-title').textContent = title; $('#dialog-body').innerHTML = body; $('#dialog-error').textContent = '';
   $('#dialog-submit').textContent = label; $('#dialog-submit').hidden = !submit; $('#dialog-submit').disabled = false;
   $('#dialog-form').onsubmit = async event => {
@@ -48,8 +51,13 @@ function showDialog(title, body, submit, label = 'Uložit', onDone) {
     finally { submitting = false; $('#dialog-submit').disabled = false; }
   };
   $('#dialog .dialog-actions .close-dialog').hidden=false;
+  $('#dialog .dialog-actions .close-dialog').textContent='Zpět';
   window.paymentAbort=new AbortController();
   d.showModal();
+}
+function closeDialog() {
+  if (submitting) return;
+  if (dialogCancel) dialogCancel(); else $('#dialog').close();
 }
 function connection() {
   const cloud=window.POSCloud, online=cloud?cloud.connected:navigator.onLine;
@@ -60,7 +68,7 @@ function connection() {
   warning.hidden=!state||(!pending&&online);
   warning.innerHTML=pending?`<span><strong>Ověřujeme uloženou operaci.</strong> Platbu na terminálu neopakuj.</span>${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}`:'<span>Server není dostupný. Zobrazená data mohou být starší; placení vyžaduje spojení.</span>';
   if(state){$('#save-state').textContent=cloud.busy?'Ukládám na server…':pending?'Čeká na ověření':online?'Potvrzeno serverem':'Spojení přerušeno';$('#save-state').classList.toggle('error',!!pending||!online);}
-  const writeActions=['add','minus','restoreReceipt','newOrder','renameOrder','endVisit','deleteOrder','mergeOrders','openShift','payCash','payCard','payCredit','paySplit','creditTopup','creditReverse','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
+  const writeActions=['add','minus','restoreReceipt','newOrder','renameOrder','endVisit','deleteOrder','mergeOrders','openShift','payCash','payCard','payCredit','paySplit','cancelPayment','creditTopup','creditReverse','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
   document.querySelectorAll('[data-action]').forEach(b=>{if(writeActions.includes(b.dataset.action)){const lock=!!pending&&!cloud.busy||!online;if(lock&&!b.disabled){b.disabled=true;b.dataset.connectionDisabled='true';}else if(!lock&&b.dataset.connectionDisabled){b.disabled=false;delete b.dataset.connectionDisabled;}}});
 }
 function render() {
@@ -162,7 +170,7 @@ function renderPOS() {
         <div class="account-finder"><label class="sr-only" for="account-search">Stůl nebo zákazník; prázdné pole znamená rychlý prodej</label><input id="account-search" type="search" placeholder="Stůl / zákazník · prázdné = rychlý prodej" autocomplete="off" value="${E(accountQuery||(o.id==='bar'?'':o.name))}" aria-expanded="false" aria-controls="account-results"><div id="account-results" class="account-results" hidden></div></div>
         <div class="entry-counts" aria-label="Počet kusů pro další položku"><div class="entry-count-options"><span id="entry-count-label">${entryServingMl===20?'Počet malých panáků · 2 cl':'Počet'}</span>${btn('2 cl','smallShot',`entry-portion ${entryServingMl===20?'active':''}`,`aria-pressed="${entryServingMl===20}" aria-label="Malý panák 2 cl"`)}</div>${[1,2,3,4,5].map(n=>btn(n,'entryCount',`entry-count ${n===entryQuantity?'active':''}`,`data-id="${n}" aria-pressed="${n===entryQuantity}"`)).join('')}${btn(`<strong id="entry-quantity">${entryQuantity}×</strong><small>Jiný počet</small>`,'entryQuantity','entry-calculator','aria-label="Zadat počet kusů na velké klávesnici"')}</div>
       </div>
-      ${window.POSCloud&&o.paymentLock?`<div class="notice"><span>Účet je rezervovaný pro rozpracovanou platbu.</span>${btn('Zkontrolovat platbu','checkPayment','secondary')}</div>`:''}
+      <div id="payment-reservation">${window.POSCloud&&o.paymentLock?`<div class="notice"><span>Účet je rezervovaný pro rozpracovanou platbu.</span><div class="actions">${btn('Zrušit platbu','cancelPayment','secondary',canResume?'':'disabled')}${btn('Zkontrolovat platbu','checkPayment','secondary')}</div></div>`:''}</div>
       ${!sh?`<div class="notice"><span>Začni směnu a zadej hotovost v pokladně.</span>${btn('Otevřít směnu','openShift','shift-start')}</div>`:''}
       ${activeProducts.some(x=>x.price===null)?`<div class="notice"><span>${activeProducts.filter(x=>x.price===null).length} položek nemá cenu. Doplníš ji klepnutím.</span></div>`:''}
       <div class="search"><span class="search-icon">⌕</span><label class="sr-only" for="search">Hledat v nápojích</label><input id="search" type="search" placeholder="Hledat nápoj nebo kód…" autocomplete="off" value="${E(query)}"></div>
@@ -391,9 +399,24 @@ function finishPayment(r) {
   selectAccount(remaining?.lines.length?remaining.id:'bar');
   toast(`Zaplaceno · ${fmt(r.total)}${r.change?` · Vrátit ${fmt(r.change)}`:''}`);
 }
+function finishPaymentCancellation(orderId) {
+  window.paymentAbort?.abort();
+  if($('#dialog').open)$('#dialog').close();
+  view='pos';selectAccount(orderId);
+  toast('Platba zrušená. Položky zůstávají na účtu.');
+}
+function cancelPayment(o=structuredClone(getOrder())) {
+  if(!window.POSCloud||!o.paymentLock)return;
+  if(POSCloud.pending||POSCloud.busy){toast('Nejdřív ověř uloženou operaci. Platbu na terminálu neopakuj.',true);return;}
+  const {token}=o.paymentLock;
+  showDialog('Zrušit rozpracovanou platbu',`<p class="help"><strong>${E(o.name)}</strong> · ${fmt(o.paymentLock.purpose==='creditTopup'?o.paymentLock.amount:C.sum(o.lines))}. Položky zůstanou na účtu a můžeš dál markovat.</p><label class="inline-check"><input type="checkbox" name="checked" required>Potvrzuji, že host nezaplatil hotově ani kartou; stav terminálu jsem ověřil/a.</label>`,f=>{
+    if(!f.has('checked'))throw new Error('Nejdřív potvrď, že host nezaplatil.');
+    return command('cancelPayment',{orderId:o.id,paymentToken:token,terminalChecked:true,reason:'Zrušení omylem rozpracované platby po ověření obsluhou'});
+  },'Zrušit platbu a markovat',()=>finishPaymentCancellation(o.id));
+}
 async function pay(mode, resume=false) {
   const o=structuredClone(getOrder());if(!o.lines.length)return;
-  const delayReservation=window.POSCloud&&mode==='split'&&!resume;
+  const delayReservation=window.POSCloud&&mode!=='card'&&!resume;
   let reservation=window.POSCloud?(resume?o.paymentLock:delayReservation?null:await command('beginPayment',{orderId:o.id,revision:o.revision})):null;
   let cardReservation=null,cardReservationFailed=false;
   const operationId=crypto.randomUUID();let partial=mode==='split';
@@ -415,7 +438,13 @@ async function pay(mode, resume=false) {
       if(cardReservationFailed)throw new Error('Platbu se nepodařilo připravit. Zkontroluj uloženou operaci a otevři platbu znovu.');
       if(window.POSCloud&&!reservation) reservation=await command('beginPayment',{orderId:o.id,revision:o.revision});
       return await command('checkout',{orderId:o.id,revision:o.revision,operationId,paymentToken:reservation?.token,selected:selected(),mode:paymentMode,received:['card','credit'].includes(paymentMode)?0:C.money(f.get('received')),splitCash:paymentMode==='split'?C.money(f.get('splitCash')):0,cardConfirmed:f.has('cardConfirmed')});
-    },'Potvrdit zaplacení',finishPayment);
+    },'Potvrdit zaplacení',finishPayment,()=>{
+      if(window.POSCloud&&(POSCloud.pending||POSCloud.busy)){
+        $('#dialog').close();toast('Nejdřív ověř uloženou operaci. Platbu na terminálu neopakuj.',true);return;
+      }
+      if(reservation)cancelPayment({...o,paymentLock:reservation});else $('#dialog').close();
+    });
+  $('#dialog .dialog-actions .close-dialog').textContent='Zrušit platbu';
   const signal=window.paymentAbort.signal,form=$('#dialog-form');
   function prepareCard() {
     if(reservation||cardReservation||cardReservationFailed||signal.aborted)return;
@@ -545,14 +574,14 @@ const actions={
   minus:async id=>{await command('removeLine',{orderId:current,lineId:id,reason:'Oprava namarkování'},true);},
   newProduct:()=>editProduct(),editProduct:id=>editProduct(id),archiveProduct:id=>showDialog('Skrýt položku',`<p class="help">${E(state.products.find(x=>x.id===id)?.name)} zmizí z nabídky. Existující účty a doklady zůstanou.</p>`,()=>command('archiveProduct',{id}),'Skrýt'),
   checkPayment,
-  payCash:()=>pay('cash'),payCard:()=>pay('card'),payCredit:()=>pay('credit'),paySplit:()=>pay('split',!!getOrder().paymentLock),
+  payCash:()=>pay('cash'),payCard:()=>pay('card'),payCredit:()=>pay('credit'),paySplit:()=>pay('split',!!getOrder().paymentLock),cancelPayment:()=>cancelPayment(),
   receipt:id=>receiptDialog(state.receipts.find(x=>x.id===id)),
   restoreReceipt:receiptCorrection,
   refund:id=>{const r=state.receipts.find(x=>x.id===id);showDialog('Vrátit celý doklad',`<p class="help">Doklad ${E(r.number)} · ${fmt(r.total)}. Vrací se stejným způsobem jako původní platba. Vratka se uloží samostatně.</p>${field('Důvod vratky','reason','','required maxlength="120"')}${window.POSCloud?'<label class="inline-check"><input type="checkbox" name="restock">Zboží se fyzicky vrátilo a chci ho vrátit na sklad.</label>':''}${terminalRefundFields(r)}`,f=>command('refund',{receiptId:id,reason:f.get('reason'),cardConfirmed:f.has('cardConfirmed'),terminalReference:f.get('terminalReference'),restock:f.has('restock')}),'Zapsat vratku',receiptDialog);},
   cashMovement:()=>showDialog('Vklad / výběr hotovosti',`<div class="form-grid"><label class="field">Pohyb<select name="direction"><option value="1">Vklad do pokladny</option><option value="-1">Výběr z pokladny</option></select></label>${field('Částka v Kč','amount','','required inputmode="decimal"')}${field('Důvod','reason','','required maxlength="120"',true)}</div>`,f=>command('cashMovement',{amount:C.money(f.get('amount'))*Number(f.get('direction')),reason:f.get('reason')}),'Zapsat pohyb'),
   recipe:id=>POSStockUI.edit(state,id,showDialog,command,toast),
   resolveStock:id=>{const [receiptId,lineId]=id.split(':');showDialog('Doplnit skladový odpis','<p class="help">Provede se odpis podle nyní nastavené receptury k původnímu prodeji. U stejného řádku ho nelze provést dvakrát.</p>',()=>command('resolveStock',{receiptId,lineId}),'Provést odpis',()=>toast('Odpis byl zpracovaný.'));},
-  retryPending:async()=>{const r=await POSCloud.retry();state=r.state;render();if(r.result?.kind==='sale')finishPayment(r.result);else if(r.result?.restoredToOrderId||r.result?.type==='reassignReceipt')finishReceiptCorrection(r.result);else if(r.result?.kind)receiptDialog(r.result);else if(r.result?.type==='mergeOrders')finishMerge(r.result);else toast('Operace ověřená.');},
+  retryPending:async()=>{const pending=POSCloud.pending,r=await POSCloud.retry();state=r.state;render();if(r.result?.kind==='sale')finishPayment(r.result);else if(r.result?.restoredToOrderId||r.result?.type==='reassignReceipt')finishReceiptCorrection(r.result);else if(r.result?.kind)receiptDialog(r.result);else if(r.result?.type==='mergeOrders')finishMerge(r.result);else if(pending?.type==='cancelPayment')finishPaymentCancellation(pending.payload.orderId);else toast('Operace ověřená.');},
   invoiceUpload:()=>{ location.href='../pub_guru/invoice-capture.html'; },
   logout:()=>POSCloud.logout(),
   showBill:()=>$('.receipt')?.scrollIntoView({behavior:'smooth',block:'start'}),
@@ -571,12 +600,12 @@ document.addEventListener('click',async e=>{
   if(accountSearchOpen&&!e.target.closest('.account-finder')){accountSearchOpen=false;renderAccountResults();}
   if(e.target.closest('#nav-toggle')) { setNavigationOpen(!$('.topbar').classList.contains('menu-open')); return; }
   if(!e.target.closest('#main-nav'))setNavigationOpen(false);
-  const close=e.target.closest('.close-dialog');if(close){if(!submitting)$('#dialog').close();return;}
+  const close=e.target.closest('.close-dialog');if(close){closeDialog();return;}
   const tab=e.target.closest('[data-view]');if(tab){view=tab.dataset.view;setNavigationOpen(false, true);render();return;}
   const b=e.target.closest('[data-action]');if(!b||b.disabled||!state)return;
   const action=actions[b.dataset.action];if(action)try{await action(b.dataset.id,b);}catch(err){toast(err.message||'Operace se nepodařila.',true);}
 });
-$('#dialog').addEventListener('cancel',e=>{if(submitting)e.preventDefault();});
+$('#dialog').addEventListener('cancel',e=>{e.preventDefault();closeDialog();});
 $('#fullscreen').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();else toast('Na telefonu přidej pokladnu na plochu z nabídky prohlížeče.');}catch{toast('Prohlížeč celoobrazovkový režim nepovolil.',true);}});
 $('#restore-input').addEventListener('change',async e=>{
   const file=e.target.files?.[0];e.target.value='';if(!file)return;

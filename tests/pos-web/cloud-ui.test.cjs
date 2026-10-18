@@ -38,7 +38,7 @@ async function harness(seed=state=>state,role='owner'){
     if(holdNext){holdNext=false;await new Promise(resolve=>release=resolve);}
     if(requests.has(r.requestId))data=envelope(requests.get(r.requestId));
     else {try {const p={...r.payload};if(r.type==='checkout')p.operationId=r.requestId;const next=D.run(server,r.type,p,{id:user.id,role},[]);server=next.state;requests.set(r.requestId,next.result);data=envelope(next.result);} catch(e) {status=422;data={error:e.message,definitive:true};} }
-    if(dropNext){dropNext=false;throw new TypeError('Simulated lost response after successful commit');}
+    if(dropNext===true||dropNext===r.type){dropNext=false;throw new TypeError('Simulated lost response after successful commit');}
    }
    return {ok:status===200,status,json:async()=>data};
   };
@@ -46,7 +46,7 @@ async function harness(seed=state=>state,role='owner'){
   await until(()=>w.document.querySelector('.product'),'register open');
   const click=selector=>{const el=w.document.querySelector(selector);assert.ok(el,'Missing '+selector);el.click();};
   const submit=()=>w.document.querySelector('#dialog-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
-  return {dom,w,click,submit,get server(){return server;},calls,drop(){dropNext=true;},disconnect(){dropBefore=true;},hold(){holdNext=true;},release(){release?.();},external(type,payload){server=D.run(server,type,payload,{id:user.id,role:'owner'},[]).state;}};
+  return {dom,w,click,submit,get server(){return server;},calls,drop(type=true){dropNext=type;},disconnect(){dropBefore=true;},hold(){holdNext=true;},release(){release?.();},external(type,payload){server=D.run(server,type,payload,{id:user.id,role:'owner'},[]).state;}};
 }
 test('2cl toggle marks real piece counts, keeps plus/quantity edits small and splits only selected small shots',{concurrency:false},async()=>{
  const h=await harness(s=>{C.execute(s,'openShift',{opening:0});return s;});try{
@@ -153,7 +153,7 @@ test('online UI survives a lost response without adding an item twice and comple
    const additions=h.calls.filter(x=>x.type==='addLine');assert.equal(additions[1].requestId,additions[2].requestId);
    h.click('[data-action="payCash"]');
    await until(()=>h.w.document.querySelector('[name="received"]'),'payment dialog');
-   assert.ok(h.server.orders[0].paymentLock,'reserved before terminal/cash prompt');
+   assert.equal(h.server.orders[0].paymentLock,undefined,'cash reserves only at confirmation');
    h.submit();await until(()=>h.server.receipts.length===1&&!h.server.orders[0].lines.length,'paid');
    assert.equal(h.w.document.querySelector('#dialog').open,false);
    assert.match(h.w.document.querySelector('#toast').textContent,/Zaplaceno/);
@@ -161,11 +161,78 @@ test('online UI survives a lost response without adding an item twice and comple
    assert.match(h.w.document.querySelector('#save-state').textContent,/Potvrzeno/);
   }finally{h.dom.window.close();}
 });
-test('closing payment dialog preserves reservation for explicit recovery; stock and settings screens work',{concurrency:false},async()=>{
+test('cash payment can be abandoned without reserving or changing the quick account',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});C.execute(s,'addLine',{orderId:'bar',productId:'agnis-2810',quantity:2});return s;});try{
+  const before=structuredClone(h.server);h.click('[data-action="payCash"]');await until(()=>h.w.document.querySelector('[name="received"]'),'cash dialog');
+  assert.equal(h.server.orders[0].paymentLock,undefined,'opening cash must not reserve the account');
+  h.click('#dialog .dialog-actions .close-dialog');assert.equal(h.w.document.querySelector('#dialog').open,false);
+  assert.deepEqual(h.server,before);assert.equal(h.calls.filter(c=>c.type==='beginPayment').length,0);
+  h.click('.line [data-action="add"]');await until(()=>h.server.orders[0].lines[0].quantity===3,'quick account remains markable');assert.equal(h.server.receipts.length,0);
+ }finally{h.dom.window.close();}
+});
+test('legacy quick-sale reservation has a direct cancellation that keeps all items and financial records',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});C.execute(s,'addLine',{orderId:'bar',productId:'agnis-2810',quantity:2});return s;});try{
+  h.external('beginPayment',{orderId:'bar',revision:h.server.orders[0].revision});await h.w.POSCloud.refresh();
+  const before=structuredClone(h.server);h.click('[data-action="cancelPayment"]');
+  assert.equal(h.w.document.querySelector('[name="operation"]'),null,'no hidden cancellation option');
+  h.submit();await until(()=>/potvrď/.test(h.w.document.querySelector('#dialog-error').textContent),'unchecked cancellation rejected');
+  assert.deepEqual(h.server,before);assert.equal(h.calls.filter(c=>c.type==='cancelPayment').length,0);
+  h.w.document.querySelector('[name="checked"]').checked=true;h.hold();h.submit();h.submit();await until(()=>h.w.POSCloud.busy,'cancellation in progress');
+  h.w.document.querySelector('#dialog').dispatchEvent(new h.w.Event('cancel',{cancelable:true}));assert.equal(h.w.document.querySelector('#dialog').open,true,'cannot dismiss in-flight command');h.release();
+  await until(()=>!h.w.document.querySelector('#dialog').open&&!h.w.POSCloud.busy,'quick sale unlocked');
+  assert.equal(h.server.orders[0].paymentLock,undefined);assert.deepEqual(h.server.orders[0].lines,before.orders[0].lines);
+  for(const key of ['receipts','creditLedger','stockIssues','shifts'])assert.deepEqual(h.server[key],before[key],key+' unchanged');
+  assert.equal(h.server.audit.filter(a=>a.type==='cancelPayment').length,1);assert.equal(h.calls.filter(c=>c.type==='cancelPayment').length,1);
+  h.click('.line [data-action="add"]');await until(()=>h.server.orders[0].lines[0].quantity===3,'marking after cancellation');
+ }finally{h.dom.window.close();}
+});
+for(const close of ['footer','header','escape'])test('card payment '+close+' offers cancellation instead of silently leaving a blocked quick sale',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});C.execute(s,'addLine',{orderId:'bar',productId:'agnis-2810'});return s;});try{
+  h.click('[data-action="payCard"]');await until(()=>h.w.document.querySelector('[name="cardConfirmed"]'),'card payment');
+  const before=structuredClone(h.server);
+  if(close==='escape')h.w.document.querySelector('#dialog').dispatchEvent(new h.w.Event('cancel',{cancelable:true}));else h.click('#dialog '+(close==='footer'?'.dialog-actions':'.dialog-head')+' .close-dialog');
+  assert.equal(h.w.document.querySelector('#dialog-title').textContent,'Zrušit rozpracovanou platbu');assert.deepEqual(h.server,before);
+  h.w.document.querySelector('[name="checked"]').checked=true;h.submit();await until(()=>!h.w.document.querySelector('#dialog').open,'card cancellation');
+  assert.equal(h.server.orders[0].paymentLock,undefined);assert.deepEqual(h.server.orders[0].lines,before.orders[0].lines);assert.equal(h.server.receipts.length,0);
+ }finally{h.dom.window.close();}
+});
+for(const timing of ['before','after'])test('cancellation interrupted '+timing+' commit recovers its UUID once and never creates a sale',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});C.execute(s,'addLine',{orderId:'bar',productId:'agnis-2810',quantity:2});return s;});try{
+  h.external('beginPayment',{orderId:'bar',revision:h.server.orders[0].revision});await h.w.POSCloud.refresh();
+  const lines=structuredClone(h.server.orders[0].lines);h.click('[data-action="cancelPayment"]');h.w.document.querySelector('[name="checked"]').checked=true;
+  timing==='before'?h.disconnect():h.drop();h.submit();await until(()=>h.w.POSCloud.pending&&!h.w.POSCloud.busy,'uncertain cancellation');
+  const pending=structuredClone(h.w.POSCloud.pending);assert.equal(pending.type,'cancelPayment');
+  assert.equal(!!h.server.orders[0].paymentLock,timing==='before');assert.equal(h.w.document.querySelector('[data-action="payCash"]').disabled,true);
+  h.click('[data-action="retryPending"]');await until(()=>!h.w.POSCloud.pending&&!h.w.document.querySelector('#dialog').open,'cancellation recovered');
+  assert.equal(h.server.orders[0].paymentLock,undefined);assert.deepEqual(h.server.orders[0].lines,lines);assert.equal(h.server.receipts.length,0);
+  assert.equal(h.server.audit.filter(a=>a.type==='cancelPayment').length,1);const calls=h.calls.filter(c=>c.type==='cancelPayment');assert.equal(calls.length,2);assert.ok(calls.every(c=>c.requestId===pending.requestId));
+ }finally{h.dom.window.close();}
+});
+test('old cancellation cannot release a new payment reserved on another device',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});C.execute(s,'addLine',{orderId:'bar',productId:'agnis-2810'});return s;});try{
+  h.external('beginPayment',{orderId:'bar',revision:h.server.orders[0].revision});await h.w.POSCloud.refresh();h.click('[data-action="cancelPayment"]');
+  const oldToken=h.server.orders[0].paymentLock.token;h.external('cancelPayment',{orderId:'bar',paymentToken:oldToken,terminalChecked:true,reason:'TEST other device'});h.external('beginPayment',{orderId:'bar',revision:h.server.orders[0].revision});
+  const before=structuredClone(h.server);h.w.document.querySelector('[name="checked"]').checked=true;h.submit();await until(()=>/Rezervace/.test(h.w.document.querySelector('#dialog-error').textContent),'stale token rejected');
+  assert.deepEqual(h.server,before);assert.notEqual(h.server.orders[0].paymentLock.token,oldToken);
+ }finally{h.dom.window.close();}
+});
+test('switching accounts refreshes cancellation controls for the selected reservation without rebuilding products',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});const o=C.execute(s,'newOrder',{name:'TEST Locked Customer'});C.execute(s,'addLine',{orderId:o.id,productId:'agnis-2810'});return s;});try{
+  const o=h.server.orders.find(o=>o.name==='TEST Locked Customer');h.external('beginPayment',{orderId:o.id,revision:o.revision});await h.w.POSCloud.refresh();
+  const grid=h.w.document.querySelector('#products');assert.equal(h.w.document.querySelector('[data-action="cancelPayment"]'),null);
+  h.click('[data-action="account"][data-id="'+o.id+'"]');assert.ok(h.w.document.querySelector('[data-action="cancelPayment"]'));assert.equal(h.w.document.querySelector('#products'),grid);
+  h.click('[data-action="account"][data-id="bar"]');assert.equal(h.w.document.querySelector('[data-action="cancelPayment"]'),null);
+  h.click('[data-action="account"][data-id="'+o.id+'"]');h.click('[data-action="cancelPayment"]');h.w.document.querySelector('[name="checked"]').checked=true;h.submit();
+  await until(()=>!h.w.document.querySelector('#dialog').open,'customer unlocked');assert.equal(h.server.orders.find(x=>x.id===o.id).paymentLock,undefined);assert.equal(h.w.document.querySelector('[data-action="cancelPayment"]'),null);
+  assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,o.name);assert.equal(h.server.orders.find(x=>x.id===o.id).lines.length,1);
+ }finally{h.dom.window.close();}
+});
+test('closing card payment offers explicit cancellation; stock and settings screens work',{concurrency:false},async()=>{
   const h=await harness();try{
    h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
    h.click('.product[data-action="add"]');await until(()=>h.w.document.querySelector('.quantity-tap'),'line');h.click('[data-action="payCard"]');await until(()=>h.w.document.querySelector('[name="cardConfirmed"]'),'payment dialog');
    h.click('.close-dialog');assert.ok(h.server.orders[0].paymentLock);
+   assert.equal(h.w.document.querySelector('#dialog-title').textContent,'Zrušit rozpracovanou platbu');h.click('.close-dialog');
    h.click('[data-action="checkPayment"]');const form=h.w.document.querySelector('#dialog-form');form.elements.operation.value='cancel';form.elements.checked.checked=true;h.submit();await until(()=>!h.server.orders[0].paymentLock,'payment reservation cleared');
    h.click('[data-view="stock"]');assert.ok(h.w.document.querySelector('#recipe-search'));
    assert.match(h.w.document.querySelector('#app').textContent,/0 \/ 208/);
@@ -350,7 +417,7 @@ test('recovering a named checkout returns to quick sale once, or preserves items
    h.click('.product[data-action="add"]');await until(()=>h.server.orders.find(o=>o.id===id).lines.length===1,'named item');
    const productId=h.server.orders.find(o=>o.id===id).lines[0].productId;
    h.click('[data-action="payCash"]');await until(()=>h.w.document.querySelector('[name="received"]'),'payment');
-   h.drop();h.submit();await until(()=>h.w.POSCloud.pending?.type==='checkout'&&!h.w.POSCloud.busy&&!h.w.document.querySelector('#dialog-submit').disabled,'checkout awaiting recovery');
+   h.drop('checkout');h.submit();await until(()=>h.w.POSCloud.pending?.type==='checkout'&&!h.w.POSCloud.busy&&!h.w.document.querySelector('#dialog-submit').disabled,'checkout awaiting recovery');
    assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Stůl 12');
    if(laterItem)h.external('addLine',{orderId:id,productId});
    h.click('.close-dialog');h.click('[data-action="retryPending"]');
@@ -568,18 +635,18 @@ test('back from a mistaken whole payment permits a direct split without reservin
  const h=await harness();try{
   await startShift(h);h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines[0]?.quantity===3,'three marked');
   h.click('[data-action="payCash"]');await until(()=>h.w.document.querySelector('[name="received"]'),'whole cash dialog');
-  const token=h.server.orders[0].paymentLock.token;h.click('.close-dialog');assert.equal(h.server.receipts.length,0);
+  assert.equal(h.server.orders[0].paymentLock,undefined);h.click('.close-dialog');assert.equal(h.server.receipts.length,0);
   assert.equal(h.w.document.querySelector('[data-action="paySplit"]').disabled,false);h.click('[data-action="paySplit"]');
   await until(()=>h.w.document.querySelector('.payment-item'),'split resume');assert.equal(h.w.document.querySelector('#dialog-title').textContent,'Rozdělit účet');
   h.click('.payment-item');h.click('[data-qty="1"]');h.submit();await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'one piece cash');
   assert.equal(h.server.orders[0].lines[0].quantity,2);assert.equal(h.calls.filter(c=>c.type==='beginPayment').length,1);
-  assert.equal(h.calls.find(c=>c.type==='checkout').payload.paymentToken,token);
+  assert.ok(h.calls.find(c=>c.type==='checkout').payload.paymentToken,'confirmation uses a server reservation');
  }finally{h.dom.window.close();}
 });
 test('a lost reservation response freezes payment until its result is recovered, then allows a direct split',{concurrency:false},async()=>{
  const h=await harness();try{
   await startShift(h);h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines[0]?.quantity===3,'three marked');
-  h.drop();h.click('[data-action="payCash"]');await until(()=>h.w.POSCloud.pending&&!h.w.POSCloud.busy,'lost reservation');
+  h.drop();h.click('[data-action="payCard"]');await until(()=>h.w.POSCloud.pending&&!h.w.POSCloud.busy,'lost reservation');
   assert.equal(h.w.document.querySelector('[data-action="paySplit"]').disabled,true);const id=h.w.POSCloud.pending.requestId;
   h.click('[data-action="retryPending"]');await until(()=>!h.w.POSCloud.pending,'reservation recovered');
   h.click('[data-action="paySplit"]');await until(()=>h.w.document.querySelector('.payment-item'),'direct split');

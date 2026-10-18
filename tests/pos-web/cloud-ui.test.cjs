@@ -216,6 +216,17 @@ test('old cancellation cannot release a new payment reserved on another device',
   assert.deepEqual(h.server,before);assert.notEqual(h.server.orders[0].paymentLock.token,oldToken);
  }finally{h.dom.window.close();}
 });
+test('switching accounts refreshes cancellation controls for the selected reservation without rebuilding products',{concurrency:false},async()=>{
+ const h=await harness(s=>{C.execute(s,'openShift',{opening:0});const o=C.execute(s,'newOrder',{name:'TEST Locked Customer'});C.execute(s,'addLine',{orderId:o.id,productId:'agnis-2810'});return s;});try{
+  const o=h.server.orders.find(o=>o.name==='TEST Locked Customer');h.external('beginPayment',{orderId:o.id,revision:o.revision});await h.w.POSCloud.refresh();
+  const grid=h.w.document.querySelector('#products');assert.equal(h.w.document.querySelector('[data-action="cancelPayment"]'),null);
+  h.click('[data-action="account"][data-id="'+o.id+'"]');assert.ok(h.w.document.querySelector('[data-action="cancelPayment"]'));assert.equal(h.w.document.querySelector('#products'),grid);
+  h.click('[data-action="account"][data-id="bar"]');assert.equal(h.w.document.querySelector('[data-action="cancelPayment"]'),null);
+  h.click('[data-action="account"][data-id="'+o.id+'"]');h.click('[data-action="cancelPayment"]');h.w.document.querySelector('[name="checked"]').checked=true;h.submit();
+  await until(()=>!h.w.document.querySelector('#dialog').open,'customer unlocked');assert.equal(h.server.orders.find(x=>x.id===o.id).paymentLock,undefined);assert.equal(h.w.document.querySelector('[data-action="cancelPayment"]'),null);
+  assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,o.name);assert.equal(h.server.orders.find(x=>x.id===o.id).lines.length,1);
+ }finally{h.dom.window.close();}
+});
 test('closing card payment offers explicit cancellation; stock and settings screens work',{concurrency:false},async()=>{
   const h=await harness();try{
    h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');

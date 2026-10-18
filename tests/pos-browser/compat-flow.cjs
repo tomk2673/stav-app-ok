@@ -34,7 +34,7 @@ async function until(page,predicate,arg){
     if(await page.evaluate(predicate,arg))return;
     await new Promise(r=>setTimeout(r,50));
   }
-  const diagnostic=await page.evaluate(()=>({dialogError:document.querySelector('#dialog-error')?.textContent,saveState:document.querySelector('#save-state')?.textContent,pending:!!window.POSCloud?.pending}));
+  const diagnostic=await page.evaluate(()=>({dialogError:document.querySelector('#dialog-error')?.textContent,dialogTitle:document.querySelector('#dialog-title')?.textContent,dialogOpen:document.querySelector('#dialog')?.open,account:document.querySelector('.receipt-head h2')?.textContent,saveState:document.querySelector('#save-state')?.textContent,pending:!!window.POSCloud?.pending}));
   throw new Error('Timed out waiting for browser state: '+predicate.toString()+' '+JSON.stringify(diagnostic));
 }
 function fixture(){

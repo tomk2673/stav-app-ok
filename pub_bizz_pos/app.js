@@ -29,6 +29,8 @@ function renderPOSFast(){
   const accounts=live.querySelector('.accounts'),receipt=live.querySelector('.receipt');
   if(accounts&&nextAccounts)accounts.replaceWith(nextAccounts);
   if(receipt&&nextReceipt)receipt.replaceWith(nextReceipt);
+  const notice=live.querySelector('#payment-reservation'),nextNotice=fresh.querySelector('#payment-reservation');
+  if(notice&&nextNotice)notice.replaceWith(nextNotice);
   updateEntryContext();
   if(accountSearchOpen)renderAccountResults();
   const bill=$('#mobile-bill');if(bill)bill.innerHTML=`<span>${E(getOrder().name)} · ${getOrder().lines.reduce((n,l)=>n+l.quantity,0)} ks</span><strong>${fmt(C.sum(getOrder().lines))} →</strong>`;
@@ -168,7 +170,7 @@ function renderPOS() {
         <div class="account-finder"><label class="sr-only" for="account-search">Stůl nebo zákazník; prázdné pole znamená rychlý prodej</label><input id="account-search" type="search" placeholder="Stůl / zákazník · prázdné = rychlý prodej" autocomplete="off" value="${E(accountQuery||(o.id==='bar'?'':o.name))}" aria-expanded="false" aria-controls="account-results"><div id="account-results" class="account-results" hidden></div></div>
         <div class="entry-counts" aria-label="Počet kusů pro další položku"><div class="entry-count-options"><span id="entry-count-label">${entryServingMl===20?'Počet malých panáků · 2 cl':'Počet'}</span>${btn('2 cl','smallShot',`entry-portion ${entryServingMl===20?'active':''}`,`aria-pressed="${entryServingMl===20}" aria-label="Malý panák 2 cl"`)}</div>${[1,2,3,4,5].map(n=>btn(n,'entryCount',`entry-count ${n===entryQuantity?'active':''}`,`data-id="${n}" aria-pressed="${n===entryQuantity}"`)).join('')}${btn(`<strong id="entry-quantity">${entryQuantity}×</strong><small>Jiný počet</small>`,'entryQuantity','entry-calculator','aria-label="Zadat počet kusů na velké klávesnici"')}</div>
       </div>
-      ${window.POSCloud&&o.paymentLock?`<div class="notice"><span>Účet je rezervovaný pro rozpracovanou platbu.</span><div class="actions">${btn('Zrušit platbu','cancelPayment','secondary',canResume?'':'disabled')}${btn('Zkontrolovat platbu','checkPayment','secondary')}</div></div>`:''}
+      <div id="payment-reservation">${window.POSCloud&&o.paymentLock?`<div class="notice"><span>Účet je rezervovaný pro rozpracovanou platbu.</span><div class="actions">${btn('Zrušit platbu','cancelPayment','secondary',canResume?'':'disabled')}${btn('Zkontrolovat platbu','checkPayment','secondary')}</div></div>`:''}</div>
       ${!sh?`<div class="notice"><span>Začni směnu a zadej hotovost v pokladně.</span>${btn('Otevřít směnu','openShift','shift-start')}</div>`:''}
       ${activeProducts.some(x=>x.price===null)?`<div class="notice"><span>${activeProducts.filter(x=>x.price===null).length} položek nemá cenu. Doplníš ji klepnutím.</span></div>`:''}
       <div class="search"><span class="search-icon">⌕</span><label class="sr-only" for="search">Hledat v nápojích</label><input id="search" type="search" placeholder="Hledat nápoj nebo kód…" autocomplete="off" value="${E(query)}"></div>

@@ -3,10 +3,12 @@ import './catalog.js';
 import './core.js';
 import './loyalty.js';
 import './marking.js';
+import './sync.js';
 import './server-domain.js';
 
 const C = (globalThis as any).POSCore;
 const Domain = (globalThis as any).POSServerDomain;
+const Sync = (globalThis as any).POSSync;
 const url = Deno.env.get('SUPABASE_URL')!;
 const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const db = createClient(url, serviceKey, {auth:{persistSession:false,autoRefreshToken:false}});
@@ -23,13 +25,13 @@ async function stateFor(venue:any) {
 async function stockFor(venue:any) {
   return await checked(db.from('products').select('id,name,unit_mode,volume_ml,aliases,archived_at').eq('organization_id',venue.organization_id).is('archived_at',null).order('name').limit(5000));
 }
-async function snapshot(venue:any, result:any=null, knownStock:any=null) {
+async function snapshot(venue:any, result:any=null, knownStock:any=null, sync:any=null) {
   const [state,stock,issues] = await Promise.all([
     stateFor(venue),knownStock||stockFor(venue),
     db.from('pos_stock_lines').select('*',{count:'exact'}).eq('venue_id',venue.id).in('status',['missing_recipe','shortage','awaiting_stock']).order('updated_at',{ascending:false}).limit(200)
   ]);
   if(issues.error) throw issues.error;
-  return {state,stock,issues:issues.data,issueCount:issues.count,result,role:venue.role,venue,markingProtocol:1};
+  return {...Sync.encode(state,sync),stock,issues:issues.data,issueCount:issues.count,result,role:venue.role,venue,markingProtocol:1,syncProtocol:1};
 }
 
 Deno.serve(async (req: Request) => {
@@ -56,6 +58,9 @@ Deno.serve(async (req: Request) => {
     const venue=venues.find((v:any)=>v.id===venueId);
     if(!venue) return reply({error:'K této provozovně nemáš přístup.'},403);
     if(venue.currency!=='CZK') return reply({error:'Tato pokladna pracuje v Kč. Provozovna má jinou měnu.'},400);
+    let sync=body?.sync||null;
+    if(req.method==='GET'&&query.get('sync')){try{sync=JSON.parse(query.get('sync')!);}catch{/* An invalid cursor gets a full snapshot. */}}
+    if(!Sync.valid(sync)||sync.venueId!==venue.id)sync=null;
     if(req.method==='GET') {
       const requestId=query.get('requestId');
       if(requestId) {
@@ -64,7 +69,11 @@ Deno.serve(async (req: Request) => {
         if(previous && previous.actor_id!==user.id) return reply({error:'Operace patří jiné obsluze.'},403);
         return reply({committed:!!previous,result:previous?.result||null});
       }
-      return reply(await snapshot(venue));
+      if(sync&&!query.has('metadata')){
+        const row:any=await checked(db.from('pos_registers').select('revision').eq('venue_id',venue.id).maybeSingle());
+        if(row?.revision===sync.revision)return reply({unchanged:true,revision:row.revision,syncFrom:sync,role:venue.role,venue,markingProtocol:1,syncProtocol:1});
+      }
+      return reply(await snapshot(venue,null,null,sync));
     }
     if(!uuid(body.requestId)||typeof body.type!=='string'||!body.payload||typeof body.payload!=='object'||Array.isArray(body.payload)) return reply({error:'Neplatná operace.'},400);
     if(body.payload.marking&&body.payload.marking.operationId!==body.requestId)return reply({error:'Nesouhlasí identifikátor markování.',definitive:true},422);
@@ -72,7 +81,7 @@ Deno.serve(async (req: Request) => {
     const previous:any=await checked(db.from('pos_requests').select('request_hash,actor_id,result').eq('venue_id',venue.id).eq('request_id',body.requestId).maybeSingle());
     if(previous) {
       if(previous.request_hash!==hash||previous.actor_id!==user.id) return reply({error:'Identifikátor operace byl použit jinak.'},409);
-      return reply(await snapshot(venue,previous.result));
+      return reply(await snapshot(venue,previous.result,null,sync));
     }
     if(venue.role==='accountant')return reply({error:'Tento účet má pouze oprávnění ke čtení.'},403);
     const stock:any=await stockFor(venue);
@@ -86,7 +95,7 @@ Deno.serve(async (req: Request) => {
       try {command=Domain.run(s,body.type,payload,{id:user.id,role:venue.role},stock,new Date().toISOString(),receiptStock);}
       catch(e) {
         const already:any=await checked(db.from('pos_requests').select('request_hash,actor_id,result').eq('venue_id',venue.id).eq('request_id',body.requestId).maybeSingle());
-        if(already?.request_hash===hash && already.actor_id===user.id) return reply(await snapshot(venue,already.result,stock));
+        if(already?.request_hash===hash && already.actor_id===user.id) return reply(await snapshot(venue,already.result,stock,sync));
         if(body.payload.marking&&(globalThis as any).POSMarking.types.has(body.type)) {
           // Consume the UUID with a durable rejection under the same CAS/ledger.
           // A concurrent retry can never turn a dismissed conflict into a sale.
@@ -97,12 +106,12 @@ Deno.serve(async (req: Request) => {
         p_venue:venue.id,p_actor:user.id,p_request:body.requestId,p_hash:hash,p_expected:s.revision,
         p_type:body.type,p_state:command.state,p_result:command.result ?? null
       }));
-      if(!commit.conflict) return reply(await snapshot(venue,commit.result,stock));
+      if(!commit.conflict) return reply(await snapshot(venue,commit.result,stock,sync));
       // Another device committed first. Recheck deduplication before executing again.
       const duplicate:any=await checked(db.from('pos_requests').select('request_hash,actor_id,result').eq('venue_id',venue.id).eq('request_id',body.requestId).maybeSingle());
       if(duplicate) {
         if(duplicate.request_hash!==hash||duplicate.actor_id!==user.id) return reply({error:'Identifikátor operace byl použit jinak.'},409);
-        return reply(await snapshot(venue,duplicate.result,stock));
+        return reply(await snapshot(venue,duplicate.result,stock,sync));
       }
     }
     return reply({error:'Pokladna je právě vytížená. Ověř uloženou operaci znovu.'},503);

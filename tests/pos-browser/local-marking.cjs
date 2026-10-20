@@ -1,6 +1,7 @@
 'use strict';
 // Real Chromium/WebKit, real SDK, real PWA/cache/storage. All remote traffic is fictional.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),http=require('node:http'),cp=require('node:child_process');
+const S=require('../../pub_bizz_pos/sync.js');
 const C=require('../../pub_bizz_pos/core.js'),D=require('../../pub_bizz_pos/server-domain.js'),M=require('../../pub_bizz_pos/marking.js');
 const root=path.resolve(__dirname,'../..'),api=fs.readFileSync(path.join(root,'pub_bizz_pos/config.js'),'utf8').match(/url: '([^']+)'/)[1];
 const baseRef=process.env.POS_MARKING_BASE_REF||'82d251ac2955bf6dd96b01f03a61155678a0b964';
@@ -40,15 +41,15 @@ function fixture(){
  const user={id:crypto.randomUUID(),email:'test@example.test',aud:'authenticated',role:'authenticated',app_metadata:{provider:'email'},user_metadata:{},identities:[]};
  const venue={id:crypto.randomUUID(),organization_id:crypto.randomUUID(),name:'TEST ONLY',currency:'CZK',role:'owner'};
  let state=C.initial();state.venueId=venue.id;C.execute(state,'openShift',{opening:0});const a=C.execute(state,'newOrder',{name:'TEST A'}),b=C.execute(state,'newOrder',{name:'TEST B'});
- const requests=new Map(),calls=[];let drop=false,dropId=null,delay=0;
+ const requests=new Map(),calls=[],responses=[];let drop=false,dropId=null,delay=0;
  const session=()=>{const exp=Math.floor(Date.now()/1000)+3600;return {access_token:[{alg:'HS256',typ:'JWT'},{sub:user.id,aud:'authenticated',role:'authenticated',exp}].map(x=>Buffer.from(JSON.stringify(x)).toString('base64url')).join('.')+'.test',refresh_token:'test-only',token_type:'bearer',expires_at:exp,expires_in:3600,user};};
- const snapshot=result=>({state:structuredClone(state),result,stock:[],issues:[],issueCount:0,role:'owner',venue,markingProtocol:1});
+ const snapshot=(result,sync=null)=>({...S.encode(structuredClone(state),sync),result,stock:[],issues:[],issueCount:0,role:'owner',venue,markingProtocol:1,syncProtocol:1});
  async function service(pathname,query,method,r){
-  const respond=(body,status=200)=>({body,status});
+  const respond=(body,status=200)=>{responses.push({kind:body.delta?'delta':body.unchanged?'unchanged':body.state?'full':'context',characters:JSON.stringify(body).length});return {body,status};};
   if(pathname==='/auth/v1/user')return respond(user);
   if(pathname==='/auth/v1/token')return respond(session());
   assert.equal(pathname,'/functions/v1/pub-bizz-pos');
-  if(method==='GET')return respond(query.has('venueId')?snapshot(null):{user,venues:[venue]});
+  if(method==='GET')return respond(query.has('venueId')?snapshot(null,query.get('sync')?JSON.parse(query.get('sync')):null):{user,venues:[venue]});
   calls.push(r);if(delay)await pause(delay);
   let result=requests.get(r.requestId);
   if(!requests.has(r.requestId)){
@@ -56,9 +57,9 @@ function fixture(){
    catch(e){if(!r.payload.marking)return respond({error:e.message,definitive:true},422);next=M.reject(state,r.type,r.payload,e.message,user.id);}
    state=next.state;result=next.result;requests.set(r.requestId,result);
   }
-  if(drop){drop=false;dropId=r.requestId;}if(dropId===r.requestId)throw new Error('Test lost acknowledgment');return respond(snapshot(result));
+  if(drop){drop=false;dropId=r.requestId;}if(dropId===r.requestId)throw new Error('Test lost acknowledgment');return respond(snapshot(result,r.sync));
  }
- return {key:crypto.randomUUID(),networkOnline:true,user,venue,a:a.id,b:b.id,calls,requests,session,service,get state(){return state;},set delay(ms){delay=ms;},drop(){drop=true;},resume(){dropId=null;drop=false;},external(type,p){state=D.run(state,type,p,{id:user.id,role:'owner'},[]).state;}};
+ return {key:crypto.randomUUID(),networkOnline:true,user,venue,a:a.id,b:b.id,calls,requests,responses,session,service,get state(){return state;},set delay(ms){delay=ms;},drop(){drop=true;},resume(){dropId=null;drop=false;},external(type,p){state=D.run(state,type,p,{id:user.id,role:'owner'},[]).state;}};
 }
 async function open(browser,base,mode,width,f=fixture(),pwa=false){
  const context=await browser.newContext({viewport:{width,height:850},serviceWorkers:pwa?'allow':'block'});fixtures.set(f.key,f);
@@ -133,9 +134,11 @@ async function largeHistory(browser,base){
  const h=await open(browser,base,'after',390,f);try{
   const bytes=JSON.stringify(f.state).length;assert.ok(bytes>3000000);f.delay=600;
   const paintMs=await paint(h.page);await h.settled();
+  await h.page.evaluate(()=>POSCloud.refresh());
+  const delta=f.responses.find(r=>r.kind==='delta'),idle=f.responses.filter(r=>r.kind==='unchanged').at(-1);assert.ok(delta&&delta.characters<bytes/20);assert.ok(idle&&idle.characters<1000);
   assert.equal(f.state.orders[0].lines[0].quantity,1);
   const storageMax=await h.page.evaluate(()=>Math.max(...Object.values(localStorage).map(v=>v.length)));assert.ok(storageMax<20000,'large confirmed history must never consume localStorage journal space');
-  return {snapshotCharacters:bytes,paintMs,localStorageMaxCharacters:storageMax,confirmedInIndexedDB:true};
+  return {snapshotCharacters:bytes,paintMs,localStorageMaxCharacters:storageMax,confirmedInIndexedDB:true,incrementalCharacters:delta.characters,idleCharacters:idle.characters};
  }finally{await h.close();}
 }
 (async()=>{

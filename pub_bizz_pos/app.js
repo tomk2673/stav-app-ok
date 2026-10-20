@@ -69,7 +69,7 @@ function connection() {
   const pending=cloud.pending,warning=$('#sync-warning');
   warning.hidden=!state||(!pending&&online&&!cloud.storageError&&!cloud.authBlocked);
   if(strict)warning.innerHTML=`<span><strong>Ověřujeme uloženou operaci.</strong> Platbu na terminálu neopakuj.</span>${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}`;
-  else if(marking.length)warning.innerHTML=`<span><strong>${cloud.authBlocked?'Ověř přihlášení a oprávnění':conflicts.length?`${conflicts.length} konfliktů ke kontrole`:cloud.busy?'Odesílám markování':'Uloženo v zařízení'}</strong> · ${marking.length} změn čeká na potvrzení.</span><div class="sync-actions">${btn('Zobrazit','syncDetails','secondary')}${!cloud.busy?btn('Ověřit','retryPending','secondary'):''}</div>`;
+  else if(marking.length)warning.innerHTML=`<span><strong>${E(cloud.serviceError|| (cloud.authBlocked?'Ověř přihlášení a oprávnění':conflicts.length?`${conflicts.length} konfliktů ke kontrole`:cloud.busy?'Odesílám markování':'Uloženo v zařízení'))}</strong> · ${marking.length} změn čeká na potvrzení.</span><div class="sync-actions">${btn('Zobrazit','syncDetails','secondary')}${!cloud.busy?btn('Ověřit','retryPending','secondary'):''}</div>`;
   else warning.innerHTML=`<span>${E(cloud.storageError|| (cloud.authBlocked?'Přístup vyžaduje nové přihlášení. Čekající data zůstávají v zařízení.':'Server není dostupný. Markování se ukládá v zařízení; placení vyžaduje spojení.'))}</span>`;
   if(state){$('#save-state').textContent=conflicts.length?'Konflikt ke kontrole':marking.length?`${marking.length} změn v zařízení`:cloud.busy?'Ukládám na server…':pending?'Čeká na ověření':online?'Potvrzeno serverem':'Místní · bez spojení';$('#save-state').classList.toggle('error',!!conflicts.length||!!strict||!!cloud.storageError);}
   const writeActions=['add','minus','quantityPad','restoreReceipt','newOrder','renameOrder','endVisit','deleteOrder','mergeOrders','openShift','payCash','payCard','payCredit','paySplit','cancelPayment','creditTopup','creditReverse','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
@@ -89,7 +89,7 @@ function syncDetails() {
 function render() {
   if (!state) return;
   const focused=document.activeElement?.id, selection=document.activeElement?.selectionStart;
-  if (!state.orders.some(x => x.id === current)) current = 'bar';
+  if (!state.orders.some(x => x.id === current)) setCurrentAccount('bar');
   $('#venue').textContent = state.settings.venue;
   const sh = C.activeShift(state);
   $('#shift-label').textContent = sh ? `Směna od ${date(sh.openedAt)} · ${sh.operator}` : 'Směna není otevřená';
@@ -136,8 +136,8 @@ function bindAccountSearch() {
   input.addEventListener('input', e => {
     accountQuery = e.target.value; accountSearchOpen = true;
     if(!accountQuery.trim()&&current!=='bar'){
-      try{window.POSCloud?.selectOrder('bar');}catch(err){accountQuery=getOrder().name;input.value=accountQuery;toast(err.message,true);return;}
-      current='bar';renderPOSFast();renderProducts();
+      try{setCurrentAccount('bar');}catch(err){accountQuery=getOrder().name;input.value=accountQuery;toast(err.message,true);return;}
+      renderPOSFast();renderProducts();
     }
     renderAccountResults();
   });
@@ -170,9 +170,12 @@ function resizePOSWorkspace() {
   const layout=$('.pos-layout');if(!layout)return;
   layout.style.setProperty('--pos-height',`${Math.max(280,window.innerHeight-Math.max(10,layout.getBoundingClientRect().top)-16)}px`);
 }
+function setCurrentAccount(id) {
+  window.POSCloud?.selectOrder(id);current=id;
+}
 function selectAccount(id) {
   if(!state.orders.some(o=>o.id===id))return;
-  window.POSCloud?.selectOrder(id);current=id;entryQuantity=1;accountQuery='';accountSearchOpen=false;
+  setCurrentAccount(id);entryQuantity=1;accountQuery='';accountSearchOpen=false;
   const input=$('#account-search');if(input){input.value=id==='bar'?'':getOrder().name;input.blur();}
   renderPOSFast();renderProducts();renderAccountResults();
 }
@@ -377,14 +380,14 @@ function openShift() {
   }, 'Otevřít směnu', () => toast('Směna je otevřená.'));
 }
 function finishMerge(result) {
-  current = result.orderId; render();
+  setCurrentAccount(result.orderId);accountQuery='';accountSearchOpen=false;render();
   toast(`Účty spojené na ${result.name}.`);
 }
 function renameOrder() {
   const o = structuredClone(getOrder());
   if (o.id === 'bar' || o.paymentLock) return;
   showDialog('Přejmenovat stůl / účet', field('Nový název stolu nebo jméno hosta', 'name', o.name, 'required maxlength="120" autocomplete="off"') + '<p class="help section-gap">Položky, zaplacené části a historie tohoto účtu zůstanou zachované.</p>', f => command('renameOrder', {orderId:o.id, revision:o.revision, name:f.get('name')}), 'Přejmenovat', result => {
-    current = result.orderId; accountQuery = ''; accountSearchOpen = false; render();
+    setCurrentAccount(result.orderId); accountQuery = ''; accountSearchOpen = false; render();
     toast(`Účet přejmenovaný na ${result.name}.`);
   });
   const input = $('#dialog-form').elements.name; input.focus(); input.select();
@@ -533,7 +536,7 @@ function terminalRefundFields(r) {
 }
 function finishReceiptCorrection(r) {
   window.paymentAbort?.abort();if($('#dialog').open)$('#dialog').close();
-  if(r.restoredToOrderId){current=r.restoredToOrderId;view='pos';render();toast(`Platba vrácena. Položky jsou na ${r.restoredToOrderName||r.orderName}.`);}
+  if(r.restoredToOrderId){setCurrentAccount(r.restoredToOrderId);accountQuery='';accountSearchOpen=false;view='pos';render();toast(`Platba vrácena. Položky jsou na ${r.restoredToOrderName||r.orderName}.`);}
   else {view='history';render();toast(`Doklad přiřazen k ${r.orderName}. Platba zůstává zaplacená.`);}
 }
 function receiptCorrection(id) {
@@ -591,7 +594,7 @@ const actions={
     const name=String(f.get('name')||'').trim();
     return name?command('newOrder',{name}):{id:'bar'};
   },'Pokračovat',r=>selectAccount(r.id)),
-  deleteOrder:async()=>{await command('deleteOrder',{orderId:current});current='bar';render();},
+  deleteOrder:async()=>{await command('deleteOrder',{orderId:current});setCurrentAccount('bar');render();},
   add:async (id,button)=>{const p=state.products.find(x=>x.id===id);if(!p)return;const fromCatalog=button?.classList.contains('product'),quantity=fromCatalog?entryQuantity:1,servingMl=fromCatalog?entryServingMl:button?.dataset.servingMl==='20'?20:undefined,orderId=current;if(p.price===null){editProduct(id,true,{orderId,quantity,servingMl});return;}if(!C.activeShift(state)){openShift();return;}entryQuantity=1;updateEntryContext();await command('addLine',{orderId,productId:id,quantity,servingMl},true);},
   minus:async id=>{await command('removeLine',{orderId:current,lineId:id,reason:'Oprava namarkování'},true);},
   newProduct:()=>editProduct(),editProduct:id=>editProduct(id),archiveProduct:id=>showDialog('Skrýt položku',`<p class="help">${E(state.products.find(x=>x.id===id)?.name)} zmizí z nabídky. Existující účty a doklady zůstanou.</p>`,()=>command('archiveProduct',{id}),'Skrýt'),
@@ -631,7 +634,7 @@ $('#dialog').addEventListener('cancel',e=>{e.preventDefault();closeDialog();});
 $('#fullscreen').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();else toast('Na telefonu přidej pokladnu na plochu z nabídky prohlížeče.');}catch{toast('Prohlížeč celoobrazovkový režim nepovolil.',true);}});
 $('#restore-input').addEventListener('change',async e=>{
   const file=e.target.files?.[0];e.target.value='';if(!file)return;
-  try{if(file.size>20000000)throw new Error('Záloha je příliš velká (maximum 20 MB).');const wrapper=JSON.parse(await file.text());if(wrapper.format!=='pubbizz.pos.backup.v1')throw new Error('Tohle není záloha PUB-BIZZ.');const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(wrapper.data))))).map(x=>x.toString(16).padStart(2,'0')).join('');if(hash!==wrapper.hash)throw new Error('Kontrolní součet nesedí. Soubor je změněný nebo poškozený.');C.validate(wrapper.data);showDialog('Obnovit pokladnu',`<p class="help">Záloha: <strong>${E(wrapper.data.settings.venue)}</strong><br>${wrapper.data.receipts.length} dokladů · ${wrapper.data.products.length} položek.<br>Po obnově používej pouze toto zařízení.</p>`,async()=>{const r=await Store.restore(wrapper.data);state=r.state;current='bar';render();},'Obnovit zálohu',()=>toast('Záloha byla obnovená.'));}catch(err){toast(err.message,true);}
+  try{if(file.size>20000000)throw new Error('Záloha je příliš velká (maximum 20 MB).');const wrapper=JSON.parse(await file.text());if(wrapper.format!=='pubbizz.pos.backup.v1')throw new Error('Tohle není záloha PUB-BIZZ.');const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(wrapper.data))))).map(x=>x.toString(16).padStart(2,'0')).join('');if(hash!==wrapper.hash)throw new Error('Kontrolní součet nesedí. Soubor je změněný nebo poškozený.');C.validate(wrapper.data);showDialog('Obnovit pokladnu',`<p class="help">Záloha: <strong>${E(wrapper.data.settings.venue)}</strong><br>${wrapper.data.receipts.length} dokladů · ${wrapper.data.products.length} položek.<br>Po obnově používej pouze toto zařízení.</p>`,async()=>{const r=await Store.restore(wrapper.data);state=r.state;setCurrentAccount('bar');render();},'Obnovit zálohu',()=>toast('Záloha byla obnovená.'));}catch(err){toast(err.message,true);}
 });
 window.addEventListener('pos-connection',connection);
 window.addEventListener('online',connection);window.addEventListener('offline',connection);
@@ -644,7 +647,7 @@ window.addEventListener('resize',()=>{if(window.innerWidth>630)setNavigationOpen
     window.POSRuntime?.assertReady();
     if(window.POSBootError)throw window.POSBootError;
     if(!C||!Store||(!document.documentElement.dataset.standalone&&!window.POSCloud))throw new Error('Sdílená pokladna se nenačetla. Obnov stránku a zkontroluj připojení.');
-    state=await Store.open(refresh);C.validate(state);current=window.POSCloud?.selectedOrder||'bar';if(!state.orders.some(o=>o.id===current))current='bar';render();connection();
+    state=await Store.open(refresh);C.validate(state);const selected=window.POSCloud?.selectedOrder||'bar';setCurrentAccount(state.orders.some(o=>o.id===selected)?selected:'bar');render();connection();
     if(window.POSCloud?.meta.recoveredResult?.kind==='sale')finishPayment(POSCloud.meta.recoveredResult);
     else if(window.POSCloud?.meta.recoveredResult?.restoredToOrderId||window.POSCloud?.meta.recoveredResult?.type==='reassignReceipt')finishReceiptCorrection(POSCloud.meta.recoveredResult);
     else if(window.POSCloud?.meta.recoveredResult?.kind)receiptDialog(POSCloud.meta.recoveredResult);

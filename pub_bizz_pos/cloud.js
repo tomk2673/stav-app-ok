@@ -5,15 +5,15 @@
   let client;
   try {
     root.POSRuntime?.assertReady();
-    if(!local||!root.POSCore||!root.POSMarking||!cfg?.url||!cfg?.publishableKey||!root.supabase?.createClient) throw new Error('Nepodařilo se načíst sdílenou pokladnu. Obnov stránku a zkontroluj připojení.');
+    if(!local||!root.POSCore||!root.POSMarking||!root.POSSync||!cfg?.url||!cfg?.publishableKey||!root.supabase?.createClient) throw new Error('Nepodařilo se načíst sdílenou pokladnu. Obnov stránku a zkontroluj připojení.');
     client=root.supabase.createClient(cfg.url,cfg.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
   } catch(e) {
     // Never let an online page silently use the separate local emergency register.
     root.POSBootError=e;root.POSRuntime?.fail(e.message);return;
   }
-  const M=root.POSMarking;
+  const M=root.POSMarking,S=root.POSSync;
   let user,venue,base,cache,meta={stock:[],issues:[],issueCount:0},onChange,opened,resolveOpen,lastConfirmed=0,poll,busy=false;
-  let retryTimer,retryDelay=1000,worker,strictQueue=Promise.resolve(),viewSerial=0,storageError='',authBlocked=false,snapshotDB;
+  let retryTimer,retryDelay=1000,worker,strictQueue=Promise.resolve(),viewSerial=0,storageError='',authBlocked=false,snapshotDB,lastMetadata=0,serviceError='',projectionToken='';
   const endpoint=cfg.url+'/functions/v1/pub-bizz-pos';
   const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const scope=()=>`${venue.id}:${user.id}:`;
@@ -46,15 +46,18 @@
   const pending=()=>{const all=entries();return all.find(r=>!isMarking(r))||all[0]||null;};
   function emit(){root.dispatchEvent(new Event('pos-connection'));}
   function publish(){viewSerial++;emit();onChange?.();}
+  const projectionKey=all=>base.venueId+':'+base.revision+':'+JSON.stringify(all.filter(isMarking).map(r=>[r.requestId,r.local.status,r.local.error||'']));
   function projection() {
     if(!base)return;
-    const all=entries(),next=structuredClone(base);
+    const all=entries(),token=projectionKey(all);
+    if(cache&&token===projectionToken){emit();return;}
+    const next=structuredClone(base);
     for(const r of all) {
       if(!isMarking(r)||r.local.status==='blocked'||M.applied(base,r.requestId)||M.outcome(base,r.requestId)?.type==='markingRejected')continue;
       try {M.apply(next,r.type,r.payload,r.sentAt,user.id);}
       catch { /* Keep the immutable intent visible in the journal until the server decides. */ }
     }
-    cache=next;publish();
+    cache=next;projectionToken=token;publish();
   }
   function database() {
     if(!snapshotDB)snapshotDB=new Promise((resolve,reject)=>{
@@ -93,7 +96,13 @@
     });
   }
   async function accept(data,persist=true) {
+    if(persist){serviceError='';if(data.stock)lastMetadata=Date.now();}
+    let incoming;try{incoming=S.decode(base,data);}catch{incoming=null;}
+    if(!incoming){const full=await api(null,false,false,'?venueId='+encodeURIComponent(venue.id)+'&full=1');return accept(full,persist);}
+    if(data.unchanged){meta={...meta,...data};if(persist){lastConfirmed=Date.now();authBlocked=false;}emit();return {state:cache,result:data.result};}
+    data={...data,state:incoming};delete data.delta;delete data.unchanged;
     CValidate(data.state);if(data.state.venueId!==venue.id)throw new Error('Server vrátil jinou provozovnu.');
+    if(base&&incoming.revision<=base.revision){meta={...meta,...data,state:base};if(persist){lastConfirmed=Date.now();authBlocked=false;}emit();return {state:cache,result:data.result};}
     const saved=persist?await saveSnapshot(data):data;
     // A late response must not overwrite a newer state from this or another tab.
     if(!base||saved.state.revision>=base.revision){base=saved.state;meta={...meta,...data,state:base};}
@@ -106,12 +115,15 @@
     if(!session)throw Object.assign(new Error('Přihlášení vypršelo. Přihlas se znovu.'),{auth:true});
     if(user&&session.user&&session.user.id!==user.id)throw Object.assign(new Error('Změnil se přihlášený účet. Obnov stránku.'),{auth:true});
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
+    const sync=base&&meta.syncProtocol===1?S.cursor(base):null;
+    const suffix=sync?'&sync='+encodeURIComponent(JSON.stringify(sync))+(Date.now()-lastMetadata>60000?'&metadata=1':''):'';
     try {
-      const response=await fetch(endpoint+(query||(!body&&!context?'?venueId='+encodeURIComponent(venue.id):'')),{
+      const response=await fetch(endpoint+(query||(!body&&!context?'?venueId='+encodeURIComponent(venue.id)+suffix:'')),{
         method:body?'POST':'GET',headers:{Authorization:'Bearer '+session.access_token,apikey:cfg.publishableKey,'Content-Type':'application/json'},
-        body:body?JSON.stringify(body):undefined,signal:controller.signal,cache:'no-store'
+        body:body?JSON.stringify(sync?{...body,sync}:body):undefined,signal:controller.signal,cache:'no-store'
       });
       const data=await response.json();
+      if(response.status===402&&/egress/i.test(data.message||'')){serviceError='Server je pozastaven kvůli datovému limitu. Čekající změny zůstávají v zařízení.';throw new Error(serviceError);}
       if(response.status===401&&!refreshed){const r=await client.auth.refreshSession();if(!r.error&&r.data.session)return api(body,context,true,query);}
       if(!response.ok)throw Object.assign(new Error(data.error||data.message||'Server změnu nepotvrdil.'),{definitive:data.definitive===true,auth:[401,403].includes(response.status)});
       return data;
@@ -205,7 +217,7 @@
       e.preventDefault();const form=e.currentTarget,b=form.querySelector('button');b.disabled=true;document.querySelector('#login-error').textContent='';
       try {
         const f=new FormData(form);const r=await client.auth.signInWithPassword({email:String(f.get('email')).trim(),password:String(f.get('password'))});
-        form.elements.password.value='';if(r.error) throw new Error('Přihlášení se nepodařilo. Zkontroluj e-mail a heslo.');
+        form.elements.password.value='';if(r.error) throw new Error(/egress/i.test(r.error.message||'')?'Datový limit serveru je vyčerpaný. Správce musí obnovit provoz.':'Přihlášení se nepodařilo. Zkontroluj e-mail a heslo.');
         await loadContext();
       } catch(err){if(document.querySelector('#login-error'))document.querySelector('#login-error').textContent=err.message;}finally{b.disabled=false;}
     };
@@ -232,7 +244,7 @@
         const request={venueId:venue.id,requestId:id,type,payload:p,sentAt,local:{kind:'marking',status:'queued',sequence,orderName:order.name,label:label||'Položka',quantity:p.quantity??1}};
         // The local caller paints the returned view; notify other tabs through
         // storage events. Avoid rebuilding the bill twice for every finger tap.
-        write(key(id),request);cache=next;viewSerial++;emit();
+        write(key(id),request);cache=next;projectionToken=projectionKey(entries());viewSerial++;emit();
         // The promise resolves after durable local storage; HTTP is independent.
         setTimeout(()=>drain().catch(()=>{}),0);
         return Promise.resolve({state:cache,result:null,local:true});
@@ -272,10 +284,11 @@
   root.POSCloud={
     get meta(){return meta;},get user(){return user;},get venue(){return venue;},get pending(){return pending();},get busy(){return busy;},get version(){return viewSerial;},
     get outbox(){return entries();},get storageError(){return storageError;},get authBlocked(){return authBlocked;},
+    get serviceError(){return serviceError;},
     get optimisticMarking(){return localMarking();},
     get canMark(){const all=entries();return !!base&&localMarking()&&!storageError&&!authBlocked&&!all.some(r=>!isMarking(r))&&['owner','manager','staff'].includes(meta.role);},
     get selectedOrder(){return localStorage.getItem(selectionKey())||'bar';},
-    selectOrder(id){try{localStorage.setItem(selectionKey(),id);}catch{storageError='Výběr účtu se nepodařilo uložit. Zůstal vybraný původní host.';emit();throw new Error(storageError);}},
+    selectOrder(id){try{if(localStorage.getItem(selectionKey())!==id)localStorage.setItem(selectionKey(),id);}catch{storageError='Výběr účtu se nepodařilo uložit. Zůstal vybraný původní host.';emit();throw new Error(storageError);}},
     get connected(){return navigator.onLine&&Date.now()-lastConfirmed<12000&&!authBlocked;},refresh,retry,cancelPending,dismiss,
     async logout(){if(busy||entries().length)throw new Error('Nejdřív ověř všechny čekající operace.');await client.auth.signOut({scope:'local'});location.reload();},
     async localBackup(){await local.open(()=>{});return local.read();}

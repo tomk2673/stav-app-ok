@@ -43,7 +43,7 @@ async function harness(seed=state=>state,role='owner'){
    }
    return {ok:status===200,status,json:async()=>data};
   };
-  for(const name of ['catalog.js','core.js','marking.js','customer.js','storage.js','config.js','cloud.js','stock.js','app.js'])w.eval(fs.readFileSync(path.join(root,name),'utf8'));
+  for(const name of ['catalog.js','core.js','marking.js','sync.js','customer.js','storage.js','config.js','cloud.js','stock.js','app.js'])w.eval(fs.readFileSync(path.join(root,name),'utf8'));
   await until(()=>w.document.querySelector('.product'),'register open');
   const click=selector=>{const el=w.document.querySelector(selector);assert.ok(el,'Missing '+selector);el.click();};
   const submit=()=>w.document.querySelector('#dialog-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));

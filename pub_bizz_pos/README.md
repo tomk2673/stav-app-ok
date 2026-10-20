@@ -126,3 +126,5 @@ Pořadí vydání: aktuální main včetně migrace návštěv → `202610150025
 Regrese: `tests/pub-bizz-credit-integrity.test.js` pro obě kopie lokálního a serverového jádra, SQL scénáře v `tests/pos-web/receipt-corrections-db.test.cjs`, DOM a Chromium/WebKit pro telefon i PC. Zahrnují aliasy, přiřazení, storna, souběh uzávěrky s rezervací, výdeje, náhrady, nedostatky, stejné UUID a rollback při chybě auditu. Používají pouze syntetická data v izolovaných databázích nebo simulovaný transport, bez skutečných zákaznických plateb.
 
 Lokální markování: postup vydání, ověření a bezpečné vypnutí jsou v [LOCAL_MARKING_RELEASE.md](LOCAL_MARKING_RELEASE.md). Nový Edge bundle nasadit před webem; nová SQL migrace není potřeba.
+
+Synchronizace přenáší jen změny neměnného auditu a dokladů; nečinná obnova ověří pouze revizi. Přímé API nyní hlásí vyčerpanou kvótu Supabase Free (HTTP 402); její obnovení vyžaduje zásah vlastníka do služby, samotná oprava kódu spotřebovaný limit nevrátí. Žádný placený tarif nebyl aktivován.

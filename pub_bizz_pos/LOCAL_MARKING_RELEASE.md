@@ -14,12 +14,12 @@ Srovnání se skutečným zdrojem mainu `82d251ac2955bf6dd96b01f03a61155678a0b96
 
 | Prohlížeč | Šířka | Před | Po |
 |---|---:|---:|---:|
-| chromium | 390 px | 637 ms | 22 ms |
-| chromium | 900 px | 625 ms | 22 ms |
-| chromium | 1440 px | 627 ms | 28 ms |
-| webkit | 390 px | 665 ms | 62 ms |
-| webkit | 900 px | 696 ms | 111 ms |
-| webkit | 1440 px | 722 ms | 168 ms |
+| chromium | 390 px | 656 ms | 23 ms |
+| chromium | 900 px | 630 ms | 22 ms |
+| chromium | 1440 px | 631 ms | 19 ms |
+| webkit | 390 px | 673 ms | 104 ms |
+| webkit | 900 px | 694 ms | 103 ms |
+| webkit | 1440 px | 738 ms | 190 ms |
 
 Počet doteků na již vybraném účtu:
 
@@ -29,13 +29,13 @@ Počet doteků na již vybraném účtu:
 | 5 | 2 | 2 |
 | 12 | 6 | 5 |
 
-Dvacet programových doteků v jednom běhu se trvale uložilo a zobrazilo za 40 ms v Chromium a 216 ms ve WebKitu, ještě před síťovým potvrzením. Syntetická historie 6 000 událostí / 3,52 milionu znaků prošla ukládáním do IndexedDB i přidáním bez zahlcení localStorage. Potvrzování fronty nadále závisí na serveru a kvalitě spojení.
+Dvacet programových doteků v jednom běhu se trvale uložilo a zobrazilo za 36 ms v Chromium a 64 ms ve WebKitu, ještě před síťovým potvrzením. Syntetická historie 6 000 událostí / 3,52 milionu znaků prošla ukládáním do IndexedDB i přidáním bez zahlcení localStorage. Potvrzování fronty nadále závisí na serveru a kvalitě spojení.
 
 Úplné vzorky a scénáře: [JSON](../tests/results/pos-marking-20261020.json), reprodukce `npm run test:marking --prefix tests/pos-browser` (vyžaduje historii gitu a nainstalované Chromium/WebKit). Všechny API odpovědi v tomto testu poskytuje místní HTTP server; CSP zakazuje externí připojení. WebKit při offline reloadu používá skutečně nedostupný origin, protože simulace setOffline v Playwright blokuje i odpovědi service workeru.
 
 ## Ověření
 
-- 185 jednotkových/kontraktových a 145 DOM/PostgreSQL testů prošlo; nevykazují skutečnou přesnost ani funkčnost nesouvisejícího OCR.
+- 191 jednotkových/kontraktových a 148 DOM/PostgreSQL testů prošlo; nevykazují skutečnou přesnost ani funkčnost nesouvisejícího OCR.
 - PGlite test spustil skutečnou aktuální definici produkčního pos_commit nad izolovanými fiktivními daty: konflikt revize → nové vyhodnocení přidání → jediné uložení UUID; odmítnuté UUID zůstává odmítnuté při opakování. Žádná změna peněz ani skladu při markování/odmítnutí.
 - Chromium i WebKit: 390/900/1440 px nové markování, šest srovnávacích vzorků; offline PWA reload se stejným hostem a 2cl porcemi, ztracená odpověď, 20 doteků, stabilní poloha produktů, souběh telefonu/PC, trvalý konflikt a velká historie.
 - Původní úplné provozní toky: Chromium 390/900/1440 a WebKit 390/900; přihlášení/obnova, rychlý prodej, vyhledávání hostů, počet, 2 cl, dělení, hotovost/karta/kredit, zrušení/obnova platby, vratky, návštěvy, řazení produktů a rozložení.
@@ -46,9 +46,17 @@ Dvacet programových doteků v jednom běhu se trvale uložilo a zobrazilo za 40
 
 1. Cíl: stávající Supabase PUB GURU `gnfqlfxuagcgjztaueot`, funkce `pub-bizz-pos`. Živá verze 15 před změnou přesně odpovídala souborům hlavní větve; `verify_jwt=true` a existující ověřování uživatele/členství zůstává. Nová SQL migrace není potřeba, schéma ani historická data se nepřepisují.
 2. Po úspěšných CI kontrolách nasadit kompletní `supabase/functions/pub-bizz-pos` včetně marking.js a import mapy. Potvrdit shodu publikovaných bajtů a zachování ověřování JWT. Až nový server oznamuje `markingProtocol:1`, web používá lokální režim; proti starému serveru zůstává přísný síťový režim.
-3. Sloučit přesný otestovaný commit do současného mainu a ověřit Vercel projekt `pub-bizz-pokladna`, ID `prj_90pqiz6g2BHtey1JmKyGAkxuF8tB`, tým `team_2LOaoYf5B9AiKZZnIdkItxaW`. PWA cache je `2.0.20`. GitHub Pages publikuje existující workflow až po testech.
+3. Sloučit přesný otestovaný commit do současného mainu a ověřit Vercel projekt `pub-bizz-pokladna`, ID `prj_90pqiz6g2BHtey1JmKyGAkxuF8tB`, tým `team_2LOaoYf5B9AiKZZnIdkItxaW`. PWA cache je `2.0.21`. GitHub Pages publikuje existující workflow až po testech.
 4. Ověřit stav deploymentu a shodu HTML, JS, CSS a service workeru na `/pokladna` / `/pub_bizz_pos/…`; nepoužívat skutečnou platbu ani sklad jako smoke test.
 
 ## Bezpečné vypnutí
 
 V nové konfiguraci lze přidat `localMarking: false` a vydat nový web/cache. Nové zápisy pak čekají na server; existující fronta se nadále obnovuje, ověřuje a zpracovává. Tento postup prošel regresním testem. Při vypínání zachovat nový cloud.js, marking.js, IndexedDB i kompatibilní server, dokud nejsou fronty potvrzené a konflikty vyřešené. Starší web neumí nové konflikty a není vhodný k přímému návratu s nerozhodnutými záměry. Úložiště ani UUID se nemažou. Ostatní rozpracované PR, včetně faktur, nejsou součástí vydání.
+
+## Změnový přenos a skutečná blokace poskytovatele
+
+Při ověření veřejného API vrací Supabase **HTTP 402 / exceed_egress_quota**. Organizace `ytofuoixaxxatwqnnmho` je podle Management API na tarifu **Free**. Management API a nasazení funkcí fungují; aplikační datový provoz je poskytovatelem omezený. Změna kódu nemůže zpětně obnovit vyčerpanou kvótu. Tarif, platební prostředky a výdajové limity nebyly měněny. Dokud poskytovatel službu neobnoví, nelze potvrdit autorizovaný provoz přes skutečné veřejné API ani tvrdit, že pokladna plně funguje.
+
+Nový `sync.js` používá ověřený kurzor revize a posledních ID neměnné historie. Při změně posílá kompletní aktuální pole stavu a jen nové řádky auditu/dokladů; při porušeném prefixu načte úplný snímek. Nezměněný GET načte jen číslo revize a neposílá historii. Doplňková skladová metadata se obnovují nejpozději po minutě nebo po příkazu. Ve velkém syntetickém testu klesla odpověď z 3 518 640 znaků na **39 672** pro změnu a **487** při nečinnosti. Toto je měření obsahu, ne předpověď měsíční faktury. Starší klienti bez kurzoru nadále dostávají původní úplný formát.
+
+Obě P2 připomínky kontroly jsou opravené: všechna programová přepnutí používají jednotné trvalé uložení cíle (včetně spojení, vrácení dokladu a odstranění účtu) a nezměněné odpovědi ani nezměněná projekce znovu nerenderují Nastavení. Regrese ověřují offline reload na cíli po spojení, zachování rozepsaného formuláře a uchování UUID při HTTP 402.

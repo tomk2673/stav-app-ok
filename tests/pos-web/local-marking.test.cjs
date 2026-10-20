@@ -110,6 +110,7 @@ test('offline add after another device renamed the account remains attached to i
   await h.select(server.a);h.network(false);await h.add();const id=h.w.POSCloud.pending.requestId;
   server.external('renameOrder',{orderId:server.a,revision:0,name:'Another test guest'});
   h.network(true);await until(()=>h.w.POSCloud.pending?.local.status==='blocked','renamed account conflict');
+  await until(()=>h.w.document.querySelector('#account-search').value==='Another test guest','selected account label follows the server');
   assert.equal(server.state.orders.find(o=>o.id===server.a).lines.length,0);h.click('[data-action="syncDetails"]');
   assert.match(h.w.document.querySelector('.sync-list').textContent,/Test A/);
   h.close();h=await harness(server,disk);assert.equal(h.w.POSCloud.pending.requestId,id);

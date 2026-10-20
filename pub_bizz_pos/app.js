@@ -22,6 +22,7 @@ async function command(type, payload, fast = false) {
 }
 function renderPOSFast(){
   if(view!=='pos'||!state)return render();
+  if(!state.orders.some(o=>o.id===current))return render();
   const shell=document.createElement('div');shell.innerHTML=renderPOS();
   const fresh=shell.firstElementChild, live=$('.pos-layout');
   if(!fresh||!live)return render();
@@ -151,6 +152,8 @@ function bindAccountSearch() {
 }
 function updateEntryContext() {
   const o=getOrder();
+  const accountInput=$('#account-search');
+  if(accountInput&&!accountSearchOpen&&!accountQuery&&document.activeElement!==accountInput)accountInput.value=o.id==='bar'?'':o.name;
   if($('#entry-account-name'))$('#entry-account-name').textContent=o.name;
   if($('#entry-account-total'))$('#entry-account-total').textContent=fmt(C.sum(o.lines));
   if($('#entry-quantity'))$('#entry-quantity').textContent=`${entryQuantity}×`;

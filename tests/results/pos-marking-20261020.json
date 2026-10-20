@@ -1,0 +1,271 @@
+{
+  "baseRef": "82d251ac2955bf6dd96b01f03a61155678a0b964",
+  "environment": "linux",
+  "delayMs": 600,
+  "results": [
+    {
+      "engine": "chromium",
+      "width": 390,
+      "delayMs": 600,
+      "before": [
+        633.5999999940395,
+        648.9000000059605,
+        642,
+        663.2000000029802,
+        674,
+        668.2000000029802
+      ],
+      "after": [
+        40.8999999910593,
+        25.5,
+        18.399999991059303,
+        17.299999997019768,
+        21.399999991059303,
+        24.5
+      ],
+      "touches": {
+        "one": {
+          "before": 1,
+          "after": 1
+        },
+        "five": {
+          "before": 2,
+          "after": 2
+        },
+        "twelve": {
+          "before": 6,
+          "after": 5
+        }
+      }
+    },
+    {
+      "engine": "chromium",
+      "width": 900,
+      "delayMs": 600,
+      "before": [
+        639.9000000059605,
+        626.4000000059605,
+        628.2999999970198,
+        628.7000000029802,
+        631.4000000059605,
+        647.2000000029802
+      ],
+      "after": [
+        69.09999999403954,
+        18.799999997019768,
+        27.400000005960464,
+        14.600000008940697,
+        19.299999997019768,
+        23.900000005960464
+      ],
+      "touches": {
+        "one": {
+          "before": 1,
+          "after": 1
+        },
+        "five": {
+          "before": 2,
+          "after": 2
+        },
+        "twelve": {
+          "before": 6,
+          "after": 5
+        }
+      }
+    },
+    {
+      "engine": "chromium",
+      "width": 1440,
+      "delayMs": 600,
+      "before": [
+        629.9000000059605,
+        631.8999999910593,
+        647.7000000029802,
+        637.7999999970198,
+        628,
+        629.5999999940395
+      ],
+      "after": [
+        51.19999998807907,
+        21,
+        16.200000002980232,
+        21.69999998807907,
+        16.299999997019768,
+        17.799999997019768
+      ],
+      "touches": {
+        "one": {
+          "before": 1,
+          "after": 1
+        },
+        "five": {
+          "before": 2,
+          "after": 2
+        },
+        "twelve": {
+          "before": 6,
+          "after": 5
+        }
+      }
+    },
+    {
+      "engine": "chromium",
+      "resilience": {
+        "offlineReload": true,
+        "originalHost": true,
+        "smallShots": true,
+        "lostAck": true,
+        "stableButtons": true,
+        "rapidTaps": 20,
+        "burstMs": 35.599999994039536,
+        "conflict": true,
+        "realPaymentsUsed": false
+      },
+      "concurrency": {
+        "phoneAndPC": true,
+        "expectedPieces": 5,
+        "actualPieces": 5
+      },
+      "largeHistory": {
+        "snapshotCharacters": 3518640,
+        "paintMs": 69.20000000298023,
+        "localStorageMaxCharacters": 494,
+        "confirmedInIndexedDB": true,
+        "incrementalCharacters": 39672,
+        "idleCharacters": 487
+      }
+    },
+    {
+      "engine": "webkit",
+      "width": 390,
+      "delayMs": 600,
+      "before": [
+        700,
+        663,
+        667.9999999999998,
+        666,
+        678,
+        717.9999999999995
+      ],
+      "after": [
+        1279,
+        155,
+        84,
+        123.99999999999909,
+        38,
+        79
+      ],
+      "touches": {
+        "one": {
+          "before": 1,
+          "after": 1
+        },
+        "five": {
+          "before": 2,
+          "after": 2
+        },
+        "twelve": {
+          "before": 6,
+          "after": 5
+        }
+      }
+    },
+    {
+      "engine": "webkit",
+      "width": 900,
+      "delayMs": 600,
+      "before": [
+        823.0000000000002,
+        689,
+        754,
+        692.0000000000005,
+        696,
+        690
+      ],
+      "after": [
+        207,
+        110,
+        258,
+        96,
+        81,
+        80
+      ],
+      "touches": {
+        "one": {
+          "before": 1,
+          "after": 1
+        },
+        "five": {
+          "before": 2,
+          "after": 2
+        },
+        "twelve": {
+          "before": 6,
+          "after": 5
+        }
+      }
+    },
+    {
+      "engine": "webkit",
+      "width": 1440,
+      "delayMs": 600,
+      "before": [
+        786.9999999999999,
+        721,
+        747,
+        755,
+        730,
+        730
+      ],
+      "after": [
+        353,
+        248,
+        200,
+        180,
+        167,
+        117
+      ],
+      "touches": {
+        "one": {
+          "before": 1,
+          "after": 1
+        },
+        "five": {
+          "before": 2,
+          "after": 2
+        },
+        "twelve": {
+          "before": 6,
+          "after": 5
+        }
+      }
+    },
+    {
+      "engine": "webkit",
+      "resilience": {
+        "offlineReload": true,
+        "originalHost": true,
+        "smallShots": true,
+        "lostAck": true,
+        "stableButtons": true,
+        "rapidTaps": 20,
+        "burstMs": 64,
+        "conflict": true,
+        "realPaymentsUsed": false
+      },
+      "concurrency": {
+        "phoneAndPC": true,
+        "expectedPieces": 5,
+        "actualPieces": 5
+      },
+      "largeHistory": {
+        "snapshotCharacters": 3518640,
+        "paintMs": 175.9999999999999,
+        "localStorageMaxCharacters": 494,
+        "confirmedInIndexedDB": true,
+        "incrementalCharacters": 39672,
+        "idleCharacters": 487
+      }
+    }
+  ]
+}

@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {JSDOM}=require('jsdom');
+const {IDBFactory}=require('fake-indexeddb');
 const C=require('../../pub_bizz_pos/core.js');
 const D=require('../../pub_bizz_pos/server-domain.js');
 const root=path.resolve(__dirname,'../../pub_bizz_pos');
@@ -23,7 +24,7 @@ async function harness(seed=state=>state,role='owner'){
   const w=dom.window,venue={id:crypto.randomUUID(),organization_id:crypto.randomUUID(),name:'Test venue',currency:'CZK',role},user={id:crypto.randomUUID(),email:'owner@example.test'};
   let server=C.initial();server.venueId=venue.id;server.recipes={};server=seed(server);
   const requests=new Map(),calls=[];let dropNext=false,dropBefore=false,holdNext=false,release;
-  w.structuredClone=structuredClone;w.TextEncoder=TextEncoder;
+  w.indexedDB=new IDBFactory();w.structuredClone=structuredClone;w.TextEncoder=TextEncoder;
   w.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
   w.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');this.dispatchEvent(new w.Event('close'));};
   w.HTMLElement.prototype.scrollIntoView=function(){};w.print=()=>{};
@@ -42,7 +43,7 @@ async function harness(seed=state=>state,role='owner'){
    }
    return {ok:status===200,status,json:async()=>data};
   };
-  for(const name of ['catalog.js','core.js','customer.js','storage.js','config.js','cloud.js','stock.js','app.js'])w.eval(fs.readFileSync(path.join(root,name),'utf8'));
+  for(const name of ['catalog.js','core.js','marking.js','sync.js','customer.js','storage.js','config.js','cloud.js','stock.js','app.js'])w.eval(fs.readFileSync(path.join(root,name),'utf8'));
   await until(()=>w.document.querySelector('.product'),'register open');
   const click=selector=>{const el=w.document.querySelector(selector);assert.ok(el,'Missing '+selector);el.click();};
   const submit=()=>w.document.querySelector('#dialog-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
@@ -54,17 +55,17 @@ test('2cl toggle marks real piece counts, keeps plus/quantity edits small and sp
   h.click('[data-action="smallShot"]');assert.equal(h.w.document.querySelector('[data-action="smallShot"]').getAttribute('aria-pressed'),'true');
   assert.match(h.w.document.querySelector('#entry-count-label').textContent,/2 cl/);assert.equal(h.w.document.querySelector('.product[data-id="agnis-50"]'),null);
   h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-id="agnis-2810"]');
-  await until(()=>h.server.orders[0].lines.length===1,'three small shots');
+  await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines.length===1,'three small shots');
   const small=h.server.orders[0].lines[0];assert.equal(small.quantity,3);assert.equal(small.price,2750);assert.equal(small.servingMl,20);
   assert.equal(h.calls.filter(c=>c.type==='addLine').length,1);assert.equal(h.w.document.querySelector('#entry-quantity').textContent,'1×');
   h.click('[data-action="smallShot"]');h.click('.line [data-action="add"]');
-  await until(()=>h.server.orders[0].lines[0].quantity===4,'small plus');assert.equal(h.server.orders[0].lines.length,1);
-  h.click('.product[data-id="agnis-2810"]');await until(()=>h.server.orders[0].lines.length===2,'regular shot');
+  await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines[0].quantity===4,'small plus');assert.equal(h.server.orders[0].lines.length,1);
+  h.click('.product[data-id="agnis-2810"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines.length===2,'regular shot');
   assert.equal(h.server.orders[0].lines[1].price,5500);assert.equal(h.server.orders[0].lines[1].quantity,1);
-  h.click('[data-action="quantityPad"][data-id="'+small.id+'"]');h.click('[data-qty="5"]');await until(()=>h.server.orders[0].lines[0].quantity===5,'five small shots');
+  h.click('[data-action="quantityPad"][data-id="'+small.id+'"]');h.click('[data-qty="5"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines[0].quantity===5,'five small shots');
   h.click('[data-action="paySplit"]');await until(()=>h.w.document.querySelector('.payment-item'),'split ready');h.click('.payment-item');h.click('[data-qty="2"]');h.click('[data-payment-mode="card"]');
   h.w.document.querySelector('[name="cardConfirmed"]').checked=true;h.submit();
-  await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'two small paid');
+  await until(()=>!h.w.POSCloud.busy&&h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'two small paid');
   assert.equal(h.server.receipts[0].total,5500);assert.equal(h.server.receipts[0].lines[0].servingMl,20);assert.equal(h.server.receipts[0].lines[0].quantity,2);
   assert.equal(h.server.orders[0].lines[0].quantity,3);assert.equal(h.server.orders[0].lines[1].quantity,1);
  }finally{h.dom.window.close();}
@@ -85,13 +86,13 @@ test('manager can set a separate 2cl price without changing the standard price',
   h.w.document.querySelector('[name="smallShotPrice"]').value='30';h.submit();await until(()=>!h.w.document.querySelector('#dialog').open,'small price saved');
   assert.equal(h.server.products.find(p=>p.id==='agnis-2810').price,5500);assert.equal(h.server.products.find(p=>p.id==='agnis-2810').smallShotPrice,3000);
   h.click('[data-view="pos"]');h.click('[data-action="smallShot"]');assert.match(h.w.document.querySelector('.product[data-id="agnis-2810"] .product-price').textContent,/30/);
-  h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-id="agnis-2810"]');await until(()=>h.server.orders[0].lines.length===1,'custom small shots');assert.equal(C.sum(h.server.orders[0].lines),9000);
+  h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-id="agnis-2810"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines.length===1,'custom small shots');assert.equal(C.sum(h.server.orders[0].lines),9000);
  }finally{h.dom.window.close();}
 });
 test('setting a missing standard price retains the selected small size and count',{concurrency:false},async()=>{
  const h=await harness(s=>{C.execute(s,'openShift',{opening:0});s.products.find(p=>p.id==='agnis-2810').price=null;return s;});try{
   h.click('[data-action="smallShot"]');h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-id="agnis-2810"]');
-  h.w.document.querySelector('[name="price"]').value='70';h.submit();await until(()=>h.server.orders[0].lines.length===1,'priced small shots');
+  h.w.document.querySelector('[name="price"]').value='70';h.submit();await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines.length===1,'priced small shots');
   assert.equal(h.server.orders[0].lines[0].servingMl,20);assert.equal(h.server.orders[0].lines[0].quantity,3);assert.equal(h.server.orders[0].lines[0].price,3500);
  }finally{h.dom.window.close();}
 });
@@ -140,7 +141,7 @@ test('online UI survives a lost response without adding an item twice and comple
   const h=await harness();try {
    h.click('[data-action="openShift"]');
    h.w.document.querySelector('[name="opening"]').value='0';h.submit();
-   await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
+   await until(()=>!h.w.POSCloud.busy&&h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
    h.click('.product[data-action="add"]');
    await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent.replace('×','')==='1','first line');
    h.drop();h.click('.product[data-action="add"]');
@@ -154,7 +155,7 @@ test('online UI survives a lost response without adding an item twice and comple
    h.click('[data-action="payCash"]');
    await until(()=>h.w.document.querySelector('[name="received"]'),'payment dialog');
    assert.equal(h.server.orders[0].paymentLock,undefined,'cash reserves only at confirmation');
-   h.submit();await until(()=>h.server.receipts.length===1&&!h.server.orders[0].lines.length,'paid');
+   h.submit();await until(()=>!h.w.POSCloud.busy&&h.server.receipts.length===1&&!h.server.orders[0].lines.length,'paid');
    assert.equal(h.w.document.querySelector('#dialog').open,false);
    assert.match(h.w.document.querySelector('#toast').textContent,/Zaplaceno/);
    assert.equal(h.server.orders[0].paymentLock,undefined);
@@ -167,7 +168,7 @@ test('cash payment can be abandoned without reserving or changing the quick acco
   assert.equal(h.server.orders[0].paymentLock,undefined,'opening cash must not reserve the account');
   h.click('#dialog .dialog-actions .close-dialog');assert.equal(h.w.document.querySelector('#dialog').open,false);
   assert.deepEqual(h.server,before);assert.equal(h.calls.filter(c=>c.type==='beginPayment').length,0);
-  h.click('.line [data-action="add"]');await until(()=>h.server.orders[0].lines[0].quantity===3,'quick account remains markable');assert.equal(h.server.receipts.length,0);
+  h.click('.line [data-action="add"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines[0].quantity===3,'quick account remains markable');assert.equal(h.server.receipts.length,0);
  }finally{h.dom.window.close();}
 });
 test('legacy quick-sale reservation has a direct cancellation that keeps all items and financial records',{concurrency:false},async()=>{
@@ -183,7 +184,7 @@ test('legacy quick-sale reservation has a direct cancellation that keeps all ite
   assert.equal(h.server.orders[0].paymentLock,undefined);assert.deepEqual(h.server.orders[0].lines,before.orders[0].lines);
   for(const key of ['receipts','creditLedger','stockIssues','shifts'])assert.deepEqual(h.server[key],before[key],key+' unchanged');
   assert.equal(h.server.audit.filter(a=>a.type==='cancelPayment').length,1);assert.equal(h.calls.filter(c=>c.type==='cancelPayment').length,1);
-  h.click('.line [data-action="add"]');await until(()=>h.server.orders[0].lines[0].quantity===3,'marking after cancellation');
+  h.click('.line [data-action="add"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines[0].quantity===3,'marking after cancellation');
  }finally{h.dom.window.close();}
 });
 for(const close of ['footer','header','escape'])test('card payment '+close+' offers cancellation instead of silently leaving a blocked quick sale',{concurrency:false},async()=>{
@@ -229,11 +230,11 @@ test('switching accounts refreshes cancellation controls for the selected reserv
 });
 test('closing card payment offers explicit cancellation; stock and settings screens work',{concurrency:false},async()=>{
   const h=await harness();try{
-   h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
+   h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();await until(()=>!h.w.POSCloud.busy&&h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
    h.click('.product[data-action="add"]');await until(()=>h.w.document.querySelector('.quantity-tap'),'line');h.click('[data-action="payCard"]');await until(()=>h.w.document.querySelector('[name="cardConfirmed"]'),'payment dialog');
    h.click('.close-dialog');assert.ok(h.server.orders[0].paymentLock);
    assert.equal(h.w.document.querySelector('#dialog-title').textContent,'Zrušit rozpracovanou platbu');h.click('.close-dialog');
-   h.click('[data-action="checkPayment"]');const form=h.w.document.querySelector('#dialog-form');form.elements.operation.value='cancel';form.elements.checked.checked=true;h.submit();await until(()=>!h.server.orders[0].paymentLock,'payment reservation cleared');
+   h.click('[data-action="checkPayment"]');const form=h.w.document.querySelector('#dialog-form');form.elements.operation.value='cancel';form.elements.checked.checked=true;h.submit();await until(()=>!h.w.POSCloud.busy&&!h.server.orders[0].paymentLock,'payment reservation cleared');
    h.click('[data-view="stock"]');assert.ok(h.w.document.querySelector('#recipe-search'));
    assert.match(h.w.document.querySelector('#app').textContent,/0 \/ 208/);
    h.click('[data-action="recipe"]');assert.ok(h.w.document.querySelector('.recipe-product'));
@@ -243,7 +244,7 @@ test('closing card payment offers explicit cancellation; stock and settings scre
 });
 test('two pending tab operations keep separate durable IDs and can both be recovered',{concurrency:false},async()=>{
   const h=await harness();try{
-   h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
+   h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();await until(()=>!h.w.POSCloud.busy&&h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
    h.drop();h.click('.product[data-action="add"]');await until(()=>h.w.POSCloud.pending&&!h.w.POSCloud.busy,'first pending operation');
    const first=h.w.POSCloud.pending;
    const second={...structuredClone(first),requestId:crypto.randomUUID(),sentAt:new Date(Date.now()+1000).toISOString()};
@@ -258,7 +259,7 @@ test('two pending tab operations keep separate durable IDs and can both be recov
 
 async function accountsForMerge(h){
   h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();
-  await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift');
+  await until(()=>!h.w.POSCloud.busy&&h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift');
   const ids=[];
   for(const name of ['Stůl 1','Petr']){
    h.click('[data-action="newOrder"]');h.w.document.querySelector('[name="name"]').value=name;h.submit();
@@ -316,7 +317,7 @@ test('lost merge response retries the same request without moving items added la
 test('fast register keeps product grid node stable while adding and correcting an unpaid item',{concurrency:false},async()=>{
  const h=await harness();try{
   h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();
-  await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift');
+  await until(()=>!h.w.POSCloud.busy&&h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift');
   const grid=h.w.document.querySelector('#products');
   h.click('.product[data-action="add"]');await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent==='1×','line added');
   assert.equal(h.w.document.querySelector('#products'),grid);
@@ -331,7 +332,7 @@ test('fast register keeps product grid node stable while adding and correcting a
 
 async function startShift(h){
  h.click('[data-action="openShift"]');h.w.document.querySelector('[name="opening"]').value='0';h.submit();
- await until(()=>h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
+ await until(()=>!h.w.POSCloud.busy&&h.server.shifts.length===1&&!h.w.document.querySelector('#dialog').open,'shift opened');
 }
 async function namedAccount(h,name='Stůl 12'){
  h.click('[data-action="newOrder"]');h.w.document.querySelector('[name="name"]').value=name;h.submit();
@@ -342,10 +343,10 @@ test('no account selection marks a quick sale; a blank new account reuses it wit
  const h=await harness();try{
   await startShift(h);
   assert.equal(h.w.document.querySelector('#account-search').value,'');
-  h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines.length===1,'automatic quick sale');
+  h.click('.product[data-action="add"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines.length===1,'automatic quick sale');
   assert.equal(h.calls.filter(c=>c.type==='newOrder').length,0);
   const id=await namedAccount(h,'Petr');
-  h.click('.product[data-action="add"]');await until(()=>h.server.orders.find(o=>o.id===id).lines.length===1,'named item');
+  h.click('.product[data-action="add"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders.find(o=>o.id===id).lines.length===1,'named item');
   const before=structuredClone(h.server);
   h.click('[data-action="newOrder"]');
   const name=h.w.document.querySelector('[name="name"]');assert.equal(name.required,false);assert.equal(name.value,'');
@@ -353,14 +354,14 @@ test('no account selection marks a quick sale; a blank new account reuses it wit
   await until(()=>!h.w.document.querySelector('#dialog').open&&h.w.document.querySelector('.receipt-head h2').textContent==='Rychlý prodej','blank means quick sale');
   assert.deepEqual(h.server,before);assert.equal(h.calls.filter(c=>c.type==='newOrder').length,1);
   assert.equal(h.w.document.querySelector('#account-search').value,'');
-  h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines[0].quantity===2,'next quick sale item');
+  h.click('.product[data-action="add"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines[0].quantity===2,'next quick sale item');
   assert.equal(h.server.orders.find(o=>o.id===id).lines[0].quantity,1);
  }finally{h.dom.window.close();}
 });
 test('clearing the displayed table or customer switches to quick sale and preserves the unpaid account',{concurrency:false},async()=>{
  const h=await harness();try{
   await startShift(h);const id=await namedAccount(h);
-  h.click('.product[data-action="add"]');await until(()=>h.server.orders.find(o=>o.id===id).lines.length===1,'table item');
+  h.click('.product[data-action="add"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders.find(o=>o.id===id).lines.length===1,'table item');
   assert.equal(h.w.document.querySelector('#account-search').value,'Stůl 12');
   h.external('newOrder',{name:'Žaneta'});await h.w.POSCloud.refresh();
   await until(()=>h.w.document.querySelectorAll('.account').length===3,'refresh rendered');
@@ -369,7 +370,7 @@ test('clearing the displayed table or customer switches to quick sale and preser
   assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Rychlý prodej');
   assert.equal(h.w.document.querySelector('#entry-account-name').textContent,'Rychlý prodej');
   assert.equal(h.w.document.querySelector('#products'),grid);
-  h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines.length===1,'quick sale after clearing');
+  h.click('.product[data-action="add"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines.length===1,'quick sale after clearing');
   assert.equal(h.server.orders.find(o=>o.id===id).lines[0].quantity,1);
  }finally{h.dom.window.close();}
 });
@@ -377,18 +378,18 @@ test('a fully paid named account returns to quick sale for the next guest after 
  for(const mode of ['Cash','Card']){
   const h=await harness();try{
    await startShift(h);const id=await namedAccount(h);
-   h.click('.product[data-action="add"]');await until(()=>h.server.orders.find(o=>o.id===id).lines.length===1,'named item');
+   h.click('.product[data-action="add"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders.find(o=>o.id===id).lines.length===1,'named item');
    h.click('[data-action="pay'+mode+'"]');await until(()=>h.w.document.querySelector('[name="received"]'),'payment dialog');
    if(mode==='Card'){
     h.submit();await until(()=>/terminálu/.test(h.w.document.querySelector('#dialog-error').textContent),'unconfirmed card rejected');
     assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Stůl 12');
     h.w.document.querySelector('[name="cardConfirmed"]').checked=true;
    }
-   h.submit();await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'paid');
+   h.submit();await until(()=>!h.w.POSCloud.busy&&h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'paid');
    assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Rychlý prodej');
    assert.equal(h.w.document.querySelector('#account-search').value,'');
    assert.equal(h.server.receipts[0].orderId,id);assert.equal(h.server.receipts[0].orderName,'Stůl 12');
-   h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines.length===1,'next guest');
+   h.click('.product[data-action="add"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines.length===1,'next guest');
    assert.equal(h.server.orders.find(o=>o.id===id).lines.length,0);
   }finally{h.dom.window.close();}
  }
@@ -397,15 +398,15 @@ test('a partial named payment keeps its remainder selected and only the final pa
  const h=await harness();try{
   await startShift(h);const id=await namedAccount(h,'Žaneta');
   h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-action="add"]');
-  await until(()=>h.server.orders.find(o=>o.id===id).lines[0]?.quantity===3,'three pieces');
+  await until(()=>!h.w.POSCloud.busy&&h.server.orders.find(o=>o.id===id).lines[0]?.quantity===3,'three pieces');
   h.click('[data-action="paySplit"]');await until(()=>h.w.document.querySelector('.payment-item'),'split');
   h.click('.payment-item');h.click('[data-qty="1"]');h.submit();
-  await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'partial paid');
+  await until(()=>!h.w.POSCloud.busy&&h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'partial paid');
   assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Žaneta');
   assert.equal(h.w.document.querySelector('#account-search').value,'Žaneta');
   assert.equal(h.w.document.querySelector('.quantity-tap').textContent,'2×');
   h.click('[data-action="payCash"]');await until(()=>h.w.document.querySelector('#dialog').open&&h.w.document.querySelector('#dialog-title').textContent==='Zaplatit hotově','remaining payment');h.submit();
-  await until(()=>h.server.receipts.length===2&&!h.w.document.querySelector('#dialog').open,'remainder paid');
+  await until(()=>!h.w.POSCloud.busy&&h.server.receipts.length===2&&!h.w.document.querySelector('#dialog').open,'remainder paid');
   assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Rychlý prodej');
   assert.equal(h.server.orders.find(o=>o.id===id).lines.length,0);
  }finally{h.dom.window.close();}
@@ -414,7 +415,7 @@ test('recovering a named checkout returns to quick sale once, or preserves items
  for(const laterItem of [false,true]){
   const h=await harness();try{
    await startShift(h);const id=await namedAccount(h);
-   h.click('.product[data-action="add"]');await until(()=>h.server.orders.find(o=>o.id===id).lines.length===1,'named item');
+   h.click('.product[data-action="add"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders.find(o=>o.id===id).lines.length===1,'named item');
    const productId=h.server.orders.find(o=>o.id===id).lines[0].productId;
    h.click('[data-action="payCash"]');await until(()=>h.w.document.querySelector('[name="received"]'),'payment');
    h.drop('checkout');h.submit();await until(()=>h.w.POSCloud.pending?.type==='checkout'&&!h.w.POSCloud.busy&&!h.w.document.querySelector('#dialog-submit').disabled,'checkout awaiting recovery');
@@ -467,11 +468,11 @@ test('new paid quantities update ranking and a refund removes them; unpaid marki
   await startShift(h);h.click('[data-action="category"][data-id="Pivo"]');
   const original=productIds(h),id=original[1],firstButton=h.w.document.querySelector('.product[data-action="add"]');
   h.click('[data-action="entryCount"][data-id="5"]');h.click('.product[data-id="'+id+'"]');
-  await until(()=>h.server.orders[0].lines[0]?.quantity===5,'five unpaid pieces');
+  await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines[0]?.quantity===5,'five unpaid pieces');
   assert.deepEqual(productIds(h),original);assert.equal(h.w.document.querySelector('.product[data-action="add"]'),firstButton);
   h.click('[data-action="paySplit"]');await until(()=>h.w.document.querySelector('.payment-item'),'split dialog');
   h.click('.payment-item');h.click('[data-qty="2"]');h.submit();
-  await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'two paid pieces');
+  await until(()=>!h.w.POSCloud.busy&&h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'two paid pieces');
   assert.equal(h.server.orders[0].lines[0].quantity,3);assert.equal(productIds(h)[0],id);
   await h.w.POSCloud.refresh();assert.equal(productIds(h)[0],id);
   h.external('refund',{receiptId:h.server.receipts[0].id,reason:'Test'});await h.w.POSCloud.refresh();
@@ -498,7 +499,7 @@ test('search selects the real table number or a customer without accents and mar
   search.value='zaneta';search.dispatchEvent(new h.w.Event('input'));
   const customer=h.w.document.querySelector('#account-results [data-action="account"]');assert.equal(customer.querySelector('strong').textContent,'Žaneta');customer.click();
   h.click('[data-action="entryCount"][data-id="5"]');h.click('.product[data-action="add"]');
-  await until(()=>h.server.orders.find(o=>o.name==='Žaneta').lines[0]?.quantity===5,'five pieces marked');
+  await until(()=>!h.w.POSCloud.busy&&h.server.orders.find(o=>o.name==='Žaneta').lines[0]?.quantity===5,'five pieces marked');
   assert.equal(h.calls.filter(c=>c.type==='addLine').length,1);
   assert.equal(h.calls.find(c=>c.type==='addLine').payload.quantity,5);
   assert.equal(h.w.document.querySelector('#entry-quantity').textContent,'1×');
@@ -507,7 +508,7 @@ test('search selects the real table number or a customer without accents and mar
 });
 test('calculator accepts multi-digit counts and single-tap corrections close automatically',{concurrency:false},async()=>{
  const h=await harness();try{
-  await startShift(h);h.click('[data-action="entryQuantity"]');h.click('[data-qty-more]');
+  await startShift(h);h.click('[data-action="entryQuantity"]');
   h.click('[data-qty-digit="1"]');h.click('[data-qty-digit="2"]');h.click('[data-qty-confirm]');
   assert.equal(h.w.document.querySelector('#dialog').open,false);assert.equal(h.w.document.querySelector('#entry-quantity').textContent,'12×');
   h.click('.product[data-action="add"]');await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent==='12×','12 pieces marked');
@@ -515,7 +516,7 @@ test('calculator accepts multi-digit counts and single-tap corrections close aut
   await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent==='3×','three pieces correction');
   assert.equal(h.w.document.querySelector('#dialog').open,false);
   assert.equal(h.calls.filter(c=>c.type==='setLineQuantity').length,1);
-  h.click('[data-action="entryQuantity"]');h.click('[data-qty="4"]');h.click('.product[data-action="add"]');
+  h.click('[data-action="entryQuantity"]');h.click('[data-qty-digit="4"]');h.click('[data-qty-confirm]');h.click('.product[data-action="add"]');
   await until(()=>h.w.document.querySelector('.quantity-tap')?.textContent==='7×','second quantity picker has no stale listener');
  }finally{h.dom.window.close();}
 });
@@ -523,8 +524,8 @@ test('split bill selects item then pieces, returns to other items, leaves the re
  const h=await harness();try{
   await startShift(h);
   const products=[...h.w.document.querySelectorAll('.product[data-action="add"]')];
-  h.click('[data-action="entryCount"][data-id="5"]');products[0].click();await until(()=>h.server.orders[0].lines[0]?.quantity===5,'first product');
-  h.click('[data-action="entryCount"][data-id="3"]');products[1].click();await until(()=>h.server.orders[0].lines.length===2,'second product');
+  h.click('[data-action="entryCount"][data-id="5"]');products[0].click();await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines[0]?.quantity===5,'first product');
+  h.click('[data-action="entryCount"][data-id="3"]');products[1].click();await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines.length===2,'second product');
   const original=structuredClone(h.server.orders[0].lines);
   h.click('[data-action="paySplit"]');await until(()=>h.w.document.querySelector('.payment-item'),'split opened');
   assert.equal(h.w.document.querySelector('#dialog-submit').disabled,true);
@@ -533,7 +534,7 @@ test('split bill selects item then pieces, returns to other items, leaves the re
   h.click(`[data-payment-line="${original[1].id}"]`);h.click('[data-qty="1"]');
   assert.equal(h.w.document.querySelector('#dialog-form').elements['line-'+original[0].id].value,'2');
   assert.equal(h.w.document.querySelector('#dialog-form').elements['line-'+original[1].id].value,'1');
-  h.submit();await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'partial paid and returned to register');
+  h.submit();await until(()=>!h.w.POSCloud.busy&&h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'partial paid and returned to register');
   assert.deepEqual(h.server.receipts[0].lines.map(l=>l.quantity),[2,1]);assert.deepEqual(h.server.orders[0].lines.map(l=>l.quantity),[3,2]);
   assert.match(h.w.document.querySelector('#toast').textContent,/Zaplaceno/);
   h.w.document.querySelector('[data-view="history"]').click();h.click('[data-action="receipt"]');assert.equal(h.w.document.querySelector('#dialog-title').textContent,'Zaplaceno');
@@ -543,13 +544,13 @@ test('split bill selects item then pieces, returns to other items, leaves the re
 test('partial card payment requires terminal confirmation and preserves the other pieces',{concurrency:false},async()=>{
  const h=await harness();try{
   await startShift(h);h.click('[data-action="entryCount"][data-id="4"]');h.click('.product[data-action="add"]');
-  await until(()=>h.server.orders[0].lines[0]?.quantity===4,'four pieces');
+  await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines[0]?.quantity===4,'four pieces');
   h.click('[data-action="paySplit"]');await until(()=>h.w.document.querySelector('.payment-item'),'split');
   h.click('.payment-item');h.click('[data-qty="1"]');h.click('[data-payment-mode="card"]');
   const confirm=h.w.document.querySelector('[name="cardConfirmed"]');assert.equal(confirm.required,true);
   h.submit();await until(()=>/terminálu/.test(h.w.document.querySelector('#dialog-error').textContent),'unconfirmed terminal rejected');
   assert.equal(h.server.receipts.length,0);confirm.checked=true;h.submit();
-  await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'card paid');
+  await until(()=>!h.w.POSCloud.busy&&h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'card paid');
   assert.equal(h.server.orders[0].lines[0].quantity,3);assert.equal(h.server.receipts[0].cash,0);assert.ok(h.server.receipts[0].card>0);
  }finally{h.dom.window.close();}
 });
@@ -590,7 +591,7 @@ for(const mode of ['cash','card','split']){
    }
    h.hold();h.submit();h.submit();await until(()=>h.w.POSCloud.busy,'financial commit held');
    const submitted=h.calls.filter(c=>c.type==='restoreReceipt').length;h.submit();assert.equal(h.calls.filter(c=>c.type==='restoreReceipt').length,submitted);
-   h.release();await until(()=>h.server.receipts.length===2&&!h.w.document.querySelector('#dialog').open,'financial restore confirmed');
+   h.release();await until(()=>!h.w.POSCloud.busy&&h.server.receipts.length===2&&!h.w.document.querySelector('#dialog').open,'financial restore confirmed');
    assert.equal(h.server.receipts[1].restock,true);assert.equal(h.server.receipts[1].card,-h.server.receipts[0].card);
    assert.equal(h.server.orders.find(o=>o.name==='Stůl 1').lines[0].quantity,3);assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Stůl 1');
    assert.match(h.w.document.querySelector('#toast').textContent,/Platba vrácena/);
@@ -620,32 +621,32 @@ for(const timing of ['before','after'])for(const type of ['restoreReceipt','reas
 }
 test('wrong full-payment click switches to item split locally with the same reservation and resets stale terminal confirmation',{concurrency:false},async()=>{
  const h=await harness();try{
-  await startShift(h);h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines[0]?.quantity===3,'three marked');
+  await startShift(h);h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-action="add"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines[0]?.quantity===3,'three marked');
   h.click('[data-action="payCard"]');await until(()=>h.w.document.querySelector('[data-payment-reset]'),'whole card dialog');
   const token=h.server.orders[0].paymentLock.token,calls=h.calls.length;h.w.document.querySelector('[name="cardConfirmed"]').checked=true;
   h.click('[data-payment-reset]');assert.equal(h.calls.length,calls,'splitting is entirely local');assert.equal(h.w.document.querySelector('[name="cardConfirmed"]').checked,false);
   assert.equal(h.w.document.querySelector('.payment-item-count').firstChild.textContent,'0');assert.equal(h.w.document.querySelector('#dialog-submit').disabled,true);
   h.click('.payment-item');h.click('[data-qty="1"]');h.w.document.querySelector('[name="cardConfirmed"]').checked=true;
-  h.submit();await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'one piece paid');
+  h.submit();await until(()=>!h.w.POSCloud.busy&&h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'one piece paid');
   assert.equal(h.server.receipts[0].lines[0].quantity,1);assert.equal(h.server.orders[0].lines[0].quantity,2);
   assert.equal(h.calls.filter(c=>c.type==='beginPayment').length,1);assert.equal(h.calls.find(c=>c.type==='checkout').payload.paymentToken,token);
  }finally{h.dom.window.close();}
 });
 test('back from a mistaken whole payment permits a direct split without reserving or paying the entire table again',{concurrency:false},async()=>{
  const h=await harness();try{
-  await startShift(h);h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines[0]?.quantity===3,'three marked');
+  await startShift(h);h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-action="add"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines[0]?.quantity===3,'three marked');
   h.click('[data-action="payCash"]');await until(()=>h.w.document.querySelector('[name="received"]'),'whole cash dialog');
   assert.equal(h.server.orders[0].paymentLock,undefined);h.click('.close-dialog');assert.equal(h.server.receipts.length,0);
   assert.equal(h.w.document.querySelector('[data-action="paySplit"]').disabled,false);h.click('[data-action="paySplit"]');
   await until(()=>h.w.document.querySelector('.payment-item'),'split resume');assert.equal(h.w.document.querySelector('#dialog-title').textContent,'Rozdělit účet');
-  h.click('.payment-item');h.click('[data-qty="1"]');h.submit();await until(()=>h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'one piece cash');
+  h.click('.payment-item');h.click('[data-qty="1"]');h.submit();await until(()=>!h.w.POSCloud.busy&&h.server.receipts.length===1&&!h.w.document.querySelector('#dialog').open,'one piece cash');
   assert.equal(h.server.orders[0].lines[0].quantity,2);assert.equal(h.calls.filter(c=>c.type==='beginPayment').length,1);
   assert.ok(h.calls.find(c=>c.type==='checkout').payload.paymentToken,'confirmation uses a server reservation');
  }finally{h.dom.window.close();}
 });
 test('a lost reservation response freezes payment until its result is recovered, then allows a direct split',{concurrency:false},async()=>{
  const h=await harness();try{
-  await startShift(h);h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-action="add"]');await until(()=>h.server.orders[0].lines[0]?.quantity===3,'three marked');
+  await startShift(h);h.click('[data-action="entryCount"][data-id="3"]');h.click('.product[data-action="add"]');await until(()=>!h.w.POSCloud.busy&&h.server.orders[0].lines[0]?.quantity===3,'three marked');
   h.drop();h.click('[data-action="payCard"]');await until(()=>h.w.POSCloud.pending&&!h.w.POSCloud.busy,'lost reservation');
   assert.equal(h.w.document.querySelector('[data-action="paySplit"]').disabled,true);const id=h.w.POSCloud.pending.requestId;
   h.click('[data-action="retryPending"]');await until(()=>!h.w.POSCloud.pending,'reservation recovered');
@@ -718,11 +719,11 @@ test('card credit funding reserves an empty customer before the terminal and res
   const o=h.server.orders.find(o=>o.name==='TEST Empty Wallet');h.click('[data-action="account"][data-id="'+o.id+'"]');h.click('[data-action="customerProfile"]');h.click('[data-action="creditTopup"]');
   let form=h.w.document.querySelector('#dialog-form');form.elements.amount.value='500';form.elements.method.value='card';form.elements.method.dispatchEvent(new h.w.Event('change'));
   assert.equal(h.w.document.querySelector('#topup-card-confirm').hidden,true);assert.equal(o.paymentLock,undefined);h.submit();
-  await until(()=>h.server.orders.find(x=>x.id===o.id).paymentLock?.purpose==='creditTopup'&&h.w.document.querySelector('#dialog-submit').textContent==='Připsat kredit','funding prepared');
+  await until(()=>!h.w.POSCloud.busy&&h.server.orders.find(x=>x.id===o.id).paymentLock?.purpose==='creditTopup'&&h.w.document.querySelector('#dialog-submit').textContent==='Připsat kredit','funding prepared');
   assert.equal(h.server.creditLedger.length,0);assert.throws(()=>h.external('closeShift',{counted:0}),/rozpracované platby/);
   h.click('#dialog .close-dialog');h.click('[data-action="checkPayment"]');form=h.w.document.querySelector('#dialog-form');form.elements.checked.checked=true;h.submit();
   await until(()=>!!h.w.document.querySelector('[name="cardConfirmed"]'),'funding resumed');form=h.w.document.querySelector('#dialog-form');form.elements.cardConfirmed.checked=true;h.submit();
-  await until(()=>h.server.creditLedger.length===1,'funding recorded');assert.equal(h.server.creditLedger[0].amount,50000);assert.equal(h.server.orders.find(x=>x.id===o.id).paymentLock,undefined);assert.equal(h.server.receipts.length,0);
+  await until(()=>!h.w.POSCloud.busy&&h.server.creditLedger.length===1,'funding recorded');assert.equal(h.server.creditLedger[0].amount,50000);assert.equal(h.server.orders.find(x=>x.id===o.id).paymentLock,undefined);assert.equal(h.server.receipts.length,0);
  }finally{h.dom.window.close();}
 });
 

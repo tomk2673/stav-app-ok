@@ -14,7 +14,7 @@ html = html.replace('<script src="./compat.js"></script>', '<script>' + (root / 
 for online in ('vendor/supabase-2.117.2.js', 'config.js', 'cloud.js'):
     html = html.replace('<script src="./' + online + '" defer></script>', '')
 scripts = []
-for filename in ['catalog.js', 'core.js', 'customer.js', 'storage.js', 'stock.js', 'app.js']:
+for filename in ['catalog.js', 'core.js', 'marking.js', 'sync.js', 'customer.js', 'storage.js', 'stock.js', 'app.js']:
     html = html.replace('<script src="./' + filename + '" defer></script>', '')
     scripts.append((root / filename).read_text().replace('</script', '<\\/script'))
 html = html.replace('</body>', '<script>' + '\n'.join(scripts) + '</script></body>')

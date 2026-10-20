@@ -54,6 +54,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -65,6 +67,8 @@ jobs:
         run: npm run test:service-workers --prefix tests/pos-browser
       - name: Compact navigation and complete POS flows
         run: POS_BROWSER_PROFILES=pwmodern/chromium,pwmodern/webkit npm test --prefix tests/pos-browser
+      - name: Local marking, offline recovery, concurrent devices and before/after response
+        run: npm run test:marking --prefix tests/pos-browser
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

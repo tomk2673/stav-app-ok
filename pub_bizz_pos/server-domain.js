@@ -3,6 +3,7 @@
   'use strict';
   const C = typeof module !== 'undefined' ? require('./core.js') : root.POSCore;
   const L = typeof module !== 'undefined' ? require('./loyalty.js') : root.POSLoyalty;
+  const M = typeof module !== 'undefined' ? require('./marking.js') : root.POSMarking;
   const manager = new Set(['owner', 'manager']);
   const staffCommands = new Set(['openShift', 'newOrder', 'renameOrder', 'endVisit', 'deleteOrder', 'mergeOrders', 'addLine', 'removeLine', 'setLineQuantity', 'beginPayment', 'cancelPayment', 'checkout', 'reassignReceipt', 'creditTopup', 'backup', 'redeemReward']);
   const managerCommands = new Set(['product', 'archiveProduct', 'importProducts', 'refund', 'restoreReceipt', 'creditReverse', 'cashMovement', 'closeShift', 'settings', 'recipe', 'resolveStock', 'loyaltyConfig']);
@@ -42,7 +43,7 @@
   function run(state, type, payload, actor, stock, now = new Date().toISOString(), receiptStock = []) {
     check(actor && ['owner', 'manager', 'staff'].includes(actor.role), 'Nemáš oprávnění měnit pokladnu.');
     check(staffCommands.has(type) || (manager.has(actor.role) && managerCommands.has(type)), 'Tuto operaci může provést vedoucí nebo majitel.');
-    const p = structuredClone(payload || {}), s = structuredClone(state);
+    const p = M.normalize(state,type,payload || {}), s = structuredClone(state);
     s.recipes ||= {};
     s.customers ||= [];
     s.creditLedger ||= [];
@@ -119,6 +120,7 @@
         check(C.creditBalance(s,customer.id)>=due,`Na kreditu chybí ${((due-C.creditBalance(s,customer.id))/100).toLocaleString('cs-CZ')} Kč.`);
       }
       result = C.execute(s, type, p, now, restored, actor.id);
+      M.record(s,type,p);
       if (type === 'checkout' && result) {
         delete order.paymentLock;
         result.actorId = actor.id;

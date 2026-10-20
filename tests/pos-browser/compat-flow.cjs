@@ -152,7 +152,7 @@ async function flow(browser,base,width){
     await page.locator('#account-search').fill('');
     assert.equal(await page.locator('.receipt-head h2').textContent(),'Rychlý prodej','empty customer means quick sale');
     await page.locator('#account-search').fill('zaneta');await page.locator('#account-results [data-action="account"]').first().click();
-    await page.locator('[data-action="entryQuantity"]').click();await page.locator('[data-qty-more]').click();
+    await page.locator('[data-action="entryQuantity"]').click();
     for(const digit of ['1','2'])await page.locator('[data-qty-digit="'+digit+'"]').click();
     await page.locator('[data-qty-confirm]').click();assert.equal(await page.locator('#entry-quantity').textContent(),'12×');
     const markedProduct=await page.locator('.product[data-action="add"]').nth(1).getAttribute('data-id');

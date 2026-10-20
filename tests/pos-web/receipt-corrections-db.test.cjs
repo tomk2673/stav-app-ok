@@ -2,6 +2,7 @@
 const test=require('node:test'), assert=require('node:assert/strict'), fs=require('node:fs'), path=require('node:path');
 const {PGlite}=require('@electric-sql/pglite');
 const C=require('../../pub_bizz_pos/core.js'), D=require('../../pub_bizz_pos/server-domain.js');
+const M=require('../../pub_bizz_pos/marking.js');
 const root=path.resolve(__dirname,'../..');
 const read=file=>fs.readFileSync(path.join(root,file),'utf8');
 const migration='supabase/migrations/20261013222653_pos_receipt_terminal_guard.sql';
@@ -59,6 +60,30 @@ async function fixture(mode='cash',mapped=true,substitutions=false,deployedCommi
  const snapshot=async()=>({register:(await db.query('select state,revision from pos_registers')).rows,receipts:(await db.query('select id,payload from pos_receipts order by occurred_at,id')).rows,stock:(await db.query('select product_id,quantity_ml,quantity_units,untracked_units,source_type,source_id from stock_movements order by id')).rows,requests:(await db.query('select request_id from pos_requests order by request_id')).rows,audit:(await db.query('select event_type,after_data from audit_events order by id')).rows});
  return {db,org,venue,owner,staff,sale,target,liquid,counted,stock,run,commit,snapshot,get s(){return s;}};
 }
+test('SQL marking CAS rebases concurrent additions and permanently consumes both successful and rejected UUIDs without money or stock effects',async()=>{
+ const f=await fixture('cash',false,true,true);try{
+  const id=crypto.randomUUID(),p=M.prepare(f.s,'addLine',{orderId:f.target.id,productId:'agnis-2810',quantity:2},id);
+  const old=structuredClone(f.s),stale=D.run(old,'addLine',p,f.staff,f.stock);
+  await f.run('addLine',{orderId:f.target.id,productId:'agnis-2810'});
+  const conflict=await f.commit('addLine',stale.state,stale.result,f.staff,id,'test-hash',old.revision);assert.equal(conflict.conflict,true);
+  const rebased=D.run(f.s,'addLine',p,f.staff,f.stock);
+  const first=await f.commit('addLine',rebased.state,rebased.result,f.staff,id,'test-hash',f.s.revision);
+  assert.equal(first.duplicate,false);
+  const duplicate=await f.commit('addLine',stale.state,stale.result,f.staff,id,'test-hash',old.revision);assert.equal(duplicate.duplicate,true);
+  let live=(await f.db.query('select state from pos_registers')).rows[0].state;
+  assert.equal(live.orders.find(o=>o.id===f.target.id).lines[0].quantity,3);
+  const line=live.orders.find(o=>o.id===f.target.id).lines[0],editId=crypto.randomUUID(),edit=M.prepare(live,'setLineQuantity',{orderId:f.target.id,lineId:line.id,quantity:8},editId);
+  const external=D.run(live,'addLine',{orderId:f.target.id,productId:'agnis-2810'},f.staff,f.stock);
+  await f.commit('addLine',external.state,external.result,f.staff,crypto.randomUUID(),'external',live.revision);live=external.state;
+  assert.throws(()=>D.run(live,'setLineQuantity',edit,f.staff,f.stock),/jiné zařízení/);
+  const rejected=M.reject(live,'setLineQuantity',edit,'Stale test edit',f.staff.id),before=await f.snapshot();
+  await f.commit('setLineQuantity',rejected.state,rejected.result,f.staff,editId,'edit-hash',live.revision);
+  const retry=await f.commit('setLineQuantity',stale.state,null,f.staff,editId,'edit-hash',old.revision);assert.equal(retry.duplicate,true);assert.equal(retry.result.type,'markingRejected');
+  const after=await f.snapshot();assert.deepEqual(after.receipts,before.receipts);assert.deepEqual(after.stock,before.stock);
+  assert.equal(after.register[0].state.orders.find(o=>o.id===f.target.id).lines[0].quantity,4);
+  assert.equal((await f.db.query('select count(*)::int as n from pos_requests where request_id=$1',[editId])).rows[0].n,1);
+ }finally{await f.db.close();}
+});
 test('SQL 2cl partial payment deducts exactly 20ml per piece and restoration/re-sale never halves stock twice',async()=>{
  const f=await fixture('cash',false,true);try{
   await f.run('recipe',{productId:'agnis-2810',version:0,mode:'recipe',components:[{productId:f.liquid,unit:'ml',quantity:40}]});

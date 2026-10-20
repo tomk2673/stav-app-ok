@@ -2,6 +2,7 @@ import { createClient } from 'supabase';
 import './catalog.js';
 import './core.js';
 import './loyalty.js';
+import './marking.js';
 import './server-domain.js';
 
 const C = (globalThis as any).POSCore;
@@ -28,7 +29,7 @@ async function snapshot(venue:any, result:any=null, knownStock:any=null) {
     db.from('pos_stock_lines').select('*',{count:'exact'}).eq('venue_id',venue.id).in('status',['missing_recipe','shortage','awaiting_stock']).order('updated_at',{ascending:false}).limit(200)
   ]);
   if(issues.error) throw issues.error;
-  return {state,stock,issues:issues.data,issueCount:issues.count,result,role:venue.role,venue};
+  return {state,stock,issues:issues.data,issueCount:issues.count,result,role:venue.role,venue,markingProtocol:1};
 }
 
 Deno.serve(async (req: Request) => {
@@ -66,12 +67,14 @@ Deno.serve(async (req: Request) => {
       return reply(await snapshot(venue));
     }
     if(!uuid(body.requestId)||typeof body.type!=='string'||!body.payload||typeof body.payload!=='object'||Array.isArray(body.payload)) return reply({error:'Neplatná operace.'},400);
+    if(body.payload.marking&&body.payload.marking.operationId!==body.requestId)return reply({error:'Nesouhlasí identifikátor markování.',definitive:true},422);
     const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({type:body.type,payload:body.payload}))))).map(x=>x.toString(16).padStart(2,'0')).join('');
     const previous:any=await checked(db.from('pos_requests').select('request_hash,actor_id,result').eq('venue_id',venue.id).eq('request_id',body.requestId).maybeSingle());
     if(previous) {
       if(previous.request_hash!==hash||previous.actor_id!==user.id) return reply({error:'Identifikátor operace byl použit jinak.'},409);
       return reply(await snapshot(venue,previous.result));
     }
+    if(venue.role==='accountant')return reply({error:'Tento účet má pouze oprávnění ke čtení.'},403);
     const stock:any=await stockFor(venue);
     for(let attempt=0;attempt<4;attempt++) {
       const s=await stateFor(venue);
@@ -84,7 +87,11 @@ Deno.serve(async (req: Request) => {
       catch(e) {
         const already:any=await checked(db.from('pos_requests').select('request_hash,actor_id,result').eq('venue_id',venue.id).eq('request_id',body.requestId).maybeSingle());
         if(already?.request_hash===hash && already.actor_id===user.id) return reply(await snapshot(venue,already.result,stock));
-        return reply({error:(e as Error).message,definitive:true},422);
+        if(body.payload.marking&&(globalThis as any).POSMarking.types.has(body.type)) {
+          // Consume the UUID with a durable rejection under the same CAS/ledger.
+          // A concurrent retry can never turn a dismissed conflict into a sale.
+          command=(globalThis as any).POSMarking.reject(s,body.type,payload,(e as Error).message,user.id);
+        } else return reply({error:(e as Error).message,definitive:true},422);
       }
       const commit:any=await checked(db.rpc('pos_commit',{
         p_venue:venue.id,p_actor:user.id,p_request:body.requestId,p_hash:hash,p_expected:s.revision,

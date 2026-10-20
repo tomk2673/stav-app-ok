@@ -17,7 +17,7 @@ const btn = (label, action, cls = 'secondary', attrs = '') => `<button type="but
 function toast(message, bad = false) { const t = $('#toast'); t.textContent = message; t.className = `toast visible${bad ? ' bad' : ''}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = 'toast', 4200); }
 async function command(type, payload, fast = false) {
   $('#save-state').textContent = 'Ukládám…';
-  try { const response = await Store.command(type, payload); state = response.state; fast && view === 'pos' ? renderPOSFast() : render(); return response.result; }
+  try { const response = await Store.command(type, payload); const next=window.POSCloud?await Store.read():response.state; if(next!==state){state=next;fast&&view==='pos'?renderPOSFast():render();} return response.result; }
   catch (e) { $('#save-state').textContent = window.POSCloud?.pending ? 'Výsledek zatím nepotvrzený' : 'Změna nebyla uložena'; $('#save-state').classList.add('error'); throw e; }
 }
 function renderPOSFast(){
@@ -28,7 +28,7 @@ function renderPOSFast(){
   const nextAccounts=fresh.querySelector('.accounts'),nextReceipt=fresh.querySelector('.receipt');
   const accounts=live.querySelector('.accounts'),receipt=live.querySelector('.receipt');
   if(accounts&&nextAccounts)accounts.replaceWith(nextAccounts);
-  if(receipt&&nextReceipt)receipt.replaceWith(nextReceipt);
+  if(receipt&&nextReceipt){const scroll=receipt.querySelector('.receipt-items')?.scrollTop||0;receipt.replaceWith(nextReceipt);nextReceipt.querySelector('.receipt-items').scrollTop=scroll;}
   const notice=live.querySelector('#payment-reservation'),nextNotice=fresh.querySelector('#payment-reservation');
   if(notice&&nextNotice)notice.replaceWith(nextNotice);
   updateEntryContext();
@@ -60,16 +60,30 @@ function closeDialog() {
   if (dialogCancel) dialogCancel(); else $('#dialog').close();
 }
 function connection() {
-  const cloud=window.POSCloud, online=cloud?cloud.connected:navigator.onLine;
-  $('#network').textContent=cloud?(online?'Spojeno s PUB GURU':'Čekám na server'):(online?'Místní pokladna':'Místní · bez internetu');
+  const cloud=window.POSCloud,online=cloud?cloud.connected:navigator.onLine;
+  $('#network').textContent=cloud?(online?'Spojeno s PUB GURU':cloud.canMark?'Bez spojení · místně':'Čekám na server'):(online?'Místní pokladna':'Místní · bez internetu');
   $('#network').classList.toggle('offline',!online);
   if(!cloud)return;
-  const pending=cloud.pending, warning=$('#sync-warning');
-  warning.hidden=!state||(!pending&&online);
-  warning.innerHTML=pending?`<span><strong>Ověřujeme uloženou operaci.</strong> Platbu na terminálu neopakuj.</span>${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}`:'<span>Server není dostupný. Zobrazená data mohou být starší; placení vyžaduje spojení.</span>';
-  if(state){$('#save-state').textContent=cloud.busy?'Ukládám na server…':pending?'Čeká na ověření':online?'Potvrzeno serverem':'Spojení přerušeno';$('#save-state').classList.toggle('error',!!pending||!online);}
-  const writeActions=['add','minus','restoreReceipt','newOrder','renameOrder','endVisit','deleteOrder','mergeOrders','openShift','payCash','payCard','payCredit','paySplit','cancelPayment','creditTopup','creditReverse','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
-  document.querySelectorAll('[data-action]').forEach(b=>{if(writeActions.includes(b.dataset.action)){const lock=!!pending&&!cloud.busy||!online;if(lock&&!b.disabled){b.disabled=true;b.dataset.connectionDisabled='true';}else if(!lock&&b.dataset.connectionDisabled){b.disabled=false;delete b.dataset.connectionDisabled;}}});
+  const all=cloud.outbox||[],marking=all.filter(r=>r.local?.kind==='marking'),strict=all.find(r=>r.local?.kind!=='marking'),conflicts=marking.filter(r=>r.local.status==='blocked');
+  const pending=cloud.pending,warning=$('#sync-warning');
+  warning.hidden=!state||(!pending&&online&&!cloud.storageError&&!cloud.authBlocked);
+  if(strict)warning.innerHTML=`<span><strong>Ověřujeme uloženou operaci.</strong> Platbu na terminálu neopakuj.</span>${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}`;
+  else if(marking.length)warning.innerHTML=`<span><strong>${cloud.authBlocked?'Ověř přihlášení a oprávnění':conflicts.length?`${conflicts.length} konfliktů ke kontrole`:cloud.busy?'Odesílám markování':'Uloženo v zařízení'}</strong> · ${marking.length} změn čeká na potvrzení.</span><div class="sync-actions">${btn('Zobrazit','syncDetails','secondary')}${!cloud.busy?btn('Ověřit','retryPending','secondary'):''}</div>`;
+  else warning.innerHTML=`<span>${E(cloud.storageError|| (cloud.authBlocked?'Přístup vyžaduje nové přihlášení. Čekající data zůstávají v zařízení.':'Server není dostupný. Markování se ukládá v zařízení; placení vyžaduje spojení.'))}</span>`;
+  if(state){$('#save-state').textContent=conflicts.length?'Konflikt ke kontrole':marking.length?`${marking.length} změn v zařízení`:cloud.busy?'Ukládám na server…':pending?'Čeká na ověření':online?'Potvrzeno serverem':'Místní · bez spojení';$('#save-state').classList.toggle('error',!!conflicts.length||!!strict||!!cloud.storageError);}
+  const writeActions=['add','minus','quantityPad','restoreReceipt','newOrder','renameOrder','endVisit','deleteOrder','mergeOrders','openShift','payCash','payCard','payCredit','paySplit','cancelPayment','creditTopup','creditReverse','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
+  const markAllowed=cloud.canMark,orderLocked=!!state&&!!getOrder()?.paymentLock,orderConflict=conflicts.some(r=>r.payload.orderId===current);
+  document.querySelectorAll('[data-action]').forEach(b=>{
+    if(!writeActions.includes(b.dataset.action))return;
+    const soft=['add','minus','quantityPad'].includes(b.dataset.action)&&cloud.optimisticMarking;
+    const lock=soft?(!markAllowed||orderLocked||orderConflict):(!!pending||!online||!!cloud.storageError||cloud.authBlocked);
+    if(lock&&!b.disabled){b.disabled=true;b.dataset.connectionDisabled='true';}
+    else if(!lock&&b.dataset.connectionDisabled){b.disabled=false;delete b.dataset.connectionDisabled;}
+  });
+}
+function syncDetails() {
+  const rows=(window.POSCloud?.outbox||[]).filter(r=>r.local?.kind==='marking');
+  showDialog('Čekající markování',`<p class="help">Čekající položky patří původnímu účtu. Konflikt porovnej s potvrzeným účtem; chybějící nápoj pak namarkuj znovu.</p><div class="sync-list">${rows.map(r=>`<div class="sync-item"><strong>${E(r.local.orderName)}</strong><span>${E(r.local.label)} · ${r.type==='addLine'?'+':r.type==='removeLine'?'−':''}${r.local.quantity} ks</span><small>${E(r.local.error||'Uloženo v zařízení · čeká na server')}</small>${r.local.status==='blocked'?btn('Ponechat stav serveru','dismissMarking','secondary',`data-id="${E(r.requestId)}"`):''}</div>`).join('')}</div>`,null);
 }
 function render() {
   if (!state) return;
@@ -120,7 +134,10 @@ function bindAccountSearch() {
   input.addEventListener('focus', () => { accountSearchOpen = true; if(!accountQuery&&current!=='bar')input.select(); renderAccountResults(); });
   input.addEventListener('input', e => {
     accountQuery = e.target.value; accountSearchOpen = true;
-    if(!accountQuery.trim()&&current!=='bar'){current='bar';renderPOSFast();renderProducts();}
+    if(!accountQuery.trim()&&current!=='bar'){
+      try{window.POSCloud?.selectOrder('bar');}catch(err){accountQuery=getOrder().name;input.value=accountQuery;toast(err.message,true);return;}
+      current='bar';renderPOSFast();renderProducts();
+    }
     renderAccountResults();
   });
   input.addEventListener('keydown', e => {
@@ -152,7 +169,7 @@ function resizePOSWorkspace() {
 }
 function selectAccount(id) {
   if(!state.orders.some(o=>o.id===id))return;
-  current=id;entryQuantity=1;accountQuery='';accountSearchOpen=false;
+  window.POSCloud?.selectOrder(id);current=id;entryQuantity=1;accountQuery='';accountSearchOpen=false;
   const input=$('#account-search');if(input){input.value=id==='bar'?'':getOrder().name;input.blur();}
   renderPOSFast();renderProducts();renderAccountResults();
 }
@@ -162,7 +179,8 @@ function renderPOS() {
   const canResume=!o.paymentLock||o.paymentLock.actorId===window.POSCloud?.user?.id||['owner','manager'].includes(window.POSCloud?.meta.role);
   const customer=customerAccount(o), credit=customer?customerCredit(o):0;
   const accounts=state.orders.map(a=>`<button type="button" class="account ${a.id===o.id?'active':''}" data-action="account" data-id="${E(a.id)}" aria-pressed="${a.id===o.id}"><span class="account-number">${E(accountNumber(a)||'•')}</span><span class="account-name">${E(a.name)}<span class="account-amount">${a.lines.length?fmt(C.sum(a.lines)):'Prázdný účet'}</span></span></button>`).join('');
-  const lines=o.lines.map(l=>`<div class="line"><div class="line-top"><span>${E(l.name)}${l.serving?`<small class="small"> · ${E(l.serving)}</small>`:''}</span><strong>${fmt(l.price*l.quantity)}</strong></div><div class="line-bottom"><span>${fmt(l.price)} / ks</span><div class="quantity"><button type="button" data-action="minus" data-id="${E(l.id)}" aria-label="Odebrat ${E(l.name)}">−</button><button type="button" class="quantity-tap" data-action="quantityPad" data-id="${E(l.id)}" aria-label="Množství ${E(l.name)}">${l.quantity}×</button><button type="button" data-action="add" data-id="${E(l.productId)}" data-serving-ml="${l.servingMl||''}" aria-label="Přidat ${E(l.name)}">+</button></div></div></div>`).join('');
+  const waiting=(window.POSCloud?.outbox||[]).filter(r=>r.local?.kind==='marking'&&r.payload.orderId===o.id);
+  const lines=o.lines.map(l=>`<div class="line${waiting.some(r=>r.payload.productId===l.productId||r.payload.lineId===l.id)?' line-pending':''}"><div class="line-top"><span>${E(l.name)}${waiting.some(r=>r.payload.productId===l.productId||r.payload.lineId===l.id)?'<small class="pending-badge">čeká</small>':''}${l.serving?`<small class="small"> · ${E(l.serving)}</small>`:''}</span><strong>${fmt(l.price*l.quantity)}</strong></div><div class="line-bottom"><span>${fmt(l.price)} / ks</span><div class="quantity"><button type="button" data-action="minus" data-id="${E(l.id)}" aria-label="Odebrat ${E(l.name)}">−</button><button type="button" class="quantity-tap" data-action="quantityPad" data-id="${E(l.id)}" aria-label="Množství ${E(l.name)}">${l.quantity}×</button><button type="button" data-action="add" data-id="${E(l.productId)}" data-serving-ml="${l.servingMl||''}" aria-label="Přidat ${E(l.name)}">+</button></div></div></div>`).join('');
   return `<div class="pos-layout">
     <aside class="accounts"><div class="section-label"><span class="eyebrow">Otevřené účty</span><span class="badge">${state.orders.filter(x=>x.lines.length).length}</span></div>${accounts}${btn('+ Nový účet','newOrder','add-account')}</aside>
     <section class="catalog-area">
@@ -177,16 +195,16 @@ function renderPOS() {
       <div class="categories" aria-label="Kategorie">${cats.map(c=>`<button type="button" class="category ${category===c?'active':''}" data-action="category" data-id="${E(c)}" aria-pressed="${category===c}">${E(c)}</button>`).join('')}</div>
       <div class="products" id="products"></div>
     </section>
-    <section class="receipt" aria-label="Aktuální účet"><div class="receipt-head"><div><h2>${E(o.name)}</h2><p>${o.lines.length?'Účet zůstává otevřený do zaplacení':'Připravený pro dalšího hosta'}</p></div><span class="receipt-number">${E(accountNumber(o)||'•')}</span></div><div class="receipt-tools">${o.id!=='bar'?btn('Přejmenovat','renameOrder','merge-account rename-account',o.paymentLock?'disabled':''):''}${btn('Spojit účty','mergeOrders','merge-account',canMerge?'':'disabled')}</div><div class="receipt-items">${lines||'<div class="receipt-empty"><span>≡</span><p>Účet je zatím prázdný.<br>Přidej první nápoj.</p></div>'}</div><div class="receipt-bottom"><div class="receipt-meta"><span>${o.lines.reduce((n,l)=>n+l.quantity,0)} ks na účtu</span>${o.id!=='bar'&&!o.lines.length?btn('Smazat účet','deleteOrder','splitbutton'):'<span>Ceny v Kč</span>'}</div><div class="receipt-total"><span>K zaplacení</span><strong>${fmt(C.sum(o.lines))}</strong></div><div class="payment-buttons ${customer?'with-credit':''}">${btn('Hotově','payCash','paycash',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${btn('Kartou','payCard','paycard',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${customer?btn(`Kredit ${fmt(credit)}`,'payCredit','paycredit',!sh||!o.lines.length||!!o.paymentLock||credit<C.sum(o.lines)?'disabled':''):''}</div>${btn('Rozdělit platbu / položky','paySplit','splitbutton',!sh||!o.lines.length||!canResume?'disabled':'')}</div></section>
+    <section class="receipt" aria-label="Aktuální účet"><div class="receipt-head"><div><h2>${E(o.name)}</h2>${waiting.length?`<span class="pending-badge">${waiting.length} změn čeká</span>`:''}<p>${o.lines.length?'Účet zůstává otevřený do zaplacení':'Připravený pro dalšího hosta'}</p></div><span class="receipt-number">${E(accountNumber(o)||'•')}</span></div><div class="receipt-tools">${o.id!=='bar'?btn('Přejmenovat','renameOrder','merge-account rename-account',o.paymentLock?'disabled':''):''}${btn('Spojit účty','mergeOrders','merge-account',canMerge?'':'disabled')}</div><div class="receipt-items">${lines||'<div class="receipt-empty"><span>≡</span><p>Účet je zatím prázdný.<br>Přidej první nápoj.</p></div>'}</div><div class="receipt-bottom"><div class="receipt-meta"><span>${o.lines.reduce((n,l)=>n+l.quantity,0)} ks na účtu</span>${o.id!=='bar'&&!o.lines.length?btn('Smazat účet','deleteOrder','splitbutton'):'<span>Ceny v Kč</span>'}</div><div class="receipt-total"><span>K zaplacení</span><strong>${fmt(C.sum(o.lines))}</strong></div><div class="payment-buttons ${customer?'with-credit':''}">${btn('Hotově','payCash','paycash',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${btn('Kartou','payCard','paycard',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${customer?btn(`Kredit ${fmt(credit)}`,'payCredit','paycredit',!sh||!o.lines.length||!!o.paymentLock||credit<C.sum(o.lines)?'disabled':''):''}</div>${btn('Rozdělit platbu / položky','paySplit','splitbutton',!sh||!o.lines.length||!canResume?'disabled':'')}</div></section>
   </div>`;
 }
 function quantityPickerHTML(name,initial,min=1,max=999,all=false) {
   const digits=[7,8,9,4,5,6,1,2,3];
   return `<div class="quantity-picker"><div class="qty-product"><strong>${E(name)}</strong><span>${min}–${max} ks</span></div>
     <div class="qty-quick"><div class="qty-pad">${digits.map(n=>`<button type="button" class="qty-choice ${n===initial?'active':''}" data-qty="${n}" ${n>max?'disabled':''}>${n}</button>`).join('')}${min===0?'<button type="button" class="qty-choice" data-qty="0">0</button>':`<button type="button" class="qty-choice" data-qty="10" ${max<10?'disabled':''}>10</button>`}${all?`<button type="button" class="qty-choice qty-all" data-qty="${max}">Vše<br><small>${max} ks</small></button>`:''}<button type="button" class="qty-choice qty-more" data-qty-more>Jiný počet</button></div></div>
-    <div class="qty-calculator" hidden><label class="sr-only">Počet kusů</label><input class="qty-display" aria-label="Počet kusů" inputmode="numeric" value="${initial}" readonly><div class="qty-pad">${digits.map(n=>`<button type="button" class="qty-choice" data-qty-digit="${n}">${n}</button>`).join('')}<button type="button" class="qty-choice" data-qty-clear>C</button><button type="button" class="qty-choice" data-qty-digit="0">0</button><button type="button" class="qty-choice" data-qty-back aria-label="Smazat číslici">⌫</button></div><button type="button" class="primary qty-confirm" data-qty-confirm>Použít počet</button></div></div>`;
+    <div class="qty-calculator" hidden><label class="sr-only">Počet kusů</label><input class="qty-display" aria-label="Počet kusů" inputmode="numeric" value="${initial}" readonly><div class="qty-pad">${digits.map(n=>`<button type="button" class="qty-choice" data-qty-digit="${n}">${n}</button>`).join('')}<button type="button" class="qty-choice" data-qty-clear>C</button><button type="button" class="qty-choice" data-qty-digit="0">0</button><button type="button" class="qty-choice" data-qty-back aria-label="Smazat číslici">⌫</button></div><button type="button" class="primary qty-confirm" data-qty-confirm>OK · použít počet</button></div></div>`;
 }
-function bindQuantityPicker(root,initial,min,max,onSelect) {
+function bindQuantityPicker(root,initial,min,max,onSelect,calculator=false) {
   root=root.querySelector('.quantity-picker')||root;
   let digits=String(initial),replace=true,multiple=false;
   const valid=()=>Number.isSafeInteger(Number(digits))&&Number(digits)>=min&&Number(digits)<=max;
@@ -207,11 +225,11 @@ function bindQuantityPicker(root,initial,min,max,onSelect) {
     else if(multiple&&e.key==='Backspace'){e.preventDefault();digits=digits.slice(0,-1);replace=false;update();}
     else if(multiple&&e.key==='Enter'){e.preventDefault();if(valid())choose(Number(digits));}
   });
-  root.querySelector('[data-qty]:not([disabled])')?.focus();
+  if(calculator)root.querySelector('[data-qty-more]').click();else root.querySelector('[data-qty]:not([disabled])')?.focus();
 }
 function entryQuantityPad() {
   showDialog('Počet pro další položku',quantityPickerHTML(getOrder().name,entryQuantity),null);
-  bindQuantityPicker($('#dialog-body'),entryQuantity,1,999,quantity=>{entryQuantity=quantity;$('#dialog').close();updateEntryContext();});
+  bindQuantityPicker($('#dialog-body'),entryQuantity,1,999,quantity=>{entryQuantity=quantity;$('#dialog').close();updateEntryContext();},true);
 }
 function quantityPad(lineId) {
   const o=getOrder(),l=o.lines.find(x=>x.id===lineId);if(!l)return;
@@ -561,6 +579,7 @@ function checkPayment(){
 }
 function bulkProducts(){showDialog('Hromadně vložit ceník',`<p class="help">Každý řádek: <strong>název; cena; kategorie; porce; DPH</strong>. Poslední tři údaje lze vynechat. Existující položky se shodným názvem a porcí se aktualizují.</p><label class="field">Položky<textarea name="rows" rows="9" required placeholder="Název nápoje; cena v Kč; kategorie; porce; DPH %"></textarea></label>`,async f=>{const rows=String(f.get('rows')).split(/\r?\n/).filter(x=>x.trim());if(rows.length>300)throw new Error('Najednou lze vložit nejvýš 300 položek.');const items=rows.map((row,i)=>{const [name,price,category='Ostatní',serving='',rate='']=row.split(';').map(x=>x.trim());if(!name||!price)throw new Error(`Na řádku ${i+1} chybí název nebo cena.`);return {name,price:C.money(price),category,serving,vatRate:rate===''?null:Number(rate.replace(',','.'))};});await command('importProducts',{items});},'Uložit ceník',()=>toast('Ceník byl uložený.'));}
 const actions={
+  syncDetails,dismissMarking:id=>{POSCloud.dismiss(id);$('#dialog').close();toast('Odmítnutá změna uzavřená podle serveru.');},
   quantityPad:id=>quantityPad(id),
   entryCount:id=>{entryQuantity=Number(id);updateEntryContext();},entryQuantity:entryQuantityPad,
   smallShot:()=>{entryServingMl=entryServingMl===20?undefined:20;if(entryServingMl===20){const shots=state.products.filter(p=>p.active&&C.smallShot(p));if(!shots.some(p=>p.category===category))category='Vše';if(query&&!shots.some(p=>normalizeSearch(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(normalizeSearch(query))))query='';}render();},
@@ -613,7 +632,7 @@ $('#restore-input').addEventListener('change',async e=>{
 });
 window.addEventListener('pos-connection',connection);
 window.addEventListener('online',connection);window.addEventListener('offline',connection);
-async function refresh(){if(state){try{const next=await Store.read();if(next.revision!==state.revision){state=next;render();}}catch{toast('Nepodařilo se načíst uložená data.',true);}}}
+async function refresh(){if(state){try{const next=await Store.read();if(window.POSCloud?next!==state:next.revision!==state.revision){const fast=view==='pos'&&next.receipts.length===state.receipts.length&&JSON.stringify(next.products)===JSON.stringify(state.products)&&JSON.stringify(next.settings)===JSON.stringify(state.settings);state=next;fast?renderPOSFast():render();}}catch{toast('Nepodařilo se načíst uložená data.',true);}}}
 window.addEventListener('focus',refresh);
 window.addEventListener('resize',()=>{if(window.innerWidth>630)setNavigationOpen(false);resizePOSWorkspace();});
 (async()=>{
@@ -622,14 +641,14 @@ window.addEventListener('resize',()=>{if(window.innerWidth>630)setNavigationOpen
     window.POSRuntime?.assertReady();
     if(window.POSBootError)throw window.POSBootError;
     if(!C||!Store||(!document.documentElement.dataset.standalone&&!window.POSCloud))throw new Error('Sdílená pokladna se nenačetla. Obnov stránku a zkontroluj připojení.');
-    state=await Store.open(refresh);C.validate(state);render();connection();
+    state=await Store.open(refresh);C.validate(state);current=window.POSCloud?.selectedOrder||'bar';if(!state.orders.some(o=>o.id===current))current='bar';render();connection();
     if(window.POSCloud?.meta.recoveredResult?.kind==='sale')finishPayment(POSCloud.meta.recoveredResult);
     else if(window.POSCloud?.meta.recoveredResult?.restoredToOrderId||window.POSCloud?.meta.recoveredResult?.type==='reassignReceipt')finishReceiptCorrection(POSCloud.meta.recoveredResult);
     else if(window.POSCloud?.meta.recoveredResult?.kind)receiptDialog(POSCloud.meta.recoveredResult);
     else if(window.POSCloud?.meta.recoveredResult?.type==='mergeOrders')finishMerge(POSCloud.meta.recoveredResult);
     else if(window.POSCloud?.meta.recoveryMessage)toast(POSCloud.meta.recoveryMessage,true);
     if(document.documentElement.dataset.standalone){$('#offline-status').textContent='Samostatná offline verze · data tohoto prohlížeče';}
-    else if('serviceWorker' in navigator){try{await navigator.serviceWorker.register('./sw.js');await navigator.serviceWorker.ready;$('#offline-status').textContent=window.POSCloud?'Sdílené účty · PUB GURU · připojení je nutné':'Připraveno i bez internetu · jedno zařízení';}catch{$('#offline-status').textContent=window.POSCloud?'Sdílené účty · PUB GURU':'Offline spuštění není připravené · data zůstávají místní';}}
+    else if('serviceWorker' in navigator){try{await navigator.serviceWorker.register('./sw.js');await navigator.serviceWorker.ready;$('#offline-status').textContent=window.POSCloud?'Markování i bez internetu · platby po potvrzení serveru':'Připraveno i bez internetu · jedno zařízení';}catch{$('#offline-status').textContent=window.POSCloud?'Sdílené účty · PUB GURU':'Offline spuštění není připravené · data zůstávají místní';}}
   }catch(e){
     if(window.POSRuntime)window.POSRuntime.fail(e.message);
     else{$('#app').innerHTML=`<div class="panel"><h1>Pokladnu nelze otevřít</h1><p class="error">${E(e.message)}</p><p class="section-gap">Nic nemaž. Obnov stránku nebo použij aktuální Firefox ESR 115 na Windows 7.</p></div>`;$('#save-state').textContent='Pokladna není připravená';}

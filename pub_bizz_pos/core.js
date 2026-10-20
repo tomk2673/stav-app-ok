@@ -297,7 +297,7 @@
       check(sum(o.lines) + portion.price * quantity <= 100000000, 'Překročen limit účtu.');
       touchVisit(o);
       if (line) line.quantity += quantity;
-      else o.lines.push({id:uid(),...nextLine,quantity});
+      else o.lines.push({id:p.marking?.lineId || uid(),...nextLine,quantity});
       check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
     } else if (type === 'removeLine') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.'); check(clean(p.reason), 'Doplň důvod opravy.');

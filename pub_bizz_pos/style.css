@@ -275,3 +275,19 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
   .sync-warning{bottom:84px;left:14px;right:14px;margin:0;max-width:none;padding:9px 12px;gap:8px;font-size:.75rem}.sync-warning .secondary{padding:8px 12px}
   .quantity button{min-width:48px;min-height:48px}
 }
+
+/* Marking is a workspace: only drinks scroll, while the customer and count stay put. */
+.pos-workspace .pos-layout{min-height:0;align-items:start;overflow-anchor:none}
+.pos-workspace .catalog-area{height:var(--pos-height,calc(100vh - 185px));min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
+.pos-workspace .catalog-area>.order-entry,.pos-workspace .catalog-area>.search,.pos-workspace .catalog-area>.categories,.pos-workspace .catalog-area>.notice,.pos-workspace #payment-reservation{flex-shrink:0}
+.pos-workspace .products{flex:1 1 auto;min-height:90px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable;padding-bottom:8px}
+.pos-workspace .accounts{overflow-anchor:none}
+.pos-workspace .catalog-area,.pos-workspace .receipt{scroll-margin-top:64px}
+@media(min-width:1025px){.pos-workspace .accounts{height:var(--pos-height,calc(100vh - 185px));min-height:0;overflow-y:auto}.pos-workspace .account,.pos-workspace .add-account{flex-shrink:0}}
+@media(max-width:630px){
+  .pos-workspace .pos-layout{align-items:stretch}
+  .pos-workspace .catalog-area{height:var(--pos-height,calc(100vh - 180px))}
+  .pos-workspace .receipt{height:calc(100vh - 160px);height:calc(100dvh - 160px);min-height:300px;flex-shrink:0}
+  .pos-workspace .receipt-items{min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  .pos-workspace .receipt-head,.pos-workspace .receipt-tools,.pos-workspace .receipt-bottom{flex-shrink:0}
+}

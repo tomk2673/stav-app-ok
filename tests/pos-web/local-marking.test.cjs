@@ -63,7 +63,7 @@ test('20 offline taps persist immediately under the original host; reload restor
   assert.equal(await h.quantity(server.a),24);assert.equal(server.calls.length,0);assert.equal(h.w.POSCloud.outbox.length,20);
   assert.equal(new Set(h.w.POSCloud.outbox.map(r=>r.requestId)).size,20);
   assert.equal(h.w.document.querySelector('[data-action="payCash"]').disabled,true);
-  assert.match(h.w.document.querySelector('#sync-warning').textContent,/20 změn/);assert.ok(h.w.document.querySelector('.line-pending'));
+  assert.match(h.w.document.querySelector('#save-state').textContent,/20 změn v zařízení/);assert.equal(h.w.document.querySelector('#sync-warning').hidden,true);assert.equal(h.w.document.querySelector('.product[data-action="add"]').disabled,false);assert.ok(h.w.document.querySelector('.line-pending'));
   const line=(await h.w.POSStore.read()).orders.find(o=>o.id===server.a).lines[0];
   await h.w.POSStore.command('setLineQuantity',{orderId:server.a,lineId:line.id,quantity:10});
   await h.w.POSStore.command('removeLine',{orderId:server.a,lineId:line.id,reason:'Test correction'});

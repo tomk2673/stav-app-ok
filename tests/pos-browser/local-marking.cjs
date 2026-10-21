@@ -37,10 +37,10 @@ const serve=async(req,res)=>{
 const server=http.createServer(serve),apiServer=http.createServer(serve);
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(page,fn,arg){for(let i=0;i<500;i++){if(await page.evaluate(fn,arg))return;await pause(20);}throw new Error('Timed out '+fn+' '+JSON.stringify(await page.evaluate(()=>({busy:window.POSCloud?.busy,connected:window.POSCloud?.connected,auth:window.POSCloud?.authBlocked,storage:window.POSCloud?.storageError,requests:window.POSCloud?.outbox.map(r=>({id:r.requestId,type:r.type,status:r.local?.status,error:r.local?.error}))}))));}
-function fixture(){
+function fixture(startShift=true){
  const user={id:crypto.randomUUID(),email:'test@example.test',aud:'authenticated',role:'authenticated',app_metadata:{provider:'email'},user_metadata:{},identities:[]};
  const venue={id:crypto.randomUUID(),organization_id:crypto.randomUUID(),name:'TEST ONLY',currency:'CZK',role:'owner'};
- let state=C.initial();state.venueId=venue.id;C.execute(state,'openShift',{opening:0});const a=C.execute(state,'newOrder',{name:'TEST A'}),b=C.execute(state,'newOrder',{name:'TEST B'});
+ let state=C.initial();state.venueId=venue.id;if(startShift)C.execute(state,'openShift',{opening:0});const a=C.execute(state,'newOrder',{name:'TEST A'}),b=C.execute(state,'newOrder',{name:'TEST B'});
  const requests=new Map(),calls=[],responses=[];let drop=false,dropId=null,delay=0;
  const session=()=>{const exp=Math.floor(Date.now()/1000)+3600;return {access_token:[{alg:'HS256',typ:'JWT'},{sub:user.id,aud:'authenticated',role:'authenticated',exp}].map(x=>Buffer.from(JSON.stringify(x)).toString('base64url')).join('.')+'.test',refresh_token:'test-only',token_type:'bearer',expires_at:exp,expires_in:3600,user};};
  const snapshot=(result,sync=null)=>({...S.encode(structuredClone(state),sync),result,stock:[],issues:[],issueCount:0,role:'owner',venue,markingProtocol:1,syncProtocol:1});
@@ -61,8 +61,8 @@ function fixture(){
  }
  return {key:crypto.randomUUID(),networkOnline:true,user,venue,a:a.id,b:b.id,calls,requests,responses,session,service,get state(){return state;},set delay(ms){delay=ms;},drop(){drop=true;},resume(){dropId=null;drop=false;},external(type,p){state=D.run(state,type,p,{id:user.id,role:'owner'},[]).state;}};
 }
-async function open(browser,base,mode,width,f=fixture(),pwa=false){
- const context=await browser.newContext({viewport:{width,height:850},serviceWorkers:pwa?'allow':'block'});fixtures.set(f.key,f);
+async function open(browser,base,mode,width,f=fixture(),pwa=false,height=850){
+ const context=await browser.newContext({viewport:{width,height},...(width<=630?{isMobile:true,hasTouch:true}:{}),serviceWorkers:pwa?'allow':'block'});fixtures.set(f.key,f);
  await context.addInitScript(session=>localStorage.setItem('sb-127-auth-token',JSON.stringify(session)),f.session());
  await context.route('**/*',route=>{const u=new URL(route.request().url());return u.hostname==='127.0.0.1'?route.continue():route.abort();});
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -141,11 +141,85 @@ async function largeHistory(browser,base){
   return {snapshotCharacters:bytes,paintMs,localStorageMaxCharacters:storageMax,confirmedInIndexedDB:true,incrementalCharacters:delta.characters,idleCharacters:idle.characters};
  }finally{await h.close();}
 }
+async function menuNavigation(browser,base,width,height=width<=630?667:850){
+ const f=fixture();for(let i=1;i<=35;i++)C.execute(f.state,'newOrder',{name:'Stůl '+i});
+ const h=await open(browser,base,'after',width,f,false,height);try{
+  const {page}=h;
+  await page.locator('#account-search').fill('TEST A');await page.locator('#account-results [data-id="'+f.a+'"]').click();
+  const menu=page.locator('#products');
+  const metrics=await menu.evaluate(el=>({height:el.clientHeight,total:el.scrollHeight,bottom:el.getBoundingClientRect().bottom,viewport:innerHeight,width:innerWidth,pageWidth:document.documentElement.scrollWidth}));
+  assert.ok(metrics.pageWidth<=metrics.width,'menu never overflows the phone width');
+  assert.ok(metrics.height>90&&metrics.total>metrics.height,'long drink menu scrolls inside the workspace');
+  assert.ok(metrics.bottom<=metrics.viewport-(width<=630?72:0),'menu stays above the phone bill control');
+  await menu.evaluate(el=>el.scrollTop=el.scrollHeight);
+  const target=menu.locator('.product[data-action="add"]').last(),id=await target.getAttribute('data-id');
+  await target.scrollIntoViewIfNeeded();
+  const before=await target.boundingBox(),scroll=await menu.evaluate(el=>el.scrollTop),pageY=await page.evaluate(()=>scrollY);
+  f.delay=3000;if(width<=630)await target.tap();else await target.click();
+  await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='1×');
+  assert.equal(await page.locator('#entry-account-name').textContent(),'TEST A');
+  assert.equal(await menu.evaluate(el=>el.scrollTop),scroll,'adding preserves the menu position');
+  assert.equal(await page.evaluate(()=>scrollY),pageY,'adding never scrolls the whole page');
+  const after=await target.boundingBox();assert.equal(after.y,before.y,'next drink remains under the same finger');
+  assert.ok(await page.locator('[data-action="entryQuantity"]').isVisible());
+  await until(page,()=>POSCloud.busy);
+  const size=await target.boundingBox(),position={x:size.width-22,y:size.height-20};
+  const reachable=await target.evaluate((el,p)=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+p.x,r.y+p.y));},position);
+  assert.equal(reachable,true,'pending marking must not cover the next drink touch target');
+  if(width<=630)await target.tap({position,timeout:750});else await target.click({position,timeout:750});
+  await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='2×');
+  f.delay=0;
+  await h.settled();assert.equal(f.state.orders.find(o=>o.id===f.a).lines[0].productId,id);assert.equal(f.state.orders.find(o=>o.id===f.b).lines.length,0);
+  const savedMenu=await menu.elementHandle();
+  await page.locator('[data-action="category"][data-id="Destiláty"]').click();
+  assert.equal(await savedMenu.evaluate(el=>el.isConnected),true,'category does not rebuild the workspace');
+  await page.locator('[data-action="smallShot"]').click();
+  assert.equal(await savedMenu.evaluate(el=>el.isConnected),true,'2 cl does not rebuild the workspace');
+  if(width<=630){
+   await page.locator('#mobile-bill').click();await until(page,()=>document.querySelector('#mobile-bill').dataset.action==='showProducts');
+   assert.ok((await page.locator('.receipt-head').boundingBox()).y<200,'bill opens directly at its heading');
+   await page.locator('#mobile-bill').click();await until(page,()=>document.querySelector('#mobile-bill').dataset.action==='showBill');
+   assert.ok((await page.locator('.order-entry').boundingBox()).y<120,'one tap returns to drinks');
+   assert.equal(await page.locator('#entry-account-name').textContent(),'TEST A');
+   await page.locator('#account-search').click();await page.locator('#account-search').fill('TEST B');
+   await page.locator('#account-results [data-id="'+f.b+'"]').click();
+   assert.equal(await page.locator('#entry-account-name').textContent(),'TEST B');
+   assert.equal(await page.locator('#account-results').isVisible(),false);
+   assert.ok((await page.locator('.order-entry').boundingBox()).y<120,'customer selection returns to drinks');
+  }else if(width>1024){
+   const accounts=page.locator('.accounts');await accounts.evaluate(el=>el.scrollTop=el.scrollHeight);
+   const top=await accounts.evaluate(el=>el.scrollTop);assert.ok(top>0);
+   await page.locator('#products .product[data-action="add"]').first().click();
+   await h.settled();
+   assert.equal(await accounts.evaluate(el=>el.scrollTop),top,'account list keeps its scroll after marking');
+  }
+  if(process.env.POS_MARKING_SCREENSHOTS){fs.mkdirSync(process.env.POS_MARKING_SCREENSHOTS,{recursive:true});await page.screenshot({path:path.join(process.env.POS_MARKING_SCREENSHOTS,browser.browserType().name()+'-menu-'+width+'.png')});}
+  return {width,height,manyAccounts:38,menuHeight:metrics.height,stableMenu:true,sameCustomer:true,markingWhileServerBusy:true,returnToDrinks:width<=630};
+ }finally{await h.close();}
+}
+async function shortWorkspace(browser,base){
+ const checks=[];
+ for(const [width,height] of [[844,390],[390,480]]){
+  const h=await open(browser,base,'after',width,fixture(false),false,height);try{
+   const catalog=h.page.locator('.catalog-area'),product=h.page.locator('#products .product[data-action="add"]').first();
+   await catalog.evaluate(el=>el.scrollTop=el.scrollHeight);await product.scrollIntoViewIfNeeded();
+   const reachable=await product.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));});
+   assert.equal(reachable,true,'short viewport still exposes products and the open-shift action');
+   await product.click();assert.equal(await h.page.locator('#dialog-title').textContent(),'Otevřít směnu');
+   checks.push({width,height,productReachable:true,openShiftReachable:true});
+  }finally{await h.close();}
+ }
+ return checks;
+}
 (async()=>{
  await Promise.all([new Promise(r=>server.listen(0,'127.0.0.1',r)),new Promise(r=>apiServer.listen(0,'127.0.0.1',r))]);const base='http://127.0.0.1:'+server.address().port,results=[];
  try{
   for(const engine of (process.env.POS_MARKING_ENGINES||'chromium,webkit').split(',')){
    const browser=await require('pwmodern')[engine].launch({headless:true});try{
+    for(const width of [390,900,1440]){const r={engine,navigation:await menuNavigation(browser,base,width)};results.push(r);console.log(JSON.stringify(r));}
+    results.push({engine,navigation:await menuNavigation(browser,base,390,850)});console.log(JSON.stringify(results.at(-1)));
+    results.push({engine,shortWorkspace:await shortWorkspace(browser,base)});console.log(JSON.stringify(results.at(-1)));
+    if(process.env.POS_MARKING_NAVIGATION_ONLY)continue;
     for(const width of (process.env.POS_MARKING_ONLY_CHECKS?[]:[390,900,1440])){const r=await benchmark(browser,base,width);results.push(r);console.log(JSON.stringify(r));}
     const checks={engine,resilience:await resilience(browser,base),concurrency:await twoDevices(browser,base),largeHistory:await largeHistory(browser,base)};results.push(checks);console.log(JSON.stringify(checks));
    }finally{await browser.close();}

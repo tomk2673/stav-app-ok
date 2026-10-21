@@ -31,7 +31,7 @@ async function snapshot(venue:any, result:any=null, knownStock:any=null, sync:an
     db.from('pos_stock_lines').select('*',{count:'exact'}).eq('venue_id',venue.id).in('status',['missing_recipe','shortage','awaiting_stock']).order('updated_at',{ascending:false}).limit(200)
   ]);
   if(issues.error) throw issues.error;
-  return {...Sync.encode(state,sync),stock,issues:issues.data,issueCount:issues.count,result,role:venue.role,venue,markingProtocol:1,syncProtocol:1};
+  return {...Sync.encode(state,sync),stock,issues:issues.data,issueCount:issues.count,result,role:venue.role,venue,markingProtocol:1,syncProtocol:1,accountActionsProtocol:1};
 }
 
 Deno.serve(async (req: Request) => {
@@ -71,7 +71,7 @@ Deno.serve(async (req: Request) => {
       }
       if(sync&&!query.has('metadata')){
         const row:any=await checked(db.from('pos_registers').select('revision').eq('venue_id',venue.id).maybeSingle());
-        if(row?.revision===sync.revision)return reply({unchanged:true,revision:row.revision,syncFrom:sync,role:venue.role,venue,markingProtocol:1,syncProtocol:1});
+        if(row?.revision===sync.revision)return reply({unchanged:true,revision:row.revision,syncFrom:sync,role:venue.role,venue,markingProtocol:1,syncProtocol:1,accountActionsProtocol:1});
       }
       return reply(await snapshot(venue,null,null,sync));
     }

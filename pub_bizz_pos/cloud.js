@@ -96,6 +96,7 @@
     });
   }
   async function accept(data,persist=true) {
+    if(persist)data={...data,accountActionsProtocol:data.accountActionsProtocol===1?1:0};
     if(persist){serviceError='';if(data.stock)lastMetadata=Date.now();}
     let incoming;try{incoming=S.decode(base,data);}catch{incoming=null;}
     if(!incoming){const full=await api(null,false,false,'?venueId='+encodeURIComponent(venue.id)+'&full=1');return accept(full,persist);}
@@ -230,6 +231,8 @@
     return ready;
   }
   function command(type,payload={}) {
+    if(((type==='mergeOrders'&&payload.selected!==undefined)||(type==='removeLine'&&(payload.quantity!==undefined||payload.undoOf!==undefined)))&&meta.accountActionsProtocol!==1)
+      return Promise.reject(new Error('Tato oprava vyžaduje aktualizovaný server. Obnov pokladnu po aktualizaci.'));
     if(M?.types.has(type)&&localMarking()) {
       try {
         const all=entries();
@@ -254,6 +257,8 @@
       if(entries().length||storageError)throw new Error(storageError||'Nejdřív počkej na potvrzení markování nebo ověř předchozí operaci.');
       if(!navigator.onLine||authBlocked)throw new Error('Platby a správa pokladny vyžadují spojení se serverem.');
       const request={venueId:venue.id,requestId:crypto.randomUUID(),type,payload:structuredClone(payload),sentAt:new Date().toISOString()};
+      if(type==='mergeOrders'&&payload.selected!==undefined)request.payload.marking={version:2,kind:'selectedTransfer',operationId:request.requestId};
+      if(type==='removeLine'&&(payload.quantity!==undefined||payload.undoOf!==undefined))request.payload=M.prepare(cache,type,payload,request.requestId);
       write(key(request.requestId),request);busy=true;emit();
       try{return await sendSaved(request);}finally{busy=false;emit();}
     });strictQueue=task.catch(()=>{});return task;

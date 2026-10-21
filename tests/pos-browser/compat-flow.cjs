@@ -161,13 +161,13 @@ async function flow(browser,base,width){
     assert.equal(await page.locator('.product[data-action="add"]').first().getAttribute('data-id'),firstProduct,'unpaid marking keeps product positions');
     await page.locator('[data-action="quantityPad"]').click();await page.locator('[data-qty="5"]').click();
     await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='5×');
-    await page.locator('[data-action="paySplit"]').click();
+    await page.locator('[data-action="paySplit"]:visible').click();
     assert.equal(f.state.orders.find(o=>o.name==='Žaneta').paymentLock,undefined,'opening split must not reserve the account');
     await page.locator('#dialog .close-dialog').first().click();await until(page,()=>!document.querySelector('#dialog').open);
     await page.locator('.line [data-action="add"]').click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='6×');
     assert.equal(f.state.orders.find(o=>o.name==='Žaneta').paymentLock,undefined,'account remains markable after abandoning split');
     await page.locator('[data-action="minus"]').click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='5×');
-    await page.locator('[data-action="paySplit"]').click();await page.locator('.payment-item').first().click();await page.locator('[data-qty="2"]').click();
+    await page.locator('[data-action="paySplit"]:visible').click();await page.locator('.payment-item').first().click();await page.locator('[data-qty="2"]').click();
     assert.equal(await page.locator('#payment-items').isVisible(),true,'returns to item selection');
     await page.locator('[data-payment-mode="card"]').click();await page.locator('#dialog-submit').click();assert.equal(f.state.receipts.length,0,'terminal confirmation required');
     await page.locator('[name="cardConfirmed"]').check();await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
@@ -255,8 +255,8 @@ async function flow(browser,base,width){
     await page.locator('[name="cardConfirmed"]').check();await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
     const corrected=f.state.receipts.at(-1);assert.equal(corrected.lines[0].quantity,1);assert.equal(f.state.orders[0].lines[0].quantity,2);
     await page.locator('[data-action="payCash"]').click();await page.locator('#dialog .dialog-actions .close-dialog').click();
-    assert.equal(await page.locator('[data-action="paySplit"]').isDisabled(),false);
-    await page.locator('[data-action="paySplit"]').click();await page.locator('.payment-item').first().click();await page.locator('[data-qty="1"]').click();
+    assert.equal(await page.locator('[data-action="paySplit"]:visible').isDisabled(),false);
+    await page.locator('[data-action="paySplit"]:visible').click();await page.locator('.payment-item').first().click();await page.locator('[data-qty="1"]').click();
     await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
     assert.equal(f.state.orders[0].lines[0].quantity,1);
     const receiptsBefore=f.state.receipts.length, target=f.state.orders.find(o=>o.name==='Stůl 12');
@@ -301,7 +301,7 @@ async function smallShotFlow(browser,base,width){
   await page.locator('[data-action="smallShot"]').click();await page.locator('.line [data-action="add"]').click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='4×');
   await page.locator('.product[data-id="agnis-2810"]').click();await until(page,()=>document.querySelectorAll('.quantity-tap').length===2);
   assert.equal(f.state.orders.find(o=>o.id===id).lines[1].price,5500);
-  await page.locator('[data-action="paySplit"]').click();await page.locator('.payment-item').filter({hasText:'2 cl'}).click();await page.locator('[data-qty="2"]').click();
+  await page.locator('[data-action="paySplit"]:visible').click();await page.locator('.payment-item').filter({hasText:'2 cl'}).click();await page.locator('[data-qty="2"]').click();
   await page.locator('[data-payment-mode="card"]').click();await page.locator('[name="cardConfirmed"]').check();await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
   assert.equal(f.state.receipts[0].total,5500);assert.equal(f.state.receipts[0].lines[0].quantity,2);assert.equal(f.state.receipts[0].lines[0].servingMl,20);
   await page.reload();await page.locator('#account-search').fill('Malé panáky');await page.locator('#account-results [data-action="account"]').click();

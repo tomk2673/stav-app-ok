@@ -11,15 +11,51 @@ const colors = {'Pivo':'#f1c986','Destiláty':'#b1bcf3','Nealko':'#8acbb6','Vín
 let state, view = 'pos', current = 'bar', category = 'Vše', query = '', toastTimer, submitting = false, dialogCancel;
 let accountQuery = '', accountSearchOpen = false, entryQuantity = 1, entryServingMl;
 let mobileBillOpen = false;
+let undoMarking, undoTimer, markingSequence = 0;
+const accountActionsReady = () => !window.POSCloud || window.POSCloud.meta.accountActionsProtocol === 1;
 let salesHistory, salesCounts;
 const normalizeSearch = value => String(value).toLocaleLowerCase('cs').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 const getOrder = () => state.orders.find(x => x.id === current) || state.orders[0];
 const btn = (label, action, cls = 'secondary', attrs = '') => `<button type="button" class="${cls}" data-action="${action}" ${attrs}>${label}</button>`;
 function toast(message, bad = false) { const t = $('#toast'); t.textContent = message; t.className = `toast visible${bad ? ' bad' : ''}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = 'toast', 4200); }
 async function command(type, payload, fast = false) {
+  const sequence = ++markingSequence;
+  clearUndo();
   $('#save-state').textContent = 'Ukládám…';
-  try { const response = await Store.command(type, payload); const next=window.POSCloud?await Store.read():response.state; if(next!==state){state=next;fast&&view==='pos'?renderPOSFast():render();} return response.result; }
+  try { const response = await Store.command(type, payload); const addition=type==='addLine'?response.state.audit[response.state.audit.length-1]:null; const next=window.POSCloud?await Store.read():response.state; if(next!==state){state=next;if(sequence===markingSequence&&addition?.type==='addLine')offerUndo(addition);fast&&view==='pos'?renderPOSFast():render();} return response.result; }
   catch (e) { $('#save-state').textContent = window.POSCloud?.pending ? 'Výsledek zatím nepotvrzený' : 'Změna nebyla uložena'; $('#save-state').classList.add('error'); throw e; }
+}
+function clearUndo() { undoMarking=null;clearTimeout(undoTimer);updateUndo(); }
+function offerUndo(addition) {
+  if(!accountActionsReady()||addition.detail.orderId!==current)return;
+  const line=getOrder().lines.find(l=>l.id===addition.addedLineId);
+  if(!line)return;
+  undoMarking={operationId:addition.detail.marking?.operationId||addition.id,orderId:current,quantity:addition.detail.quantity??1,expectedQuantity:line.quantity,expires:Date.now()+5000};
+  updateUndo();
+}
+function undoLine() {
+  if(!undoMarking||Date.now()>=undoMarking.expires||undoMarking.orderId!==current||!accountActionsReady())return;
+  const cloud=window.POSCloud;
+  if(cloud&&(cloud.optimisticMarking?(!cloud.canMark||cloud.outbox.some(r=>r.local?.status==='blocked'&&r.payload.orderId===current)):(!cloud.connected||!!cloud.pending||cloud.busy||!!cloud.storageError||cloud.authBlocked)))return;
+  const o=getOrder(),a=state.audit.find(a=>(a.detail?.marking?.operationId||a.id)===undoMarking.operationId);
+  const line=o.lines.find(l=>l.id===(a?.markingResult?.lineId||a?.addedLineId));
+  if(a&&state.audit.slice(state.audit.indexOf(a)+1).some(event=>event.type!=='markingRejected'&&[event.orderId,event.detail?.orderId,event.detail?.targetOrderId].includes(current)))return;
+  if(!o.paymentLock&&line&&!line.stockIssue&&line.quantity===undoMarking.expectedQuantity)return line;
+}
+function updateUndo() {
+  const line=state&&undoLine(),seconds=line?Math.max(1,Math.ceil((undoMarking.expires-Date.now())/1000)):0;
+  document.querySelectorAll('[data-action="undoLast"]').forEach(b=>{
+    b.disabled=!line;b.textContent=seconds?`↶ Zpět · ${seconds} s`:'↶ Zpět';
+    b.setAttribute('aria-label',line?`Vrátit poslední namarkování: ${undoMarking.quantity}× ${line.name}, zbývá ${seconds} sekund`:'Poslední namarkování už nelze vrátit');
+  });
+  clearTimeout(undoTimer);
+  if(seconds)undoTimer=setTimeout(updateUndo,Math.min(250,undoMarking.expires-Date.now()));
+}
+async function undoLast() {
+  const line=undoLine(),last=undoMarking;if(!line)return;
+  clearUndo();
+  await command('removeLine',{orderId:last.orderId,lineId:line.id,quantity:last.quantity,undoOf:last.operationId,reason:'Zpět · oprava posledního namarkování'},true);
+  toast(`Vráceno ${last.quantity}× ${line.name}.`);
 }
 function renderPOSFast(){
   if(view!=='pos'||!state)return render();
@@ -77,15 +113,16 @@ function connection() {
   else if(marking.length)warning.innerHTML=`<span><strong>${E(cloud.serviceError|| (cloud.authBlocked?'Ověř přihlášení a oprávnění':conflicts.length?`${conflicts.length} konfliktů ke kontrole`:cloud.busy?'Odesílám markování':'Uloženo v zařízení'))}</strong> · ${marking.length} změn čeká na potvrzení.</span><div class="sync-actions">${btn('Zobrazit','syncDetails','secondary')}${!cloud.busy?btn('Ověřit','retryPending','secondary'):''}</div>`;
   else warning.innerHTML=`<span>${E(cloud.storageError|| (cloud.authBlocked?'Přístup vyžaduje nové přihlášení. Čekající data zůstávají v zařízení.':'Server není dostupný. Markování se ukládá v zařízení; placení vyžaduje spojení.'))}</span>`;
   if(state){$('#save-state').textContent=conflicts.length?'Konflikt ke kontrole':marking.length?`${marking.length} změn v zařízení`:cloud.busy?'Ukládám na server…':pending?'Čeká na ověření':online?'Potvrzeno serverem':'Místní · bez spojení';$('#save-state').classList.toggle('error',!!conflicts.length||!!strict||!!cloud.storageError);}
-  const writeActions=['add','minus','quantityPad','restoreReceipt','newOrder','renameOrder','endVisit','deleteOrder','mergeOrders','openShift','payCash','payCard','payCredit','paySplit','cancelPayment','creditTopup','creditReverse','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
+  const writeActions=['add','minus','quantityPad','undoLast','moveAccount','moveItems','restoreReceipt','newOrder','renameOrder','endVisit','deleteOrder','mergeOrders','openShift','payCash','payCard','payCredit','paySplit','cancelPayment','creditTopup','creditReverse','refund','closeShift','cashMovement','newProduct','editProduct','archiveProduct','bulkProducts','recipe','resolveStock'];
   const markAllowed=cloud.canMark,orderLocked=!!state&&!!getOrder()?.paymentLock,orderConflict=conflicts.some(r=>r.payload.orderId===current);
   document.querySelectorAll('[data-action]').forEach(b=>{
     if(!writeActions.includes(b.dataset.action))return;
-    const soft=['add','minus','quantityPad'].includes(b.dataset.action)&&cloud.optimisticMarking;
+    const soft=['add','minus','quantityPad','undoLast'].includes(b.dataset.action)&&cloud.optimisticMarking;
     const lock=soft?(!markAllowed||orderLocked||orderConflict):(!!pending||!online||!!cloud.storageError||cloud.authBlocked);
     if(lock&&!b.disabled){b.disabled=true;b.dataset.connectionDisabled='true';}
     else if(!lock&&b.dataset.connectionDisabled){b.disabled=false;delete b.dataset.connectionDisabled;}
   });
+  updateUndo();
 }
 function syncDetails() {
   const rows=(window.POSCloud?.outbox||[]).filter(r=>r.local?.kind==='marking');
@@ -176,14 +213,17 @@ function updateEntryContext() {
 }
 function resizePOSWorkspace() {
   const layout=$('.pos-layout');if(!layout)return;
-  const bottom=window.innerWidth<=630?96:16;
+  const bottom=window.innerWidth<=630?156:16;
   layout.style.setProperty('--pos-height',`${Math.max(280,window.innerHeight-Math.max(10,layout.getBoundingClientRect().top+window.scrollY)-bottom)}px`);
 }
 function updateMobileBill(){
   const bill=$('#mobile-bill');if(!bill)return;
+  const dock=$('#mobile-account-dock');if(dock)dock.hidden=view!=='pos';
   bill.hidden=view!=='pos';bill.dataset.action=mobileBillOpen?'showProducts':'showBill';
   const order=getOrder(),queued=(window.POSCloud?.outbox||[]).filter(r=>r.local?.kind==='marking').length;
   bill.innerHTML=mobileBillOpen?`<strong>← Nápoje</strong><span>${E(order.name)} · ${fmt(C.sum(order.lines))}</span>`:`<span>${E(order.name)} · ${order.lines.reduce((n,l)=>n+l.quantity,0)} ks${queued?` · ${queued} čeká`:''}</span><strong>Účet ${fmt(C.sum(order.lines))} →</strong>`;
+  const actions=$('#mobile-account-actions');if(actions)actions.innerHTML=billActions(order);
+  updateUndo();
 }
 function showProducts(){
   mobileBillOpen=false;updateMobileBill();
@@ -202,7 +242,7 @@ function updateProductFilters(){
   updateEntryContext();showProducts();connection();
 }
 function setCurrentAccount(id) {
-  window.POSCloud?.selectOrder(id);current=id;
+  window.POSCloud?.selectOrder(id);if(current!==id)clearUndo();current=id;
 }
 function selectAccount(id) {
   if(!state.orders.some(o=>o.id===id))return;
@@ -232,8 +272,14 @@ function renderPOS() {
       <div class="categories" aria-label="Kategorie">${cats.map(c=>`<button type="button" class="category ${category===c?'active':''}" data-action="category" data-id="${E(c)}" aria-pressed="${category===c}">${E(c)}</button>`).join('')}</div>
       <div class="products" id="products"></div>
     </section>
-    <section class="receipt" aria-label="Aktuální účet"><div class="receipt-head"><div><h2>${E(o.name)}</h2>${waiting.length?`<span class="pending-badge">${waiting.length} změn čeká</span>`:''}<p>${o.lines.length?'Účet zůstává otevřený do zaplacení':'Připravený pro dalšího hosta'}</p></div><span class="receipt-number">${E(accountNumber(o)||'•')}</span></div><div class="receipt-tools">${o.id!=='bar'?btn('Přejmenovat','renameOrder','merge-account rename-account',o.paymentLock?'disabled':''):''}${btn('Spojit účty','mergeOrders','merge-account',canMerge?'':'disabled')}</div><div class="receipt-items">${lines||'<div class="receipt-empty"><span>≡</span><p>Účet je zatím prázdný.<br>Přidej první nápoj.</p></div>'}</div><div class="receipt-bottom"><div class="receipt-meta"><span>${o.lines.reduce((n,l)=>n+l.quantity,0)} ks na účtu</span>${o.id!=='bar'&&!o.lines.length?btn('Smazat účet','deleteOrder','splitbutton'):'<span>Ceny v Kč</span>'}</div><div class="receipt-total"><span>K zaplacení</span><strong>${fmt(C.sum(o.lines))}</strong></div><div class="payment-buttons ${customer?'with-credit':''}">${btn('Hotově','payCash','paycash',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${btn('Kartou','payCard','paycard',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${customer?btn(`Kredit ${fmt(credit)}`,'payCredit','paycredit',!sh||!o.lines.length||!!o.paymentLock||credit<C.sum(o.lines)?'disabled':''):''}</div>${btn('Rozdělit platbu / položky','paySplit','splitbutton',!sh||!o.lines.length||!canResume?'disabled':'')}</div></section>
+    <section class="receipt" aria-label="Aktuální účet"><div class="receipt-head"><div><h2>${E(o.name)}</h2>${waiting.length?`<span class="pending-badge">${waiting.length} změn čeká</span>`:''}<p>${o.lines.length?'Účet zůstává otevřený do zaplacení':'Připravený pro dalšího hosta'}</p></div><span class="receipt-number">${E(accountNumber(o)||'•')}</span></div><div class="receipt-tools">${o.id!=='bar'?btn('Přejmenovat','renameOrder','merge-account rename-account',o.paymentLock?'disabled':''):''}${btn('Spojit účty','mergeOrders','merge-account',canMerge?'':'disabled')}</div><div class="receipt-items">${lines||'<div class="receipt-empty"><span>≡</span><p>Účet je zatím prázdný.<br>Přidej první nápoj.</p></div>'}</div><div class="receipt-bottom"><div class="receipt-meta"><span>${o.lines.reduce((n,l)=>n+l.quantity,0)} ks na účtu</span>${o.id!=='bar'&&!o.lines.length?btn('Smazat účet','deleteOrder','splitbutton'):'<span>Ceny v Kč</span>'}</div><div class="receipt-total"><span>K zaplacení</span>${btn('↶ Zpět','undoLast','undo-marking','disabled')}<strong>${fmt(C.sum(o.lines))}</strong></div>${billActions(o)}<div class="payment-buttons ${customer?'with-credit':''}">${btn('Hotově','payCash','paycash',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${btn('Kartou','payCard','paycard',!sh||!o.lines.length||!!o.paymentLock?'disabled':'')}${customer?btn(`Kredit ${fmt(credit)}`,'payCredit','paycredit',!sh||!o.lines.length||!!o.paymentLock||credit<C.sum(o.lines)?'disabled':''):''}</div></div></section>
   </div>`;
+}
+function billActions(o) {
+  const enabled=!!C.activeShift(state)&&!!o.lines.length&&!o.paymentLock;
+  const canSplit=!!C.activeShift(state)&&!!o.lines.length&&(!o.paymentLock||o.paymentLock.actorId===window.POSCloud?.user?.id||['owner','manager'].includes(window.POSCloud?.meta.role));
+  const target=state.orders.some(x=>x.id!==o.id&&!x.paymentLock);
+  return `<div class="bill-actions" aria-label="Práce s účtem">${btn('Rozdělit','paySplit','bill-action',canSplit?'':'disabled')}${btn('Přesun účtu','moveAccount','bill-action',enabled&&target?'':'disabled')}${btn('Přesun položek','moveItems','bill-action',enabled&&target&&accountActionsReady()?'':'disabled')}</div>`;
 }
 function quantityPickerHTML(name,initial,min=1,max=999,all=false) {
   const digits=[7,8,9,4,5,6,1,2,3];
@@ -411,8 +457,9 @@ function openShift() {
   }, 'Otevřít směnu', () => toast('Směna je otevřená.'));
 }
 function finishMerge(result) {
-  setCurrentAccount(result.orderId);accountQuery='';accountSearchOpen=false;render();
-  toast(`Účty spojené na ${result.name}.`);
+  const source=state.orders.find(o=>o.id===result.sourceOrderId);
+  setCurrentAccount(result.selected&&source?.lines.length?source.id:result.orderId);accountQuery='';accountSearchOpen=false;render();showProducts();
+  toast(`${result.movedQuantity} ks přesunuto na ${result.name}.`);
 }
 function renameOrder() {
   const o = structuredClone(getOrder());
@@ -439,6 +486,51 @@ function mergeOrders() {
     $('#dialog-submit').disabled = !target || !!target.paymentLock;
     $('#merge-summary').innerHTML = target ? `<div class="summary-row"><span>${E(source.name)}</span><strong>${fmt(C.sum(source.lines))}</strong></div><div class="summary-row"><span>${E(target.name)}</span><strong>${fmt(C.sum(target.lines))}</strong></div><div class="summary-row total"><span>Celkem</span><strong>${fmt(C.sum(source.lines)+C.sum(target.lines))}</strong></div><p>Společný účet: <strong>${E(target.name)}</strong></p>` : 'Vyber účet pro zobrazení společné částky.';
   });
+}
+function transferItems(partial=false) {
+  const source=structuredClone(getOrder()),targets=structuredClone(state.orders.filter(o=>o.id!==source.id&&!o.paymentLock));
+  if(!source.lines.length||source.paymentLock||!C.activeShift(state)||!targets.length)return;
+  if(partial&&!accountActionsReady())throw new Error('Přesun položek čeká na aktualizaci serveru.');
+  const quantities=new Map(source.lines.map(l=>[l.id,partial?0:l.quantity]));let targetId='';
+  const selected=()=>source.lines.filter(l=>quantities.get(l.id)>0).map(l=>({id:l.id,quantity:quantities.get(l.id)}));
+  showDialog(partial?'Přesunout vybrané položky':'Přesunout celý účet',`
+    <p class="help">Z účtu <strong>${E(source.name)}</strong>${partial?' vyber položky a počet kusů.':' přesunout všechny položky.'}</p>
+    ${partial?'<div id="transfer-items" class="payment-items"></div><div id="transfer-qty-editor" hidden></div>':''}
+    <div id="transfer-destination"><h3>Kam přesunout</h3><label class="field transfer-search">Hledat stůl nebo zákazníka<input id="transfer-search" type="search" autocomplete="off" placeholder="Číslo stolu / jméno"></label><div id="transfer-targets" class="transfer-targets"></div><div id="transfer-summary" class="payment-summary" role="status" aria-live="polite"></div></div>`,async()=>{
+      const target=targets.find(o=>o.id===targetId);if(!target)throw new Error('Vyber cílový účet.');
+      const selection=selected();if(!selection.length)throw new Error('Vyber položky k přesunu.');
+      return command('mergeOrders',{orderId:source.id,revision:source.revision,targetOrderId:target.id,targetRevision:target.revision,...(partial?{selected:selection}:{})});
+    },'Přesunout',finishMerge);
+  const signal=window.paymentAbort.signal;
+  function preview() {
+    const moving=selected(),amount=source.lines.reduce((n,l)=>n+l.price*quantities.get(l.id),0),target=targets.find(o=>o.id===targetId);
+    $('#dialog-submit').disabled=!moving.length||!target;
+    $('#transfer-summary').innerHTML=`<div class="summary-row"><span>Přesunout ${moving.reduce((n,l)=>n+l.quantity,0)} ks</span><strong>${fmt(amount)}</strong></div><div class="summary-row"><span>Zůstane u ${E(source.name)}</span><strong>${fmt(C.sum(source.lines)-amount)}</strong></div>${target?`<div class="summary-row total"><span>${E(target.name)} po přesunu</span><strong>${fmt(C.sum(target.lines)+amount)}</strong></div>`:'<p>Vyber cílový účet.</p>'}`;
+  }
+  function renderTargets() {
+    const q=normalizeSearch($('#transfer-search').value),matches=targets.filter(o=>!q||normalizeSearch(o.name).includes(q));
+    $('#transfer-targets').innerHTML=matches.map(o=>`<button type="button" class="transfer-target ${o.id===targetId?'selected':''}" data-transfer-target="${E(o.id)}" aria-pressed="${o.id===targetId}"><strong>${E(o.name)}</strong><span>${fmt(C.sum(o.lines))}</span></button>`).join('')||'<p class="help">Žádný dostupný účet.</p>';
+  }
+  function renderItems() {
+    if(!partial)return;
+    $('#transfer-items').innerHTML=source.lines.map(l=>`<button type="button" class="payment-item ${quantities.get(l.id)?'selected':''}" data-transfer-line="${E(l.id)}" aria-pressed="${quantities.get(l.id)>0}"><span><strong>${E(l.name)}</strong><small>${E(l.serving)} · ${fmt(l.price)} / ks</small></span><span class="payment-item-count">${quantities.get(l.id)}<small>z ${l.quantity} ks</small></span></button>`).join('');
+  }
+  function returnToItems() {
+    $('#transfer-qty-editor').hidden=true;$('#transfer-qty-editor').innerHTML='';$('#transfer-items').hidden=false;$('#transfer-destination').hidden=false;$('#dialog-submit').hidden=false;$('#dialog .dialog-actions .close-dialog').hidden=false;renderItems();preview();
+  }
+  $('#transfer-search').addEventListener('input',renderTargets,{signal});
+  $('#dialog-body').addEventListener('click',e=>{
+    const target=e.target.closest('[data-transfer-target]');if(target){targetId=target.dataset.transferTarget;renderTargets();preview();}
+    const item=e.target.closest('[data-transfer-line]');
+    if(item){
+      const line=source.lines.find(l=>l.id===item.dataset.transferLine),editor=$('#transfer-qty-editor');
+      editor.innerHTML=quantityPickerHTML(line.name,quantities.get(line.id)||1,0,line.quantity,true)+'<button type="button" class="secondary qty-return" data-transfer-return>Zpět k položkám</button>';
+      editor.hidden=false;$('#transfer-items').hidden=true;$('#transfer-destination').hidden=true;$('#dialog-submit').hidden=true;$('#dialog .dialog-actions .close-dialog').hidden=true;
+      bindQuantityPicker(editor,quantities.get(line.id)||1,0,line.quantity,quantity=>{quantities.set(line.id,quantity);returnToItems();});
+    }
+    if(e.target.closest('[data-transfer-return]'))returnToItems();
+  },{signal});
+  renderItems();renderTargets();preview();
 }
 function editProduct(id, addAfter = false, addContext = {orderId:current,quantity:entryQuantity,servingMl:entryServingMl}) {
   const p = state.products.find(x => x.id === id) || {name:'',category:category !== 'Vše' ? category : 'Destiláty',serving:'',price:null,vatRate:null,stockProductId:''};
@@ -620,7 +712,7 @@ const actions={
   quantityPad:id=>quantityPad(id),
   entryCount:id=>{entryQuantity=Number(id);updateEntryContext();},entryQuantity:entryQuantityPad,
   smallShot:()=>{entryServingMl=entryServingMl===20?undefined:20;if(entryServingMl===20){const shots=state.products.filter(p=>p.active&&C.smallShot(p));if(!shots.some(p=>p.category===category))category='Vše';if(query&&!shots.some(p=>normalizeSearch(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(normalizeSearch(query))))query='';}updateProductFilters();},
-  account:id=>selectAccount(id),customerProfile,creditTopup,creditReverse,endVisit,category:async id=>{category=id;query='';updateProductFilters();},openShift,renameOrder,mergeOrders,
+  account:id=>selectAccount(id),customerProfile,creditTopup,creditReverse,endVisit,category:async id=>{category=id;query='';updateProductFilters();},openShift,renameOrder,mergeOrders,undoLast,moveAccount:()=>transferItems(false),moveItems:()=>transferItems(true),
   newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta (nepovinné)','name',accountQuery.trim(),'maxlength="120" placeholder="Bez vyplnění = rychlý prodej"'),f=>{
     const name=String(f.get('name')||'').trim();
     return name?command('newOrder',{name}):{id:'bar'};

@@ -8,8 +8,8 @@ async function until(predicate,label){for(let i=0;i<400;i++){if(await predicate(
 function fixture(){
  const user={id:crypto.randomUUID(),email:'test@example.test'},venue={id:crypto.randomUUID(),organization_id:crypto.randomUUID(),role:'owner',currency:'CZK',name:'TEST ONLY'};
  let state=C.initial();state.venueId=venue.id;C.execute(state,'openShift',{opening:0});const a=C.execute(state,'newOrder',{name:'Test A'}),b=C.execute(state,'newOrder',{name:'Test B'});
- const ledger=new Map(),calls=[];let drop=false,gate,releaseGate,quota=false;
- const envelope=result=>({state:structuredClone(state),result,stock:[],issues:[],issueCount:0,venue,role:'owner',markingProtocol:1});
+ const ledger=new Map(),calls=[];let drop=false,gate,releaseGate,quota=false,accountActionsProtocol=1;
+ const envelope=result=>({state:structuredClone(state),result,stock:[],issues:[],issueCount:0,venue,role:'owner',markingProtocol:1,accountActionsProtocol});
  async function fetch(url,init){
   if(quota)return {ok:false,status:402,json:async()=>({message:'Service restricted: exceed_egress_quota'})};
   if(init.method==='GET'){
@@ -21,14 +21,14 @@ function fixture(){
   let result=ledger.get(r.requestId);
   if(!ledger.has(r.requestId)){
    let next;
-   try{const p={...r.payload};if(r.type==='checkout')p.operationId=r.requestId;next=D.run(state,r.type,p,{id:user.id,role:'owner'},[]);}
-   catch(e){if(!r.payload.marking)return {ok:false,status:422,json:async()=>({definitive:true,error:e.message})};next=M.reject(state,r.type,r.payload,e.message,user.id);}
+   try{const p={...r.payload};if(accountActionsProtocol!==1&&p.marking?.version!==undefined&&p.marking.version!==1)throw new Error('Nepodporovaná operace markování.');if(r.type==='checkout')p.operationId=r.requestId;next=D.run(state,r.type,p,{id:user.id,role:'owner'},[]);}
+   catch(e){if(!r.payload.marking||!M.types.has(r.type))return {ok:false,status:422,json:async()=>({definitive:true,error:e.message})};next=M.reject(state,r.type,r.payload,e.message,user.id);}
    state=next.state;result=next.result;ledger.set(r.requestId,result);
   }
   if(drop){drop=false;throw new TypeError('Lost acknowledgment after commit');}
   const response=envelope(result);return {ok:true,status:200,json:async()=>response};
  }
- return {user,venue,a:a.id,b:b.id,calls,ledger,fetch,get state(){return state;},quota(value){quota=value;},external(type,p){state=D.run(state,type,p,{id:user.id,role:'owner'},[]).state;},drop(){drop=true;},hold(){gate=new Promise(r=>releaseGate=r);},release(){gate=null;releaseGate?.();}};
+ return {user,venue,a:a.id,b:b.id,calls,ledger,fetch,get state(){return state;},accountActions(value){accountActionsProtocol=value;},quota(value){quota=value;},external(type,p){state=D.run(state,type,p,{id:user.id,role:'owner'},[]).state;},drop(){drop=true;},hold(){gate=new Promise(r=>releaseGate=r);},release(){gate=null;releaseGate?.();}};
 }
 function storage(){
  const data=new Map(),windows=new Set();let fail=false;
@@ -55,6 +55,70 @@ async function harness(server=fixture(),disk=storage(),offline=false,localMarkin
   close(){disk.windows.delete(w);w.close();},async settled(){await until(()=>!w.POSCloud.pending&&!w.POSCloud.busy,'outbox drained');},
   async quantity(id){return (await w.POSStore.read()).orders.find(o=>o.id===id).lines.reduce((n,l)=>n+l.quantity,0);}};
 }
+test('undo at the bottom removes the entire last batch locally before a held server responds',async()=>{
+ const server=fixture(),h=await harness(server);try{
+  await h.select(server.a);h.click('[data-action="entryCount"][data-id="2"]');await h.add();await h.settled();
+  server.hold();h.click('[data-action="entryCount"][data-id="5"]');await h.add();
+  const undo=h.w.document.querySelector('#mobile-account-dock [data-action="undoLast"]');
+  assert.match(undo.textContent,/Zpět · 5 s/);assert.equal(undo.disabled,false);assert.equal(await h.quantity(server.a),7);
+  h.click('#mobile-account-dock [data-action="undoLast"]');await pause(0);
+  assert.equal(await h.quantity(server.a),2);assert.equal(h.w.document.querySelector('[data-action="undoLast"]').disabled,true);
+  assert.equal(server.calls.filter(c=>c.type==='removeLine').length,0);assert.equal(h.w.POSCloud.outbox.length,2);
+  server.release();await h.settled();assert.equal(server.state.orders.find(o=>o.id===server.a).lines[0].quantity,2);
+  const correction=server.calls.find(c=>c.type==='removeLine');assert.equal(correction.payload.quantity,5);assert.ok(correction.payload.undoOf);
+  assert.equal(server.state.receipts.length,0);assert.equal(server.state.stockIssues.length,0);
+ }finally{server.release();h.close();}
+});
+test('undo of a new batch survives offline replay without leaving one stray piece',async()=>{
+ const h=await harness();try{
+  await h.select(h.server.a);h.network(false);h.click('[data-action="entryCount"][data-id="5"]');await h.add();
+  h.click('[data-action="undoLast"]');await pause(0);assert.equal(await h.quantity(h.server.a),0);
+  h.network(true);await h.settled();assert.equal(h.server.state.orders.find(o=>o.id===h.server.a).lines.length,0);assert.equal(h.server.ledger.size,2);
+ }finally{h.close();}
+});
+test('undo countdown expires at five seconds and switching the guest clears it',async()=>{
+ const h=await harness();try{
+  await h.select(h.server.a);h.network(false);await h.add();const now=h.w.Date.now;
+  h.w.Date.now=()=>now()+3000;h.w.dispatchEvent(new h.w.Event('pos-connection'));assert.match(h.w.document.querySelector('[data-action="undoLast"]').textContent,/2 s/);
+  h.w.Date.now=()=>now()+5001;h.w.dispatchEvent(new h.w.Event('pos-connection'));assert.equal(h.w.document.querySelector('[data-action="undoLast"]').disabled,true);
+  h.w.Date.now=now;await h.add();await h.select(h.server.b);assert.equal(h.w.document.querySelector('[data-action="undoLast"]').disabled,true);
+  await h.select(h.server.a);assert.equal(h.w.document.querySelector('[data-action="undoLast"]').disabled,true);assert.equal(await h.quantity(h.server.a),2);
+ }finally{h.close();}
+});
+test('partial transfer picks a quantity and destination, retains the source and recovers a lost reply once',async()=>{
+ const h=await harness();try{
+  await h.select(h.server.a);h.click('[data-action="entryCount"][data-id="5"]');await h.add();await h.settled();
+  h.click('[data-action="moveItems"]');h.click('[data-transfer-line]');h.click('[data-qty="2"]');
+  assert.equal(h.w.document.querySelector('[data-transfer-line]').getAttribute('aria-pressed'),'true');
+  h.click('[data-transfer-target="'+h.server.b+'"]');assert.equal(h.w.document.querySelector('#dialog-submit').disabled,false);h.server.drop();
+  h.w.document.querySelector('#dialog-form').dispatchEvent(new h.w.Event('submit',{bubbles:true,cancelable:true}));
+  await until(()=>h.w.POSCloud.pending&&!h.w.POSCloud.busy,'lost transfer reply');const id=h.w.POSCloud.pending.requestId;
+  assert.equal(h.server.state.orders.find(o=>o.id===h.server.a).lines[0].quantity,3);
+  h.click('#dialog .dialog-actions .close-dialog');h.click('[data-action="retryPending"]');await h.settled();await pause(0);
+  assert.equal(h.server.calls.filter(c=>c.requestId===id).length,2);assert.equal(h.server.state.audit.filter(a=>a.type==='mergeOrders').length,1);
+  assert.equal(await h.quantity(h.server.a),3);assert.equal(await h.quantity(h.server.b),2);assert.equal(h.w.POSCloud.selectedOrder,h.server.a);
+  assert.equal(h.w.document.querySelector('.receipt-head h2').textContent,'Test A');assert.equal(h.server.state.receipts.length,0);assert.equal(h.server.state.stockIssues.length,0);
+ }finally{h.close();}
+});
+test('an older server cannot silently treat a selected transfer or batch undo as its legacy whole-account operation',async()=>{
+ const server=fixture();server.accountActions(0);const h=await harness(server);try{
+  await h.select(server.a);await h.add();await h.settled();
+  assert.equal(h.w.document.querySelector('[data-action="moveItems"]').disabled,true);assert.equal(h.w.document.querySelector('[data-action="undoLast"]').disabled,true);
+  const line=(await h.w.POSStore.read()).orders.find(o=>o.id===server.a).lines[0];
+  await assert.rejects(h.w.POSStore.command('mergeOrders',{orderId:server.a,targetOrderId:server.b,selected:[{id:line.id,quantity:1}]}),/aktualizovaný server/);
+  await assert.rejects(h.w.POSStore.command('removeLine',{orderId:server.a,lineId:line.id,quantity:1}),/aktualizovaný server/);
+  assert.equal(server.calls.length,1);assert.equal(await h.quantity(server.a),1);
+ }finally{h.close();}
+});
+test('a server rollback rejects a queued batch undo instead of subtracting just one piece',async()=>{
+ const h=await harness();try{
+  await h.select(h.server.a);h.network(false);h.click('[data-action="entryCount"][data-id="5"]');await h.add();h.click('[data-action="undoLast"]');await pause(0);
+  assert.equal(h.w.POSCloud.outbox[1].payload.marking.version,2);h.server.accountActions(0);h.network(true);
+  await until(()=>h.w.POSCloud.outbox.some(r=>r.local.status==='blocked'),'rollback rejection');
+  assert.equal(h.server.state.orders.find(o=>o.id===h.server.a).lines[0].quantity,5);assert.equal(h.w.POSCloud.meta.accountActionsProtocol,0);
+  assert.equal(h.w.document.querySelector('[data-action="moveItems"]').disabled,true);assert.equal(h.server.state.audit.filter(a=>a.type==='removeLine').length,0);
+ }finally{h.close();}
+});
 test('20 offline taps persist immediately under the original host; reload restores host, portions and edits; reconnect sends exactly once',async()=>{
  const server=fixture(),disk=storage();let h=await harness(server,disk);
  try{

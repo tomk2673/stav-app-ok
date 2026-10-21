@@ -8,11 +8,11 @@ const { webcrypto } = require('node:crypto');
 const { JSDOM } = require('jsdom');
 
 const root = path.resolve(__dirname, '../../pub_guru');
-const ocrText = 'Dodavatel: Test supplier\nČíslo dokladu: 123456\nCena/ks bez DPH · DPH 0%\nTest vodka 1 ks 10,00 10,00\nCelkem: 10,00';
+const ocrText = 'Dodavatel: Test supplier\nČíslo dokladu: 123456\nDatum vystavení: 5.10.2026\nCena/ks bez DPH · DPH 0%\nTest vodka 1 ks 10,00 10,00\nCelkem: 10,00';
 const visionInvoice = {
   supplier: 'Test supplier', invoice_number: 'TEST-1', issue_date: '2026-10-05',
   total_gross: 10, warnings: [],
-  lines: [{ raw_name: 'Test vodka', quantity: 1, unit_price_net: 10,
+  lines: [{ raw_name: 'Test vodka', quantity: 1, unit: 'ks', unit_price_net: 10,
     vat_rate: 0, line_total_net: 10, line_total_gross: 10, confidence: 1 }]
 };
 
@@ -74,7 +74,7 @@ async function harness({ payload = {}, visionOk = true, native = false, nativeFa
         : { requestId, text, confidence: 1 }));
     } } } };
   }
-  for (const name of ['native-vision-bridge.js', 'invoice-capture-v3.js', 'invoice-reading-guard.js']) {
+  for (const name of ['native-vision-bridge.js', 'invoice-accounting.js', 'invoice-capture-v3.js', 'invoice-reading-guard.js']) {
     w.eval(fs.readFileSync(path.join(root, name), 'utf8'));
   }
   await until(() => w.document.getElementById('invoiceFile').onchange, 'invoice capture initialized');
@@ -119,6 +119,8 @@ for (const native of [false, true]) {
     try {
       await h.capture();
       assert.deepEqual(h.calls, ['vision'], 'successful Vision must bypass OCR');
+      h.w.document.getElementById('parseBtn').click();
+      assert.equal(h.w.document.getElementById('lineCount').textContent, '1', 'text parsing must not erase structured AI lines');
       const saved = await h.submit();
       assert.equal(saved.invoice.raw_extraction.crop.vision, true);
       assertProvenance(saved, 'openai-vision', 'vision-test-model');
@@ -143,12 +145,12 @@ test('server Vision without optional metadata keeps its default provider and a n
 });
 
 for (const [label, options, provider, calls] of [
-  ['browser OCR', {}, 'tesseract-browser-v3', ['vision', 'tesseract']],
-  ['native OCR', { native: true }, 'apple-vision-native', ['vision', 'native']],
-  ['browser OCR after native failure', { native: true, nativeFails: true }, 'tesseract-browser-v3', ['vision', 'native', 'tesseract']]
+  ['browser OCR', {}, 'tesseract-browser-v3', ['tesseract']],
+  ['native OCR', { native: true }, 'apple-vision-native', ['native']],
+  ['browser OCR after native failure', { native: true, nativeFails: true }, 'tesseract-browser-v3', ['native', 'tesseract']]
 ]) {
-  test('failed server Vision records actual ' + label + ' provenance without an AI model', async () => {
-    const h = await harness({ visionOk: false, ...options });
+  test('explicit local mode records actual ' + label + ' provenance without an AI model', async () => {
+    const h = await harness({ serverVision: false, visionOk: false, ...options });
     try {
       await h.capture();
       assert.deepEqual(h.calls, calls);
@@ -157,14 +159,15 @@ for (const [label, options, provider, calls] of [
   });
 }
 
-test('a subsequent OCR fallback replaces the previous document Vision provider and model', async () => {
+test('a subsequent explicitly chosen OCR read replaces the previous document Vision provider and model', async () => {
   const h = await harness({ payload: { provider: 'openai-vision', model: 'previous-vision-model' } });
   try {
     await h.capture();
     assertProvenance(await h.submit(), 'openai-vision', 'previous-vision-model');
     h.failVision();
+    h.w.document.getElementById('useServerVision').checked=false;
     await h.capture();
-    assert.deepEqual(h.calls, ['vision', 'vision', 'tesseract']);
+    assert.deepEqual(h.calls, ['vision', 'tesseract']);
     const saved = await h.submit();
     assertProvenance(saved, 'tesseract-browser-v3', null);
     assert.notEqual(saved.invoice.raw_extraction.crop.vision, true);
@@ -182,7 +185,7 @@ test('server Vision with an unreadable document total remains blocked for review
   } finally { h.dom.window.close(); }
 });
 
-test('default document reading is local and does not invoke a paid API',async()=>{
+test('explicit local document reading does not invoke a paid API',async()=>{
   const h=await harness({serverVision:false});
   try{
     await h.capture();
@@ -192,14 +195,14 @@ test('default document reading is local and does not invoke a paid API',async()=
 });
 
 test('queued document keeps the upload fingerprint, does not invent a date, and cannot be manually submitted during saving',async()=>{
-  const h=await harness();
+  const h=await harness({serverVision:false});
   try{
     const file=new h.w.File(['compressed'], 'source.pdf',{type:'application/pdf'});
     file.arrayBuffer=async()=>new TextEncoder().encode('compressed').buffer;
     h.w.PubGuruInvoiceCapture.beginQueue();
     const result=await h.w.PubGuruInvoiceCapture.readQueued(file,{source_fingerprint:'original-upload-hash'});
     assert.deepEqual(h.calls,['tesseract'],'batch always uses local OCR');
-    assert.equal(result.issue_date,null,'missing original issue date must stay missing');
+    assert.equal(result.issue_date,'2026-10-05','read the printed date, not today');
     assert.equal(result.lines.length,1);
     assert.equal(result.provider,'tesseract-browser-v3');
     assert.equal(h.w.document.getElementById('submitBtn').disabled,true);
@@ -270,6 +273,7 @@ for(const [label,totalText,expected] of [
   ['gross before net summary','Celkem s DPH: 5.812,00\nCelkem bez DPH: 4803,31\nCelkem DPH: 1008,69',5812],
   ['amount due before excise','Celkem k úhradě: 5 812,00\nSpotřební daň obsažená v prodejní ceně celkem 629,20 Kč',5812],
   ['printed dash notation','K úhradě: 1000,-',1000],
+  ['Czech grouped dash notation','K úhradě: 5.812,-',5812],
   ['conflicting totals','Celkem: 5 812,00\nCelkem: 6 000,00',null],
   ['excise is the only amount','Spotřební daň obsažená v prodejní ceně\ncelkem 629,20 Kč',null]
 ]){
@@ -334,4 +338,66 @@ test('the reading gate checks the current OCR text rather than a stale parsed to
     assert.equal(h.w.document.getElementById('submitBtn').disabled,true);
     assert.equal(h.writes.length,0);
   }finally{h.dom.window.close();}
+});
+
+test('invoice AI is enabled by default in the real page',()=>{
+  const dom=new JSDOM(fs.readFileSync(path.join(root,'invoice-capture.html'),'utf8'));
+  try { assert.equal(dom.window.document.getElementById('useServerVision').checked,true); }
+  finally { dom.window.close(); }
+});
+
+test('queued invoice uses AI, preserves upload fingerprint and accounting metadata',async()=>{
+  const h=await harness({payload:{provider:'openai-vision',model:'configured-model',invoice:{...visionInvoice,supplier_ico:'00123456',amount_due:5,currency:'CZK'}}});
+  try {
+    const file=new h.w.File(['test'], 'invoice.pdf',{type:'application/pdf'});
+    const result=await h.w.PubGuruInvoiceCapture.readQueued(file,{source_fingerprint:'original-upload-hash'});
+    assert.deepEqual(h.calls,['vision']);assert.equal(result.provider,'openai-vision');
+    assert.equal(result.total_gross,10);assert.equal(result.crop.invoice.amount_due,5);
+    assert.equal(result.crop.invoice.supplier_ico,'00123456');
+    assert.equal(result.lines[0].qty,1);assert.equal(result.lines[0].sourceUnit,'ks');
+  } finally { h.dom.window.close(); }
+});
+
+for(const native of [false,true])test('failed invoice AI never silently substitutes local OCR; native='+native,async()=>{
+  const h=await harness({native,visionOk:false});
+  try {
+    const file=new h.w.File(['test'],'invoice.pdf',{type:'application/pdf'});
+    file.arrayBuffer=async()=>new TextEncoder().encode('test').buffer;
+    await assert.rejects(h.w.PubGuruInvoiceCapture.readQueued(file,{source_fingerprint:'hash'}),/vision_not_configured/);
+    assert.deepEqual(h.calls,['vision']);assert.equal(h.writes.length,0);assert.equal(h.w.PubGuruInvoiceCapture.isBusy(),false);
+  } finally { h.dom.window.close(); }
+});
+
+test('AI carton quantities are preserved and never mistaken for stock pieces',async()=>{
+  const h=await harness({payload:{invoice:{...visionInvoice,lines:[{...visionInvoice.lines[0],unit:'kart'}]}}});
+  try {
+    await h.capture();assert.equal(h.w.document.querySelector('.qty').value,'');
+    assert.match(h.w.document.querySelector('.line-meta').textContent,/kart/);
+    assert.equal(h.w.document.getElementById('submitBtn').disabled,true);
+  } finally { h.dom.window.close(); }
+});
+
+test('missing AI unit and high-confidence arithmetic mistakes block the reading gate',async()=>{
+  for(const patch of [{unit:null},{quantity:2}]){
+    const h=await harness({payload:{invoice:{...visionInvoice,lines:[{...visionInvoice.lines[0],...patch}]}}});
+    try { await h.capture();assert.equal(h.w.document.getElementById('submitBtn').disabled,true);assert.equal(h.writes.length,0); }
+    finally { h.dom.window.close(); }
+  }
+});
+
+test('a read date can be corrected without retaining a stale missing-date warning',async()=>{
+  const h=await harness({payload:{invoice:{...visionInvoice,issue_date:null}}});
+  try {
+    await h.capture();assert.equal(h.w.document.getElementById('submitBtn').disabled,true);
+    const date=h.w.document.getElementById('date');date.value='2026-10-05';date.dispatchEvent(new h.w.Event('input',{bubbles:true}));
+    assert.equal(h.w.document.getElementById('submitBtn').disabled,false);
+  } finally { h.dom.window.close(); }
+});
+
+test('blank numeric inputs persist as missing, never as free goods',async()=>{
+  const h=await harness();
+  try {
+    await h.capture();const price=h.w.document.querySelector('.price');price.value='';price.dispatchEvent(new h.w.Event('input',{bubbles:true}));
+    assert.equal(h.w.document.getElementById('submitBtn').disabled,true);assert.equal(h.writes.length,0);
+  } finally { h.dom.window.close(); }
 });

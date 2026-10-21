@@ -61,6 +61,7 @@ async function splitScrollFlow(browser,base,engine){
  await context.addInitScript(({session,api})=>localStorage.setItem('sb-'+new URL(api).hostname.split('.')[0]+'-auth-token',JSON.stringify(session)),{session:f.session(),api});
  try{
   await page.goto(base+'/pub_bizz_pos/index.html');await page.locator('.product').first().waitFor();await page.locator('#account-search').fill('Test A');await page.locator('.account-result[data-id="'+f.a+'"]').click();
+  await page.locator('#products').evaluate(el=>el.scrollTop=el.scrollHeight);
   await page.locator('[data-action="payCash"]').click();await page.locator('.payment-item').last().waitFor();
   const dimensions=await page.evaluate(()=>({body:document.querySelector('#dialog-body').clientHeight,total:document.querySelector('#dialog-body').scrollHeight,button:document.querySelector('#dialog-submit').getBoundingClientRect().bottom,summary:document.querySelector('#dialog-summary').getBoundingClientRect().bottom,height:innerHeight}));
   assert.ok(dimensions.total>dimensions.body);assert.ok(dimensions.button<dimensions.height&&dimensions.summary<dimensions.height,'payment controls stay in view with all 24 rows selected');
@@ -68,7 +69,7 @@ async function splitScrollFlow(browser,base,engine){
   assert.equal(await page.locator('#dialog-body').evaluate(el=>el.scrollTop),0,'choosing pieces returns to the top of the bill');
   assert.ok(await page.locator('#dialog-submit').isVisible());await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
   assert.equal(f.state.receipts.length,1);assert.equal(f.state.orders.find(o=>o.id===f.a).lines[0].quantity,1);assert.equal(await page.locator('.receipt-head h2').textContent(),'Test A');
-  assert.equal(await page.locator('.catalog-area').evaluate(el=>el.scrollTop),0);assert.ok((await page.locator('.order-entry').boundingBox()).y<120,'partial payment returns to drinks at the top');
+  assert.equal(await page.locator('.catalog-area').evaluate(el=>el.scrollTop),0);assert.equal(await page.locator('#products').evaluate(el=>el.scrollTop),0);assert.ok((await page.locator('.order-entry').boundingBox()).y<120,'partial payment returns to drinks at the top');
   console.log(JSON.stringify({engine,longBillRows:24,stickyPaymentControls:true,quantityReturnsToTop:true,partialPaymentReturnsToDrinks:true,dimensions}));
  }finally{await context.close();}
 }

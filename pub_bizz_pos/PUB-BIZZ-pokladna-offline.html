@@ -4336,6 +4336,7 @@ function finishPayment(r) {
   const remaining=state.orders.find(o=>o.id===r.orderId);
   selectAccount(remaining?.lines.length?remaining.id:'bar');
   const catalog=$('.catalog-area');if(catalog)catalog.scrollTop=0;
+  if($('#products'))$('#products').scrollTop=0;
   showProducts();
   toast(`Zaplaceno · ${fmt(r.total)}${r.change?` · Vrátit ${fmt(r.change)}`:''}`);
 }

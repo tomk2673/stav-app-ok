@@ -22,7 +22,7 @@
         if(!expectedQty||components.length!==1||!components[0].productId||components[0].unit!==expectedUnit||components[0].quantity!==expectedQty)
           throw new Error('Vyber jednu odpovídající skladovou položku ('+expectedQty+' '+expectedUnit+' na prodej).');
       }
-      await command('recipe',{productId:id,version:recipe.version,mode:f.get('recipeMode'),reason:f.get('recipeReason'),components});
+      await command('recipe',{productId:id,version:recipe.version,mode:type==='no_stock'?'no_stock':'recipe',reason:f.get('recipeReason'),components});
     },'Uložit recepturu',()=>toast('Receptura uložená. Nové prodeje se budou odepisovat podle ní.'));
     const form=document.querySelector('#dialog-form');
     const mode=()=>{const enabled=form.elements.recipeMode.value==='recipe';document.querySelector('#recipe-components').hidden=!enabled;document.querySelector('#recipe-add').hidden=!enabled;document.querySelectorAll('.recipe-product,.recipe-quantity').forEach(x=>x.required=enabled);form.elements.recipeReason.required=!enabled;};

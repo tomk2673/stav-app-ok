@@ -6,6 +6,8 @@ U částky jsou **Rozdělit**, **Přesun účtu** a **Přesun položek**. Telefo
 
 Při rozdělení dlouhého účtu zůstává součet i potvrzení platby viditelné. Výběr počtu vrací seznam nahoru; po zaplacení části se otevře nabídka nápojů od začátku na stejném hostovi. Rozložení se řídí dostupnou výškou displeje, skutečnou výškou spodní lišty a bezpečnými okraji; není potřeba vybírat model telefonu.
 
+Na úzké ploše do 359 CSS px zůstávají početní zkratky v jednom řádku: 1/2/3 a Jiný počet. Další množství se zadává velkou klávesnicí. Běžná synchronizace nevykresluje překážku přes nápoje; čekající množství je označené u účtu a ve stavové liště.
+
 ## Protokol a vydání
 
 - Kanonický kód je v `pub_bizz_pos`; Edge kopie vznikají přes `sync-edge.py`, nouzové HTML přes `build-standalone.py`.

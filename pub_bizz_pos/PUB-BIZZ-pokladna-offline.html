@@ -332,6 +332,10 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
 .payment-dialog .dialog-actions{margin-top:10px}.payment-dialog #dialog-error:empty{margin:0}
 .dialog-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0 0;margin-top:8px;border-top:1px solid var(--line);font-size:.85rem;color:var(--muted)}
 .dialog-summary strong{font-size:1.35rem;color:var(--lime);white-space:nowrap}
+@media(max-width:359px){
+  .order-entry .entry-counts{grid-template-columns:repeat(3,minmax(48px,1fr)) minmax(66px,1.2fr)}
+  .entry-count[data-id="4"],.entry-count[data-id="5"]{display:none}
+}
 </style>
   <script>(function(root){'use strict';
 if(!root.globalThis) root.globalThis=root;

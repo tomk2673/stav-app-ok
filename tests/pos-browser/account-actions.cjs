@@ -34,16 +34,18 @@ async function flow(browser,base,width,engine){
  await context.route('**/*',route=>{const url=route.request().url();if(url.startsWith(api+'/'))return f.route(route);if(url.startsWith(base+'/'))return route.continue();throw new Error('Unexpected remote request '+url);});
  await context.addInitScript(({session,api})=>localStorage.setItem('sb-'+new URL(api).hostname.split('.')[0]+'-auth-token',JSON.stringify(session)),{session:f.session(),api});
  const order=id=>f.state.orders.find(o=>o.id===id),settled=()=>until(page,()=>!POSCloud.pending&&!POSCloud.busy),control=action=>page.locator((width<=630?'#mobile-account-dock ':'.receipt-bottom ')+'[data-action="'+action+'"]');
+ const chooseFive=async()=>{const quick=page.locator('[data-action="entryCount"][data-id="5"]');if(await quick.isVisible())await quick.click();else{await page.locator('[data-action="entryQuantity"]').click();await page.locator('[data-qty-digit="5"]').click();await page.locator('[data-qty-confirm]').click();}};
  try{
   await page.goto(base+'/pub_bizz_pos/index.html');await page.locator('.product').first().waitFor();await page.locator('#account-search').fill('Test A');await page.locator('.account-result[data-id="'+f.a+'"]').click();
   const product=page.locator('.product[data-action="add"]').first(),productId=await product.getAttribute('data-id');
-  await page.locator('[data-action="entryCount"][data-id="5"]').click();await product.click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='5×');
+  await chooseFive();await product.click();await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='5×');
   assert.match(await control('undoLast').textContent(),/Zpět · [45] s/);assert.equal(await control('undoLast').isEnabled(),true);
   const geometry=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,controls:[...document.querySelectorAll((innerWidth<=630?'#mobile-account-dock ':'.receipt-bottom ')+'.bill-action')].map(b=>({height:b.getBoundingClientRect().height,bottom:b.getBoundingClientRect().bottom})),dock:document.querySelector('#mobile-account-dock').getBoundingClientRect().bottom}));
   assert.ok(geometry.scroll<=width);assert.ok(geometry.controls.every(b=>b.height>=48));if(width<=630)assert.ok(geometry.dock<=850);
+  if(width<360)assert.equal(await page.locator('.entry-counts').evaluate(el=>new Set([...el.querySelectorAll('.entry-count,.entry-calculator')].filter(b=>b.getClientRects().length).map(b=>Math.round(b.getBoundingClientRect().top))).size),1,'narrow phones keep quantity shortcuts in a single row');
   if(width===390)await page.screenshot({path:'/tmp/pos-account-'+engine+'-390.png'});
   await control('undoLast').click();await until(page,()=>!document.querySelector('.quantity-tap'));await settled();assert.equal(order(f.a).lines.length,0);
-  await page.locator('[data-action="entryCount"][data-id="5"]').click();await page.locator('.product[data-id="'+productId+'"]').click();await settled();
+  await chooseFive();await page.locator('.product[data-id="'+productId+'"]').click();await settled();
   await control('moveItems').click();await page.locator('[data-transfer-line]').click();await page.locator('#transfer-qty-editor [data-qty="2"]').click();await page.locator('[data-transfer-target="'+f.b+'"]').click();
   await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);assert.equal(order(f.a).lines[0].quantity,3);assert.equal(order(f.b).lines[0].quantity,2);
   assert.equal(await page.locator('.receipt-head h2').textContent(),'Test A');

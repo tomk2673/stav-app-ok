@@ -68,8 +68,12 @@ function connection() {
   if(!cloud)return;
   const all=cloud.outbox||[],marking=all.filter(r=>r.local?.kind==='marking'),strict=all.find(r=>r.local?.kind!=='marking'),conflicts=marking.filter(r=>r.local.status==='blocked');
   const pending=cloud.pending,warning=$('#sync-warning');
-  warning.hidden=!state||(!pending&&online&&!cloud.storageError&&!cloud.authBlocked);
-  if(strict)warning.innerHTML=`<span><strong>Ověřujeme uloženou operaci.</strong> Platbu na terminálu neopakuj.</span>${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}`;
+  const backgroundMarking=marking.length&&!strict&&!conflicts.length&&!cloud.serviceError&&!cloud.storageError&&!cloud.authBlocked;
+  warning.hidden=!state||!!backgroundMarking||(!pending&&online&&!cloud.storageError&&!cloud.authBlocked);
+  // Routine background work must never intercept the next product tap.
+  // Local counts and the bill retain their pending status; errors stay explicit.
+  if(backgroundMarking)warning.innerHTML='';
+  else if(strict)warning.innerHTML=`<span><strong>Ověřujeme uloženou operaci.</strong> Platbu na terminálu neopakuj.</span>${btn('Ověřit operaci','retryPending','primary',cloud.busy?'disabled':'')}`;
   else if(marking.length)warning.innerHTML=`<span><strong>${E(cloud.serviceError|| (cloud.authBlocked?'Ověř přihlášení a oprávnění':conflicts.length?`${conflicts.length} konfliktů ke kontrole`:cloud.busy?'Odesílám markování':'Uloženo v zařízení'))}</strong> · ${marking.length} změn čeká na potvrzení.</span><div class="sync-actions">${btn('Zobrazit','syncDetails','secondary')}${!cloud.busy?btn('Ověřit','retryPending','secondary'):''}</div>`;
   else warning.innerHTML=`<span>${E(cloud.storageError|| (cloud.authBlocked?'Přístup vyžaduje nové přihlášení. Čekající data zůstávají v zařízení.':'Server není dostupný. Markování se ukládá v zařízení; placení vyžaduje spojení.'))}</span>`;
   if(state){$('#save-state').textContent=conflicts.length?'Konflikt ke kontrole':marking.length?`${marking.length} změn v zařízení`:cloud.busy?'Ukládám na server…':pending?'Čeká na ověření':online?'Potvrzeno serverem':'Místní · bez spojení';$('#save-state').classList.toggle('error',!!conflicts.length||!!strict||!!cloud.storageError);}
@@ -178,8 +182,8 @@ function resizePOSWorkspace() {
 function updateMobileBill(){
   const bill=$('#mobile-bill');if(!bill)return;
   bill.hidden=view!=='pos';bill.dataset.action=mobileBillOpen?'showProducts':'showBill';
-  const order=getOrder();
-  bill.innerHTML=mobileBillOpen?`<strong>← Nápoje</strong><span>${E(order.name)} · ${fmt(C.sum(order.lines))}</span>`:`<span>${E(order.name)} · ${order.lines.reduce((n,l)=>n+l.quantity,0)} ks</span><strong>Účet ${fmt(C.sum(order.lines))} →</strong>`;
+  const order=getOrder(),queued=(window.POSCloud?.outbox||[]).filter(r=>r.local?.kind==='marking').length;
+  bill.innerHTML=mobileBillOpen?`<strong>← Nápoje</strong><span>${E(order.name)} · ${fmt(C.sum(order.lines))}</span>`:`<span>${E(order.name)} · ${order.lines.reduce((n,l)=>n+l.quantity,0)} ks${queued?` · ${queued} čeká`:''}</span><strong>Účet ${fmt(C.sum(order.lines))} →</strong>`;
 }
 function showProducts(){
   mobileBillOpen=false;updateMobileBill();

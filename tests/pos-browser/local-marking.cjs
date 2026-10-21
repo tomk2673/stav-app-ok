@@ -141,9 +141,9 @@ async function largeHistory(browser,base){
   return {snapshotCharacters:bytes,paintMs,localStorageMaxCharacters:storageMax,confirmedInIndexedDB:true,incrementalCharacters:delta.characters,idleCharacters:idle.characters};
  }finally{await h.close();}
 }
-async function menuNavigation(browser,base,width){
+async function menuNavigation(browser,base,width,height=width<=630?667:850){
  const f=fixture();for(let i=1;i<=35;i++)C.execute(f.state,'newOrder',{name:'Stůl '+i});
- const h=await open(browser,base,'after',width,f,false,width<=630?667:850);try{
+ const h=await open(browser,base,'after',width,f,false,height);try{
   const {page}=h;
   await page.locator('#account-search').fill('TEST A');await page.locator('#account-results [data-id="'+f.a+'"]').click();
   const menu=page.locator('#products');
@@ -155,13 +155,20 @@ async function menuNavigation(browser,base,width){
   const target=menu.locator('.product[data-action="add"]').last(),id=await target.getAttribute('data-id');
   await target.scrollIntoViewIfNeeded();
   const before=await target.boundingBox(),scroll=await menu.evaluate(el=>el.scrollTop),pageY=await page.evaluate(()=>scrollY);
-  f.delay=600;if(width<=630)await target.tap();else await target.click();
+  f.delay=3000;if(width<=630)await target.tap();else await target.click();
   await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='1×');
   assert.equal(await page.locator('#entry-account-name').textContent(),'TEST A');
   assert.equal(await menu.evaluate(el=>el.scrollTop),scroll,'adding preserves the menu position');
   assert.equal(await page.evaluate(()=>scrollY),pageY,'adding never scrolls the whole page');
   const after=await target.boundingBox();assert.equal(after.y,before.y,'next drink remains under the same finger');
   assert.ok(await page.locator('[data-action="entryQuantity"]').isVisible());
+  await until(page,()=>POSCloud.busy);
+  const size=await target.boundingBox(),position={x:size.width-22,y:size.height-20};
+  const reachable=await target.evaluate((el,p)=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+p.x,r.y+p.y));},position);
+  assert.equal(reachable,true,'pending marking must not cover the next drink touch target');
+  if(width<=630)await target.tap({position,timeout:750});else await target.click({position,timeout:750});
+  await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='2×');
+  f.delay=0;
   await h.settled();assert.equal(f.state.orders.find(o=>o.id===f.a).lines[0].productId,id);assert.equal(f.state.orders.find(o=>o.id===f.b).lines.length,0);
   const savedMenu=await menu.elementHandle();
   await page.locator('[data-action="category"][data-id="Destiláty"]').click();
@@ -183,11 +190,11 @@ async function menuNavigation(browser,base,width){
    const accounts=page.locator('.accounts');await accounts.evaluate(el=>el.scrollTop=el.scrollHeight);
    const top=await accounts.evaluate(el=>el.scrollTop);assert.ok(top>0);
    await page.locator('#products .product[data-action="add"]').first().click();
-   await until(page,()=>document.querySelector('.quantity-tap')?.textContent==='1×');
+   await h.settled();
    assert.equal(await accounts.evaluate(el=>el.scrollTop),top,'account list keeps its scroll after marking');
   }
   if(process.env.POS_MARKING_SCREENSHOTS){fs.mkdirSync(process.env.POS_MARKING_SCREENSHOTS,{recursive:true});await page.screenshot({path:path.join(process.env.POS_MARKING_SCREENSHOTS,browser.browserType().name()+'-menu-'+width+'.png')});}
-  return {width,manyAccounts:38,menuHeight:metrics.height,stableMenu:true,sameCustomer:true,returnToDrinks:width<=630};
+  return {width,height,manyAccounts:38,menuHeight:metrics.height,stableMenu:true,sameCustomer:true,markingWhileServerBusy:true,returnToDrinks:width<=630};
  }finally{await h.close();}
 }
 (async()=>{
@@ -196,6 +203,7 @@ async function menuNavigation(browser,base,width){
   for(const engine of (process.env.POS_MARKING_ENGINES||'chromium,webkit').split(',')){
    const browser=await require('pwmodern')[engine].launch({headless:true});try{
     for(const width of [390,900,1440]){const r={engine,navigation:await menuNavigation(browser,base,width)};results.push(r);console.log(JSON.stringify(r));}
+    results.push({engine,navigation:await menuNavigation(browser,base,390,850)});console.log(JSON.stringify(results.at(-1)));
     if(process.env.POS_MARKING_NAVIGATION_ONLY)continue;
     for(const width of (process.env.POS_MARKING_ONLY_CHECKS?[]:[390,900,1440])){const r=await benchmark(browser,base,width);results.push(r);console.log(JSON.stringify(r));}
     const checks={engine,resilience:await resilience(browser,base),concurrency:await twoDevices(browser,base),largeHistory:await largeHistory(browser,base)};results.push(checks);console.log(JSON.stringify(checks));

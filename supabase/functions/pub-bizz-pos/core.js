@@ -164,6 +164,7 @@
     let result = null;
     const closedVisits = [];
     let visitActivity = null;
+    let addedLineId;
     const sh = activeShift(s);
     const needShift = () => { check(sh, 'Nejdřív otevři směnu.'); return sh; };
     const order = () => { const o = s.orders.find(x => x.id === p.orderId); check(o, 'Účet už neexistuje.'); return o; };
@@ -236,16 +237,18 @@
       check(!source.paymentLock && !target.paymentLock, 'Na jednom z účtů právě probíhá platba. Nejdřív ji dokonči nebo zkontroluj rezervaci.');
       check(source.revision === p.revision && target.revision === p.targetRevision, 'Jeden z účtů se změnil. Znovu otevři spojení účtů a zkontroluj částku.');
       check(source.lines.length > 0, 'Tento účet je prázdný.');
-      const sourceTotal = sum(source.lines), total = sourceTotal + sum(target.lines);
+      const moving = p.selected === undefined ? structuredClone(source.lines) : selectedLines(source, p.selected).map(l=>structuredClone(l));
+      const sourceTotal = sum(moving), total = sourceTotal + sum(target.lines);
       check(integer(total) && total > 0, 'Spojený účet překračuje limit.');
       const merged = structuredClone(target.lines);
-      for (const line of source.lines) {
+      for (const line of moving) {
         const same = merged.find(x => sameLine(x, line) && x.quantity + line.quantity <= 999);
         if (same) same.quantity += line.quantity;
         else merged.push({ ...structuredClone(line), id: merged.some(x => x.id === line.id) ? uid() : line.id });
       }
       result = { type, orderId: target.id, name: target.name, sourceOrderId: source.id, sourceName: source.name,
-        movedQuantity: source.lines.reduce((n, l) => n + l.quantity, 0), sourceTotal, total,
+        movedQuantity: moving.reduce((n, l) => n + l.quantity, 0), sourceTotal, total,
+        ...(p.selected === undefined ? {} : {selected:structuredClone(p.selected)}),
         visitSnapshots: {source:visitSessions(s,source,now),target:visitSessions(s,target,now)} };
       closedVisits.push(...result.visitSnapshots.source.filter(v=>!v.active),...result.visitSnapshots.target.filter(v=>!v.active));
       // A transfer of a bill says nothing about either person's presence or identity.
@@ -253,7 +256,12 @@
       // Imported spend cannot be attributed precisely to the target's physical visit.
       if (target.visitId) target.visitHasCarriedBalance = true;
       target.lines = merged; target.revision++;
-      source.lines = []; source.revision++;
+      for (const line of moving) {
+        const original = source.lines.find(l=>l.id===line.id);
+        if (original.stockIssue) original.stockIssue = {...original.stockIssue,offset:original.stockIssue.offset+line.quantity};
+        original.quantity -= line.quantity;
+      }
+      source.lines = source.lines.filter(l=>l.quantity>0); source.revision++;
     } else if (type === 'loadCatalog') {
       if (s.catalogVersion === catalog.version) return null;
       for (const item of catalog.products) {
@@ -298,11 +306,24 @@
       touchVisit(o);
       if (line) line.quantity += quantity;
       else o.lines.push({id:p.marking?.lineId || uid(),...nextLine,quantity});
+      addedLineId = line?.id || o.lines[o.lines.length-1].id;
       check(sum(o.lines) <= 100000000, 'Překročen limit účtu.'); o.revision++;
     } else if (type === 'removeLine') {
       needShift(); const o = order(); const l = o.lines.find(x => x.id === p.lineId); check(l, 'Položka neexistuje.'); check(clean(p.reason), 'Doplň důvod opravy.');
       check(!l.stockIssue, 'Tato porce už byla vydaná do skladu. Oprava spotřeby vyžaduje skladovou korekci vedoucího.');
-      l.quantity--; o.lines = o.lines.filter(x => x.quantity > 0);
+      const quantity = p.quantity === undefined ? 1 : p.quantity;
+      check(integer(quantity,999) && quantity>0 && quantity<=l.quantity, 'Neplatný počet kusů k odebrání.');
+      if (p.undoOf !== undefined) {
+        const addition=s.audit.find(a=>a.type==='addLine'&&(a.detail?.marking?.operationId||a.id)===p.undoOf);
+        const originalLine=addition?.markingResult?.lineId||addition?.addedLineId;
+        check(addition && addition.detail.orderId===o.id && originalLine===l.id && (addition.detail.quantity??1)===quantity,
+          'Poslední namarkování už nelze vrátit. Zkontroluj položky účtu.');
+        check(!addition.actorId || addition.actorId===actorId, 'Toto namarkování patří jiné obsluze.');
+        check(!s.audit.some(a=>a.type==='removeLine'&&a.detail?.undoOf===p.undoOf), 'Toto namarkování už bylo vrácené.');
+        check(!s.audit.slice(s.audit.indexOf(addition)+1).some(a=>a.type!=='markingRejected'&&[a.orderId,a.detail?.orderId,a.detail?.targetOrderId].includes(o.id)),
+          'Účet se od posledního namarkování změnil. Zkontroluj položky účtu.');
+      }
+      l.quantity-=quantity; o.lines = o.lines.filter(x => x.quantity > 0);
       if (!o.lines.length) { clearVisit(o); }
       o.revision++;
     } else if (type === 'setLineQuantity') {
@@ -438,7 +459,7 @@
     } else if (type === 'backup') s.lastBackup = now;
     else throw new Error('Neznámá operace.');
     s.revision++;
-    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : result?.receiptId || null, detail: structuredClone(p), ...(['addLine','setLineQuantity','checkout'].includes(type)?{visitActivity}:{}), ...(closedVisits.length ? { visits: structuredClone(closedVisits) } : {}), ...(type === 'endVisit' ? { visit: structuredClone(result) } : {}), ...(type === 'renameOrder' ? { rename: structuredClone(result) } : {}), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}), ...(type === 'reassignReceipt' ? { assignment: structuredClone(result) } : {}) });
+    s.audit.push({ id: uid(), at: now, type, operator: sh?.operator || s.settings.operator, orderId: p.orderId || null, receiptId: result?.kind ? result.id : result?.receiptId || null, detail: structuredClone(p), ...(addedLineId?{addedLineId}:{}), ...(['addLine','setLineQuantity','checkout'].includes(type)?{visitActivity}:{}), ...(closedVisits.length ? { visits: structuredClone(closedVisits) } : {}), ...(type === 'endVisit' ? { visit: structuredClone(result) } : {}), ...(type === 'renameOrder' ? { rename: structuredClone(result) } : {}), ...(type === 'mergeOrders' ? { merge: structuredClone(result) } : {}), ...(type === 'reassignReceipt' ? { assignment: structuredClone(result) } : {}) });
     return result;
   }
   function validate(s) {

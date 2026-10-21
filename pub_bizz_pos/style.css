@@ -291,3 +291,42 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
   .pos-workspace .receipt-items{min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
   .pos-workspace .receipt-head,.pos-workspace .receipt-tools,.pos-workspace .receipt-bottom{flex-shrink:0}
 }
+
+/* Bill controls stay beside the amount and within thumb reach. */
+.receipt-total{gap:8px;align-items:center;flex-wrap:wrap}
+.receipt-total>span{font-size:.78rem}.receipt-total>strong{margin-left:auto;font-size:1.65rem;white-space:nowrap}
+.undo-marking{min-width:112px;min-height:48px;padding:8px 10px;border-radius:10px;background:#d4edb8;color:#263820;font-size:.82rem;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}
+.undo-marking:disabled{opacity:.55;background:#e1e6da;color:#718068}
+.bill-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:0 0 10px}
+.bill-action{min-height:48px;min-width:0;padding:7px 4px;border:1px solid #c8d2bf;border-radius:9px;background:#e1e8d7;color:#2d4126;font-size:.74rem;font-weight:700;line-height:1.25}
+.transfer-search{margin:12px 0}.transfer-targets{display:grid;gap:7px;max-height:210px;overflow-y:auto;overscroll-behavior:contain}
+.transfer-target{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:52px;text-align:left;padding:12px;border-radius:10px;background:var(--raised);color:var(--text);border:1px solid var(--line)}
+.transfer-target strong{overflow-wrap:anywhere}.transfer-target span{white-space:nowrap;color:var(--muted)}
+.transfer-target.selected{border-color:var(--lime);background:#29351f}.transfer-target.selected span{color:var(--lime)}
+.mobile-account-dock{display:none}
+@media(max-width:630px){
+  body.pos-workspace{padding-bottom:150px}
+  .pos-workspace .products{min-height:120px}
+  .mobile-account-dock{display:block;position:fixed;bottom:0;left:0;right:0;z-index:6;padding:8px 14px max(10px,env(safe-area-inset-bottom));border-top:1px solid #394c31;background:#162019;box-shadow:0 -6px 24px #0005}
+  .mobile-total-row{display:flex;gap:8px;align-items:stretch;margin-bottom:7px}
+  .mobile-account-dock .mobile-bill{position:static;display:flex;flex:1;min-width:0;min-height:52px;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;padding:7px 12px;box-shadow:none;border-radius:10px}
+  .mobile-account-dock .mobile-bill span{max-width:100%;font-size:.7rem}.mobile-account-dock .mobile-bill strong{font-size:1rem}
+  .mobile-account-dock .undo-marking{flex-shrink:0}
+  .mobile-account-dock .bill-actions{margin:0}.mobile-account-dock .bill-action{min-height:48px;background:#2b3827;color:#e1ead8;border-color:#4b5c42;font-size:.76rem}
+  .receipt-bottom .bill-actions{display:none}
+  .pos-workspace .sync-warning{bottom:148px}
+  .pos-workspace .toast{bottom:156px}
+  .pos-workspace .receipt{height:calc(100vh - 230px);height:calc(100dvh - 230px)}
+}
+@media print{.mobile-account-dock{display:none!important}}
+.payment-dialog[open]{display:flex;flex-direction:column;height:min(720px,calc(100vh - 24px));height:min(720px,calc(100dvh - 24px));max-height:calc(100dvh - 24px);overflow:hidden}
+.payment-dialog #dialog-form{display:flex;flex-direction:column;flex:1;min-height:0;height:100%;max-height:100%;overflow:hidden}
+.payment-dialog .dialog-head,.payment-dialog .dialog-actions,.payment-dialog #dialog-error,.payment-dialog .dialog-summary{flex-shrink:0}
+.payment-dialog #dialog-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.payment-dialog .dialog-actions{margin-top:10px}.payment-dialog #dialog-error:empty{margin:0}
+.dialog-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0 0;margin-top:8px;border-top:1px solid var(--line);font-size:.85rem;color:var(--muted)}
+.dialog-summary strong{font-size:1.35rem;color:var(--lime);white-space:nowrap}
+@media(max-width:359px){
+  .order-entry .entry-counts{grid-template-columns:repeat(3,minmax(48px,1fr)) minmax(66px,1.2fr)}
+  .entry-count[data-id="4"],.entry-count[data-id="5"]{display:none}
+}

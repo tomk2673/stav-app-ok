@@ -38,7 +38,7 @@
     check(types.has(type)&&uuid(id),'Neplatná operace markování.');
     const p=structuredClone(payload),o=s.orders.find(x=>x.id===p.orderId);
     check(o,'Původní účet už neexistuje.');
-    p.marking={version:1,operationId:id,shiftId:C.activeShift(s)?.id,orderName:o.name,customerId:o.customerId||null,barrier:barrier(s,o.id),vat:s.settings.vat};
+    p.marking={version:type==='removeLine'&&(p.quantity!==undefined||p.undoOf!==undefined)?2:1,operationId:id,shiftId:C.activeShift(s)?.id,orderName:o.name,customerId:o.customerId||null,barrier:barrier(s,o.id),vat:s.settings.vat};
     if(type==='addLine')Object.assign(p.marking,{lineId:id,product:signature(productLine(s,p))});
     else {
       const line=o.lines.find(x=>x.id===p.lineId);check(line,'Položka už neexistuje.');
@@ -49,7 +49,12 @@
   function normalize(s,type,payload) {
     const p=structuredClone(payload),m=p.marking;
     if(!m)return p; // Older clients retain the existing strictly online protocol.
-    check(types.has(type)&&m.version===1&&uuid(m.operationId),'Nepodporovaná operace markování.');
+    // Version 2 is deliberately rejected by older servers, rather than treating
+    // a selected transfer as a whole bill or a batch undo as a one-piece minus.
+    if(type==='mergeOrders'&&m.version===2&&m.kind==='selectedTransfer'){
+      check(uuid(m.operationId)&&Array.isArray(p.selected),'Neplatný přesun položek.');return p;
+    }
+    check(types.has(type)&&[1,2].includes(m.version)&&uuid(m.operationId),'Nepodporovaná operace markování.');
     const o=s.orders.find(x=>x.id===p.orderId);
     check(o&&o.name===m.orderName&&(o.customerId||null)===m.customerId,'Účet nebo host se změnil. Zkontroluj čekající položku.');
     check(C.activeShift(s)?.id===m.shiftId&&!!m.shiftId,'Směna se změnila. Zkontroluj čekající položku.');

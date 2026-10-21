@@ -138,6 +138,7 @@
       // audit operation ID suppresses an already committed optimistic overlay.
       await accept(response);
       if(response.result?.type==='markingRejected') {
+        if(!isMarking(request))throw Object.assign(new Error(response.result.message),{definitive:true});
         write(key(request.requestId),{...request,local:{...localInfo,status:'blocked',error:response.result.message}});
       } else localStorage.removeItem(key(request.requestId));
       retryDelay=1000;projection();return {state:cache,result:response.result,operationId:request.payload.marking?.operationId||request.payload.clientOperationId};

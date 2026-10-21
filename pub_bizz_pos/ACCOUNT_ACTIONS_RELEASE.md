@@ -6,6 +6,8 @@ Ve verzi 2.0.24 vrací každé úložiště identifikátor právě dokončené o
 
 Přísně online přidání používá v auditním detailu značku `clientOperationId` rovnou UUID požadavku. Zachovává původní serverové provedení bez podmínek optimistické projekce; `undoOf` následně odkazuje na nalezené serverové ID auditu.
 
+Definitivně odmítnutá přísně online oprava zobrazí chybu a po uložení potvrzeného stavu uvolní svůj deník. Nezůstane tak blokovaná operace, která by bránila dalšímu markování. Neurčité odpovědi i místní konflikty se dál uchovávají k ověření.
+
 U částky jsou **Rozdělit**, **Přesun účtu** a **Přesun položek**. Telefon má tuto lištu stále dole; tablet a PC ji mají pod položkami účtu. Vybrané položky se přesouvají po zadaných kusech na vyhledaný stůl nebo hosta. Při částečném přesunu zůstává vybraný původní účet se zbytkem. Přesun všech položek otevře cílový účet. Ceny, DPH, návštěvy, kredit a původní skladové rozsahy zůstávají zachované. Přesun nevytváří platbu ani nový skladový pohyb.
 
 Při rozdělení dlouhého účtu zůstává součet i potvrzení platby viditelné. Výběr počtu vrací seznam nahoru; po zaplacení části se otevře nabídka nápojů od začátku na stejném hostovi. Rozložení se řídí dostupnou výškou displeje, skutečnou výškou spodní lišty a bezpečnými okraji; není potřeba vybírat model telefonu.

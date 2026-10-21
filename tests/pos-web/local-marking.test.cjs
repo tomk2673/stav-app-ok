@@ -105,6 +105,18 @@ test('strict online undo identifies its own batch when the response also contain
   assert.equal(await h.quantity(server.a),0);assert.equal(await h.quantity(server.b),3);
  }finally{h.close();}
 });
+test('a definitively rejected strict undo clears its journal and allows further marking',async()=>{
+ const server=fixture(),h=await harness(server,storage(),false,false);try{
+  await h.select(server.a);h.click('[data-action="entryCount"][data-id="5"]');await h.add();await h.settled();
+  const addition=server.state.audit.find(a=>a.detail?.clientOperationId===server.calls[0].requestId),line=server.state.orders.find(o=>o.id===server.a).lines[0];
+  server.hold();const correction=h.w.POSStore.command('removeLine',{orderId:server.a,lineId:line.id,quantity:5,undoOf:addition.id,reason:'TEST competing device'});
+  const rejection=assert.rejects(correction,/Počet|namarkování|změnil/);await until(()=>h.w.POSCloud.busy,'strict correction in flight');
+  server.external('addLine',{orderId:server.a,productId:'agnis-2810',quantity:3});server.release();await rejection;
+  assert.equal(h.w.POSCloud.outbox.length,0);assert.equal(server.state.audit.at(-1).type,'markingRejected');assert.equal(await h.quantity(server.a),8);
+  await h.w.POSCloud.refresh();await h.add();await h.settled();assert.equal(await h.quantity(server.a),9);
+  assert.equal(server.state.receipts.length,0);assert.equal(server.state.stockIssues.length,0);
+ }finally{server.release();h.close();}
+});
 test('partial transfer picks a quantity and destination, retains the source and recovers a lost reply once',async()=>{
  const h=await harness();try{
   await h.select(h.server.a);h.click('[data-action="entryCount"][data-id="5"]');await h.add();await h.settled();

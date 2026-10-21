@@ -8,7 +8,7 @@ async function until(predicate,label){for(let i=0;i<400;i++){if(await predicate(
 function fixture(){
  const user={id:crypto.randomUUID(),email:'test@example.test'},venue={id:crypto.randomUUID(),organization_id:crypto.randomUUID(),role:'owner',currency:'CZK',name:'TEST ONLY'};
  let state=C.initial();state.venueId=venue.id;C.execute(state,'openShift',{opening:0});const a=C.execute(state,'newOrder',{name:'Test A'}),b=C.execute(state,'newOrder',{name:'Test B'});
- const ledger=new Map(),calls=[];let drop=false,gate,releaseGate,quota=false,accountActionsProtocol=1;
+ const ledger=new Map(),calls=[];let drop=false,gate,releaseGate,quota=false,accountActionsProtocol=1,afterCommit;
  const envelope=result=>({state:structuredClone(state),result,stock:[],issues:[],issueCount:0,venue,role:'owner',markingProtocol:1,accountActionsProtocol});
  async function fetch(url,init){
   if(quota)return {ok:false,status:402,json:async()=>({message:'Service restricted: exceed_egress_quota'})};
@@ -25,10 +25,11 @@ function fixture(){
    catch(e){if(!r.payload.marking||!M.types.has(r.type))return {ok:false,status:422,json:async()=>({definitive:true,error:e.message})};next=M.reject(state,r.type,r.payload,e.message,user.id);}
    state=next.state;result=next.result;ledger.set(r.requestId,result);
   }
+  if(afterCommit){const callback=afterCommit;afterCommit=null;callback();}
   if(drop){drop=false;throw new TypeError('Lost acknowledgment after commit');}
   const response=envelope(result);return {ok:true,status:200,json:async()=>response};
  }
- return {user,venue,a:a.id,b:b.id,calls,ledger,fetch,get state(){return state;},accountActions(value){accountActionsProtocol=value;},quota(value){quota=value;},external(type,p){state=D.run(state,type,p,{id:user.id,role:'owner'},[]).state;},drop(){drop=true;},hold(){gate=new Promise(r=>releaseGate=r);},release(){gate=null;releaseGate?.();}};
+ return {user,venue,a:a.id,b:b.id,calls,ledger,fetch,get state(){return state;},afterCommit(callback){afterCommit=callback;},accountActions(value){accountActionsProtocol=value;},quota(value){quota=value;},external(type,p){state=D.run(state,type,p,{id:user.id,role:'owner'},[]).state;},drop(){drop=true;},hold(){gate=new Promise(r=>releaseGate=r);},release(){gate=null;releaseGate?.();}};
 }
 function storage(){
  const data=new Map(),windows=new Set();let fail=false;
@@ -84,6 +85,37 @@ test('undo countdown expires at five seconds and switching the guest clears it',
   h.w.Date.now=now;await h.add();await h.select(h.server.b);assert.equal(h.w.document.querySelector('[data-action="undoLast"]').disabled,true);
   await h.select(h.server.a);assert.equal(h.w.document.querySelector('[data-action="undoLast"]').disabled,true);assert.equal(await h.quantity(h.server.a),2);
  }finally{h.close();}
+});
+test('strict online undo cannot target a later batch from another device using the same operator',async()=>{
+ const server=fixture(),h=await harness(server,storage(),false,false);try{
+  await h.select(server.a);server.afterCommit(()=>server.external('addLine',{orderId:server.a,productId:'agnis-2810',quantity:3}));
+  h.click('[data-action="entryCount"][data-id="5"]');await h.add();await h.settled();await pause(10);
+  assert.equal(await h.quantity(server.a),8);assert.equal(server.state.audit.at(-1).actorId,server.user.id);
+  const undo=h.w.document.querySelector('[data-action="undoLast"]');assert.equal(undo.disabled,true,'a subsequent change to this bill prevents undo');undo.click();await pause(0);
+  assert.equal(server.calls.filter(r=>r.type==='removeLine').length,0);assert.equal(await h.quantity(server.a),8);
+  assert.equal(server.calls[0].payload.clientOperationId,server.calls[0].requestId);
+ }finally{h.close();}
+});
+test('strict online undo identifies its own batch when the response also contains a later add on another bill',async()=>{
+ const server=fixture(),h=await harness(server,storage(),false,false);try{
+  await h.select(server.a);server.afterCommit(()=>server.external('addLine',{orderId:server.b,productId:'agnis-2810',quantity:3}));
+  h.click('[data-action="entryCount"][data-id="5"]');await h.add();await h.settled();await pause(10);
+  const addition=server.state.audit.find(a=>a.detail?.clientOperationId===server.calls.find(r=>r.type==='addLine').requestId);h.click('[data-action="undoLast"]');await pause(0);await h.settled();
+  assert.equal(server.calls.find(r=>r.type==='removeLine').payload.undoOf,addition.id);
+  assert.equal(await h.quantity(server.a),0);assert.equal(await h.quantity(server.b),3);
+ }finally{h.close();}
+});
+test('a definitively rejected strict undo clears its journal and allows further marking',async()=>{
+ const server=fixture(),h=await harness(server,storage(),false,false);try{
+  await h.select(server.a);h.click('[data-action="entryCount"][data-id="5"]');await h.add();await h.settled();
+  const addition=server.state.audit.find(a=>a.detail?.clientOperationId===server.calls[0].requestId),line=server.state.orders.find(o=>o.id===server.a).lines[0];
+  server.hold();const correction=h.w.POSStore.command('removeLine',{orderId:server.a,lineId:line.id,quantity:5,undoOf:addition.id,reason:'TEST competing device'});
+  const rejection=assert.rejects(correction,/Počet|namarkování|změnil/);await until(()=>h.w.POSCloud.busy,'strict correction in flight');
+  server.external('addLine',{orderId:server.a,productId:'agnis-2810',quantity:3});server.release();await rejection;
+  assert.equal(h.w.POSCloud.outbox.length,0);assert.equal(server.state.audit.at(-1).type,'markingRejected');assert.equal(await h.quantity(server.a),8);
+  await h.w.POSCloud.refresh();await h.add();await h.settled();assert.equal(await h.quantity(server.a),9);
+  assert.equal(server.state.receipts.length,0);assert.equal(server.state.stockIssues.length,0);
+ }finally{server.release();h.close();}
 });
 test('partial transfer picks a quantity and destination, retains the source and recovers a lost reply once',async()=>{
  const h=await harness();try{

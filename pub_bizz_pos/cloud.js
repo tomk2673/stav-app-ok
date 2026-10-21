@@ -138,9 +138,10 @@
       // audit operation ID suppresses an already committed optimistic overlay.
       await accept(response);
       if(response.result?.type==='markingRejected') {
+        if(!isMarking(request))throw Object.assign(new Error(response.result.message),{definitive:true});
         write(key(request.requestId),{...request,local:{...localInfo,status:'blocked',error:response.result.message}});
       } else localStorage.removeItem(key(request.requestId));
-      retryDelay=1000;projection();return {state:cache,result:response.result};
+      retryDelay=1000;projection();return {state:cache,result:response.result,operationId:request.payload.marking?.operationId||request.payload.clientOperationId};
     } catch(e) {
       lastConfirmed=0;if(e.auth)authBlocked=true;
       // Marking rejections are durably consumed by the versioned server.
@@ -250,13 +251,14 @@
         write(key(id),request);cache=next;projectionToken=projectionKey(entries());viewSerial++;emit();
         // The promise resolves after durable local storage; HTTP is independent.
         setTimeout(()=>drain().catch(()=>{}),0);
-        return Promise.resolve({state:cache,result:null,local:true});
+        return Promise.resolve({state:cache,result:null,local:true,operationId:id});
       }catch(e){return Promise.reject(e);}
     }
     const task=strictQueue.then(async()=>{
       if(entries().length||storageError)throw new Error(storageError||'Nejdřív počkej na potvrzení markování nebo ověř předchozí operaci.');
       if(!navigator.onLine||authBlocked)throw new Error('Platby a správa pokladny vyžadují spojení se serverem.');
       const request={venueId:venue.id,requestId:crypto.randomUUID(),type,payload:structuredClone(payload),sentAt:new Date().toISOString()};
+      if(type==='addLine')request.payload.clientOperationId=request.requestId;
       if(type==='mergeOrders'&&payload.selected!==undefined)request.payload.marking={version:2,kind:'selectedTransfer',operationId:request.requestId};
       if(type==='removeLine'&&(payload.quantity!==undefined||payload.undoOf!==undefined))request.payload=M.prepare(cache,type,payload,request.requestId);
       write(key(request.requestId),request);busy=true;emit();

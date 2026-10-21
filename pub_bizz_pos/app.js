@@ -22,7 +22,15 @@ async function command(type, payload, fast = false) {
   const sequence = ++markingSequence;
   clearUndo();
   $('#save-state').textContent = 'Ukládám…';
-  try { const response = await Store.command(type, payload); const addition=type==='addLine'?response.state.audit[response.state.audit.length-1]:null; const next=window.POSCloud?await Store.read():response.state; if(next!==state){state=next;if(sequence===markingSequence&&addition?.type==='addLine')offerUndo(addition);fast&&view==='pos'?renderPOSFast():render();} return response.result; }
+  try {
+    const response = await Store.command(type, payload);
+    const addition=type==='addLine'&&response.operationId?response.state.audit.find(a=>[a.detail?.marking?.operationId,a.detail?.clientOperationId,a.id].includes(response.operationId)):null;
+    const next=window.POSCloud?await Store.read():response.state,changed=next!==state;
+    state=next;
+    if(sequence===markingSequence&&addition?.type==='addLine')offerUndo(addition);
+    if(changed)fast&&view==='pos'?renderPOSFast():render();else updateUndo();
+    return response.result;
+  }
   catch (e) { $('#save-state').textContent = window.POSCloud?.pending ? 'Výsledek zatím nepotvrzený' : 'Změna nebyla uložena'; $('#save-state').classList.add('error'); throw e; }
 }
 function clearUndo() { undoMarking=null;clearTimeout(undoTimer);updateUndo(); }

@@ -37,10 +37,10 @@ const serve=async(req,res)=>{
 const server=http.createServer(serve),apiServer=http.createServer(serve);
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(page,fn,arg){for(let i=0;i<500;i++){if(await page.evaluate(fn,arg))return;await pause(20);}throw new Error('Timed out '+fn+' '+JSON.stringify(await page.evaluate(()=>({busy:window.POSCloud?.busy,connected:window.POSCloud?.connected,auth:window.POSCloud?.authBlocked,storage:window.POSCloud?.storageError,requests:window.POSCloud?.outbox.map(r=>({id:r.requestId,type:r.type,status:r.local?.status,error:r.local?.error}))}))));}
-function fixture(){
+function fixture(startShift=true){
  const user={id:crypto.randomUUID(),email:'test@example.test',aud:'authenticated',role:'authenticated',app_metadata:{provider:'email'},user_metadata:{},identities:[]};
  const venue={id:crypto.randomUUID(),organization_id:crypto.randomUUID(),name:'TEST ONLY',currency:'CZK',role:'owner'};
- let state=C.initial();state.venueId=venue.id;C.execute(state,'openShift',{opening:0});const a=C.execute(state,'newOrder',{name:'TEST A'}),b=C.execute(state,'newOrder',{name:'TEST B'});
+ let state=C.initial();state.venueId=venue.id;if(startShift)C.execute(state,'openShift',{opening:0});const a=C.execute(state,'newOrder',{name:'TEST A'}),b=C.execute(state,'newOrder',{name:'TEST B'});
  const requests=new Map(),calls=[],responses=[];let drop=false,dropId=null,delay=0;
  const session=()=>{const exp=Math.floor(Date.now()/1000)+3600;return {access_token:[{alg:'HS256',typ:'JWT'},{sub:user.id,aud:'authenticated',role:'authenticated',exp}].map(x=>Buffer.from(JSON.stringify(x)).toString('base64url')).join('.')+'.test',refresh_token:'test-only',token_type:'bearer',expires_at:exp,expires_in:3600,user};};
  const snapshot=(result,sync=null)=>({...S.encode(structuredClone(state),sync),result,stock:[],issues:[],issueCount:0,role:'owner',venue,markingProtocol:1,syncProtocol:1});
@@ -197,6 +197,20 @@ async function menuNavigation(browser,base,width,height=width<=630?667:850){
   return {width,height,manyAccounts:38,menuHeight:metrics.height,stableMenu:true,sameCustomer:true,markingWhileServerBusy:true,returnToDrinks:width<=630};
  }finally{await h.close();}
 }
+async function shortWorkspace(browser,base){
+ const checks=[];
+ for(const [width,height] of [[844,390],[390,480]]){
+  const h=await open(browser,base,'after',width,fixture(false),false,height);try{
+   const catalog=h.page.locator('.catalog-area'),product=h.page.locator('#products .product[data-action="add"]').first();
+   await catalog.evaluate(el=>el.scrollTop=el.scrollHeight);await product.scrollIntoViewIfNeeded();
+   const reachable=await product.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));});
+   assert.equal(reachable,true,'short viewport still exposes products and the open-shift action');
+   await product.click();assert.equal(await h.page.locator('#dialog-title').textContent(),'Otevřít směnu');
+   checks.push({width,height,productReachable:true,openShiftReachable:true});
+  }finally{await h.close();}
+ }
+ return checks;
+}
 (async()=>{
  await Promise.all([new Promise(r=>server.listen(0,'127.0.0.1',r)),new Promise(r=>apiServer.listen(0,'127.0.0.1',r))]);const base='http://127.0.0.1:'+server.address().port,results=[];
  try{
@@ -204,6 +218,7 @@ async function menuNavigation(browser,base,width,height=width<=630?667:850){
    const browser=await require('pwmodern')[engine].launch({headless:true});try{
     for(const width of [390,900,1440]){const r={engine,navigation:await menuNavigation(browser,base,width)};results.push(r);console.log(JSON.stringify(r));}
     results.push({engine,navigation:await menuNavigation(browser,base,390,850)});console.log(JSON.stringify(results.at(-1)));
+    results.push({engine,shortWorkspace:await shortWorkspace(browser,base)});console.log(JSON.stringify(results.at(-1)));
     if(process.env.POS_MARKING_NAVIGATION_ONLY)continue;
     for(const width of (process.env.POS_MARKING_ONLY_CHECKS?[]:[390,900,1440])){const r=await benchmark(browser,base,width);results.push(r);console.log(JSON.stringify(r));}
     const checks={engine,resilience:await resilience(browser,base),concurrency:await twoDevices(browser,base),largeHistory:await largeHistory(browser,base)};results.push(checks);console.log(JSON.stringify(checks));

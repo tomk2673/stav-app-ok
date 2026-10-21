@@ -284,7 +284,7 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
 
 /* Marking is a workspace: only drinks scroll, while the customer and count stay put. */
 .pos-workspace .pos-layout{min-height:0;align-items:start;overflow-anchor:none}
-.pos-workspace .catalog-area{height:var(--pos-height,calc(100vh - 185px));min-height:0;overflow:hidden}
+.pos-workspace .catalog-area{height:var(--pos-height,calc(100vh - 185px));min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
 .pos-workspace .catalog-area>.order-entry,.pos-workspace .catalog-area>.search,.pos-workspace .catalog-area>.categories,.pos-workspace .catalog-area>.notice,.pos-workspace #payment-reservation{flex-shrink:0}
 .pos-workspace .products{flex:1 1 auto;min-height:90px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable;padding-bottom:8px}
 .pos-workspace .accounts{overflow-anchor:none}

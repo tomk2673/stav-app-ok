@@ -15,7 +15,7 @@
         try { next = request.result ? clone(request.result) : POSCore.initial(); result = fn(next); os.put(next, 'current'); }
         catch (e) { failure = e; tx.abort(); }
       };
-      tx.oncomplete = () => { channel?.postMessage('updated'); resolve({ state: next, result }); };
+      tx.oncomplete = () => { const last=next.audit[next.audit.length-1];channel?.postMessage('updated'); resolve({ state: next, result, operationId:last?.detail?.marking?.operationId||last?.id }); };
       tx.onerror = tx.onabort = () => reject(failure || tx.error || new Error('Data se nepodařilo uložit. Zkontroluj volné místo.'));
     });
   }

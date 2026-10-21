@@ -416,7 +416,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
   <div class="contextbar"><div><strong id="venue">ZTRACENÝ BAR</strong><span class="context-divider">/</span><span id="shift-label">Načítám data…</span></div><div class="save-state" id="save-state" role="status">Otevírám úložiště</div></div>
   <div id="sync-warning" class="sync-warning" role="status" hidden></div>
   <main id="app"><div class="loading">Otevírám pokladnu…</div></main>
-  <footer class="footer"><span>PUB POS <b>2.0.23</b></span><span id="offline-status">Sdílená pokladna · PUB INVOICES</span><button data-action="backup">Stáhnout zálohu ↗</button><button data-action="logout" data-cloud>Odhlásit se</button></footer>
+  <footer class="footer"><span>PUB POS <b>2.0.24</b></span><span id="offline-status">Sdílená pokladna · PUB INVOICES</span><button data-action="backup">Stáhnout zálohu ↗</button><button data-action="logout" data-cloud>Odhlásit se</button></footer>
   <div id="mobile-account-dock" class="mobile-account-dock" hidden><div class="mobile-total-row"><button id="mobile-bill" class="mobile-bill" data-action="showBill" hidden></button><button type="button" class="undo-marking" data-action="undoLast" disabled>↶ Zpět</button></div><div id="mobile-account-actions"></div></div>
   <dialog id="dialog" aria-labelledby="dialog-title"><form id="dialog-form"><div class="dialog-head"><h2 id="dialog-title"></h2><button type="button" class="iconbutton close-dialog" aria-label="Zavřít">×</button></div><div id="dialog-body"></div><p id="dialog-error" class="error" role="alert"></p><div id="dialog-summary" class="dialog-summary" role="status" hidden></div><div class="dialog-actions"><button type="button" class="secondary close-dialog">Zpět</button><button type="submit" id="dialog-submit" class="primary">Uložit</button></div></form></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div><div id="print-area"></div><input type="file" id="restore-input" accept="application/json,.json" hidden>
@@ -3729,7 +3729,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
         try { next = request.result ? clone(request.result) : POSCore.initial(); result = fn(next); os.put(next, 'current'); }
         catch (e) { failure = e; tx.abort(); }
       };
-      tx.oncomplete = () => { channel?.postMessage('updated'); resolve({ state: next, result }); };
+      tx.oncomplete = () => { const last=next.audit[next.audit.length-1];channel?.postMessage('updated'); resolve({ state: next, result, operationId:last?.detail?.marking?.operationId||last?.id }); };
       tx.onerror = tx.onabort = () => reject(failure || tx.error || new Error('Data se nepodařilo uložit. Zkontroluj volné místo.'));
     });
   }
@@ -3812,7 +3812,15 @@ async function command(type, payload, fast = false) {
   const sequence = ++markingSequence;
   clearUndo();
   $('#save-state').textContent = 'Ukládám…';
-  try { const response = await Store.command(type, payload); const addition=type==='addLine'?response.state.audit[response.state.audit.length-1]:null; const next=window.POSCloud?await Store.read():response.state; if(next!==state){state=next;if(sequence===markingSequence&&addition?.type==='addLine')offerUndo(addition);fast&&view==='pos'?renderPOSFast():render();} return response.result; }
+  try {
+    const response = await Store.command(type, payload);
+    const addition=type==='addLine'&&response.operationId?response.state.audit.find(a=>(a.detail?.marking?.operationId||a.id)===response.operationId):null;
+    const next=window.POSCloud?await Store.read():response.state,changed=next!==state;
+    state=next;
+    if(sequence===markingSequence&&addition?.type==='addLine')offerUndo(addition);
+    if(changed)fast&&view==='pos'?renderPOSFast():render();else updateUndo();
+    return response.result;
+  }
   catch (e) { $('#save-state').textContent = window.POSCloud?.pending ? 'Výsledek zatím nepotvrzený' : 'Změna nebyla uložena'; $('#save-state').classList.add('error'); throw e; }
 }
 function clearUndo() { undoMarking=null;clearTimeout(undoTimer);updateUndo(); }

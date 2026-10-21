@@ -78,6 +78,7 @@ function field(label, name, value = '', extra = '', full = false) { return `<lab
 function showDialog(title, body, submit, label = 'Uložit', onDone, onCancel) {
   window.paymentAbort?.abort();
   const d = $('#dialog'); if (d.open) d.close();
+  d.classList.remove('payment-dialog');$('#dialog-summary').hidden=true;$('#dialog-summary').textContent='';
   dialogCancel = onCancel;
   $('#dialog-title').textContent = title; $('#dialog-body').innerHTML = body; $('#dialog-error').textContent = '';
   $('#dialog-submit').textContent = label; $('#dialog-submit').hidden = !submit; $('#dialog-submit').disabled = false;
@@ -92,7 +93,9 @@ function showDialog(title, body, submit, label = 'Uložit', onDone, onCancel) {
   $('#dialog .dialog-actions .close-dialog').textContent='Zpět';
   window.paymentAbort=new AbortController();
   d.showModal();
+  scrollDialogTop();
 }
+function scrollDialogTop() { $('#dialog').scrollTop=0;$('#dialog-body').scrollTop=0; }
 function closeDialog() {
   if (submitting) return;
   if (dialogCancel) dialogCancel(); else $('#dialog').close();
@@ -213,8 +216,10 @@ function updateEntryContext() {
 }
 function resizePOSWorkspace() {
   const layout=$('.pos-layout');if(!layout)return;
-  const bottom=window.innerWidth<=630?156:16;
-  layout.style.setProperty('--pos-height',`${Math.max(280,window.innerHeight-Math.max(10,layout.getBoundingClientRect().top+window.scrollY)-bottom)}px`);
+  const dockHeight=$('#mobile-account-dock')?.getBoundingClientRect().height||0;
+  const bottom=window.innerWidth<=630?Math.max(116,dockHeight+12):16;
+  const height=Math.min(window.innerHeight,window.visualViewport?.height||window.innerHeight);
+  layout.style.setProperty('--pos-height',`${Math.max(280,height-Math.max(10,layout.getBoundingClientRect().top+window.scrollY)-bottom)}px`);
 }
 function updateMobileBill(){
   const bill=$('#mobile-bill');if(!bill)return;
@@ -223,7 +228,7 @@ function updateMobileBill(){
   const order=getOrder(),queued=(window.POSCloud?.outbox||[]).filter(r=>r.local?.kind==='marking').length;
   bill.innerHTML=mobileBillOpen?`<strong>← Nápoje</strong><span>${E(order.name)} · ${fmt(C.sum(order.lines))}</span>`:`<span>${E(order.name)} · ${order.lines.reduce((n,l)=>n+l.quantity,0)} ks${queued?` · ${queued} čeká`:''}</span><strong>Účet ${fmt(C.sum(order.lines))} →</strong>`;
   const actions=$('#mobile-account-actions');if(actions)actions.innerHTML=billActions(order);
-  updateUndo();
+  updateUndo();resizePOSWorkspace();
 }
 function showProducts(){
   mobileBillOpen=false;updateMobileBill();
@@ -544,6 +549,8 @@ function finishPayment(r) {
   if($('#dialog').open)$('#dialog').close();
   const remaining=state.orders.find(o=>o.id===r.orderId);
   selectAccount(remaining?.lines.length?remaining.id:'bar');
+  const catalog=$('.catalog-area');if(catalog)catalog.scrollTop=0;
+  showProducts();
   toast(`Zaplaceno · ${fmt(r.total)}${r.change?` · Vrátit ${fmt(r.change)}`:''}`);
 }
 function finishPaymentCancellation(orderId) {
@@ -592,6 +599,7 @@ async function pay(mode, resume=false) {
       if(reservation)cancelPayment({...o,paymentLock:reservation});else $('#dialog').close();
     });
   $('#dialog .dialog-actions .close-dialog').textContent='Zrušit platbu';
+  $('#dialog').classList.add('payment-dialog');
   const signal=window.paymentAbort.signal,form=$('#dialog-form');
   function prepareCard() {
     if(reservation||cardReservation||cardReservationFailed||signal.aborted)return;
@@ -617,14 +625,15 @@ async function pay(mode, resume=false) {
       form.elements.cardConfirmed.required=p.card>0;$('#card-confirm-field').hidden=p.card===0||!cardReady;
       const balance=canCredit?customerCredit(o):0,creditMissing=Math.max(0,p.credit-balance);
       $('#dialog-submit').disabled=received<cash||creditMissing>0||!cardReady;
+      $('#dialog-summary').hidden=false;$('#dialog-summary').innerHTML=`<span>K úhradě · ${selected().reduce((n,l)=>n+l.quantity,0)} ks</span><strong>${fmt(p.total)}</strong>`;
       $('#payment-summary').innerHTML=`<div class="summary-row total"><span>K úhradě</span><strong>${fmt(p.total)}</strong></div>${p.rounding?`<div class="summary-row"><span>Zaokrouhlení</span><span>${fmt(p.rounding)}</span></div>`:''}${paymentMode==='split'?`<div class="summary-row"><span>Na terminálu</span><strong>${fmt(p.card)}</strong></div>`:''}${paymentMode==='credit'?`<div class="summary-row"><span>Kredit před platbou</span><strong>${fmt(balance)}</strong></div><div class="summary-row"><span>${creditMissing?'Na kreditu chybí':'Kredit po platbě'}</span><strong>${fmt(creditMissing||balance-p.credit)}</strong></div>`:paymentMode!=='card'?`<div class="summary-row"><span>${received<cash?'Ještě chybí':'Vrátit hostovi'}</span><strong>${fmt(Math.abs(received-cash))}</strong></div>`:'<span class="muted small">Částku zadej na samostatném terminálu.</span>'}`;
       if(!cardReady){$('#payment-summary').innerHTML+='<p class="help">Nejdřív připravujeme rezervaci. Zatím neprováděj platbu na terminálu.</p>';prepareCard();}
-    }catch(e){$('#payment-summary').textContent=e.message;$('#dialog-submit').disabled=true;form.elements.cardConfirmed.required=false;$('#card-confirm-field').hidden=true;}
+    }catch(e){$('#payment-summary').textContent=e.message;$('#dialog-summary').hidden=false;$('#dialog-summary').textContent='Vyber položky k zaplacení';$('#dialog-submit').disabled=true;form.elements.cardConfirmed.required=false;$('#card-confirm-field').hidden=true;}
   }
   function returnToItems() {
     $('#payment-qty-editor').hidden=true;$('#payment-qty-editor').innerHTML='';$('#payment-items').hidden=false;$('#payment-checkout').hidden=false;
     $('#dialog-submit').hidden=false;$('#dialog .dialog-actions .close-dialog').hidden=false;
-    renderItems();preview();
+    renderItems();preview();scrollDialogTop();
   }
   $('#dialog-body').addEventListener('click',e=>{
     const item=e.target.closest('[data-payment-line]');
@@ -633,6 +642,7 @@ async function pay(mode, resume=false) {
       const q=Number(form.elements['line-'+l.id].value),editor=$('#payment-qty-editor');
       editor.innerHTML=quantityPickerHTML(l.name,q||1,0,l.quantity,true)+'<button type="button" class="secondary qty-return" data-return-payment>Zpět k položkám</button>';
       editor.hidden=false;$('#payment-items').hidden=true;$('#payment-checkout').hidden=true;$('#dialog-submit').hidden=true;$('#dialog .dialog-actions .close-dialog').hidden=true;
+      $('#dialog-summary').hidden=true;scrollDialogTop();
       bindQuantityPicker(editor,q||1,0,l.quantity,quantity=>{form.elements.cardConfirmed.checked=false;form.elements['line-'+l.id].value=String(quantity);returnToItems();});
     }
     if(e.target.closest('[data-payment-reset]')){partial=true;for(const l of o.lines)form.elements['line-'+l.id].value='0';form.elements.cardConfirmed.checked=false;$('#dialog-title').textContent='Rozdělit účet';$('#payment-help').textContent='Klepni na položku a vyber počet kusů. Zbytek zůstane na účtu.';e.target.closest('[data-payment-reset]').hidden=true;renderItems();preview();}
@@ -764,6 +774,7 @@ window.addEventListener('online',connection);window.addEventListener('offline',c
 async function refresh(){if(state){try{const next=await Store.read();if(window.POSCloud?next!==state:next.revision!==state.revision){const fast=view==='pos'&&next.receipts.length===state.receipts.length&&JSON.stringify(next.products)===JSON.stringify(state.products)&&JSON.stringify(next.settings)===JSON.stringify(state.settings);state=next;fast?renderPOSFast():render();}}catch{toast('Nepodařilo se načíst uložená data.',true);}}}
 window.addEventListener('focus',refresh);
 window.addEventListener('resize',()=>{if(window.innerWidth>630)setNavigationOpen(false);resizePOSWorkspace();});
+window.visualViewport?.addEventListener('resize',resizePOSWorkspace);
 (async()=>{
   document.querySelectorAll('[data-cloud]').forEach(x=>x.hidden=!window.POSCloud);
   try{

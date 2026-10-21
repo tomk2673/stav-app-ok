@@ -306,6 +306,7 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
 .mobile-account-dock{display:none}
 @media(max-width:630px){
   body.pos-workspace{padding-bottom:150px}
+  .pos-workspace .products{min-height:120px}
   .mobile-account-dock{display:block;position:fixed;bottom:0;left:0;right:0;z-index:6;padding:8px 14px max(10px,env(safe-area-inset-bottom));border-top:1px solid #394c31;background:#162019;box-shadow:0 -6px 24px #0005}
   .mobile-total-row{display:flex;gap:8px;align-items:stretch;margin-bottom:7px}
   .mobile-account-dock .mobile-bill{position:static;display:flex;flex:1;min-width:0;min-height:52px;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;padding:7px 12px;box-shadow:none;border-radius:10px}
@@ -318,3 +319,10 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
   .pos-workspace .receipt{height:calc(100vh - 230px);height:calc(100dvh - 230px)}
 }
 @media print{.mobile-account-dock{display:none!important}}
+.payment-dialog[open]{display:flex;flex-direction:column;height:min(720px,calc(100vh - 24px));height:min(720px,calc(100dvh - 24px));max-height:calc(100dvh - 24px);overflow:hidden}
+.payment-dialog #dialog-form{display:flex;flex-direction:column;flex:1;min-height:0;height:100%;max-height:100%;overflow:hidden}
+.payment-dialog .dialog-head,.payment-dialog .dialog-actions,.payment-dialog #dialog-error,.payment-dialog .dialog-summary{flex-shrink:0}
+.payment-dialog #dialog-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.payment-dialog .dialog-actions{margin-top:10px}.payment-dialog #dialog-error:empty{margin:0}
+.dialog-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0 0;margin-top:8px;border-top:1px solid var(--line);font-size:.85rem;color:var(--muted)}
+.dialog-summary strong{font-size:1.35rem;color:var(--lime);white-space:nowrap}

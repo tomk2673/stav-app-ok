@@ -54,7 +54,25 @@ async function flow(browser,base,width,engine){
   console.log(JSON.stringify({engine,width,undoBatch:true,partialTransfer:true,wholeTransfer:true,splitAccessible:true,noMoneyOrStockWrites:true,geometry}));
  }catch(e){console.error(JSON.stringify({engine,width,requestsFailed,calls:f.calls.map(r=>({type:r.type,payload:r.payload})),server:order(f.a).lines,client:await page.evaluate(()=>({online:navigator.onLine,busy:POSCloud.busy,error:POSCloud.serviceError,auth:POSCloud.authBlocked,storage:POSCloud.storageError,outbox:POSCloud.outbox})).catch(()=>null)}));throw e;}finally{await context.close();}
 }
+async function splitScrollFlow(browser,base,engine){
+ const f=fixture();for(const p of f.state.products.filter(p=>p.active&&p.price>0).slice(0,24))C.execute(f.state,'addLine',{orderId:f.a,productId:p.id,quantity:2});
+ const context=await browser.newContext({serviceWorkers:'block',viewport:{width:393,height:667},isMobile:true,hasTouch:true}),page=await context.newPage();page.setDefaultTimeout(8000);
+ await context.route('**/*',route=>{const url=route.request().url();if(url.startsWith(api+'/'))return f.route(route);if(url.startsWith(base+'/'))return route.continue();throw new Error('Unexpected remote request '+url);});
+ await context.addInitScript(({session,api})=>localStorage.setItem('sb-'+new URL(api).hostname.split('.')[0]+'-auth-token',JSON.stringify(session)),{session:f.session(),api});
+ try{
+  await page.goto(base+'/pub_bizz_pos/index.html');await page.locator('.product').first().waitFor();await page.locator('#account-search').fill('Test A');await page.locator('.account-result[data-id="'+f.a+'"]').click();
+  await page.locator('[data-action="payCash"]').click();await page.locator('.payment-item').last().waitFor();
+  const dimensions=await page.evaluate(()=>({body:document.querySelector('#dialog-body').clientHeight,total:document.querySelector('#dialog-body').scrollHeight,button:document.querySelector('#dialog-submit').getBoundingClientRect().bottom,summary:document.querySelector('#dialog-summary').getBoundingClientRect().bottom,height:innerHeight}));
+  assert.ok(dimensions.total>dimensions.body);assert.ok(dimensions.button<dimensions.height&&dimensions.summary<dimensions.height,'payment controls stay in view with all 24 rows selected');
+  await page.locator('#dialog-body').evaluate(el=>el.scrollTop=el.scrollHeight);await page.locator('.payment-item').last().click();await page.locator('#payment-qty-editor [data-qty="1"]').click();
+  assert.equal(await page.locator('#dialog-body').evaluate(el=>el.scrollTop),0,'choosing pieces returns to the top of the bill');
+  assert.ok(await page.locator('#dialog-submit').isVisible());await page.locator('#dialog-submit').click();await until(page,()=>!document.querySelector('#dialog').open);
+  assert.equal(f.state.receipts.length,1);assert.equal(f.state.orders.find(o=>o.id===f.a).lines[0].quantity,1);assert.equal(await page.locator('.receipt-head h2').textContent(),'Test A');
+  assert.equal(await page.locator('.catalog-area').evaluate(el=>el.scrollTop),0);assert.ok((await page.locator('.order-entry').boundingBox()).y<120,'partial payment returns to drinks at the top');
+  console.log(JSON.stringify({engine,longBillRows:24,stickyPaymentControls:true,quantityReturnsToTop:true,partialPaymentReturnsToDrinks:true,dimensions}));
+ }finally{await context.close();}
+}
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
- try{for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){if(process.env.POS_ACCOUNT_ENGINES&&!process.env.POS_ACCOUNT_ENGINES.split(',').includes(name))continue;const browser=await engine.launch({headless:true,...(name==='webkit'&&process.env.POS_WEBKIT_EXECUTABLE?{executablePath:process.env.POS_WEBKIT_EXECUTABLE}:{})});try{for(const width of [320,390,900,1440])await flow(browser,base,width,name);}finally{await browser.close();}}}finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
+ try{for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){if(process.env.POS_ACCOUNT_ENGINES&&!process.env.POS_ACCOUNT_ENGINES.split(',').includes(name))continue;const browser=await engine.launch({headless:true,...(name==='webkit'&&process.env.POS_WEBKIT_EXECUTABLE?{executablePath:process.env.POS_WEBKIT_EXECUTABLE}:{})});try{for(const width of [320,390,900,1440])await flow(browser,base,width,name);await splitScrollFlow(browser,base,name);}finally{await browser.close();}}}finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

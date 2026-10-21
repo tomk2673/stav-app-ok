@@ -312,6 +312,7 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
 .mobile-account-dock{display:none}
 @media(max-width:630px){
   body.pos-workspace{padding-bottom:150px}
+  .pos-workspace .products{min-height:120px}
   .mobile-account-dock{display:block;position:fixed;bottom:0;left:0;right:0;z-index:6;padding:8px 14px max(10px,env(safe-area-inset-bottom));border-top:1px solid #394c31;background:#162019;box-shadow:0 -6px 24px #0005}
   .mobile-total-row{display:flex;gap:8px;align-items:stretch;margin-bottom:7px}
   .mobile-account-dock .mobile-bill{position:static;display:flex;flex:1;min-width:0;min-height:52px;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;padding:7px 12px;box-shadow:none;border-radius:10px}
@@ -324,6 +325,13 @@ button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
   .pos-workspace .receipt{height:calc(100vh - 230px);height:calc(100dvh - 230px)}
 }
 @media print{.mobile-account-dock{display:none!important}}
+.payment-dialog[open]{display:flex;flex-direction:column;height:min(720px,calc(100vh - 24px));height:min(720px,calc(100dvh - 24px));max-height:calc(100dvh - 24px);overflow:hidden}
+.payment-dialog #dialog-form{display:flex;flex-direction:column;flex:1;min-height:0;height:100%;max-height:100%;overflow:hidden}
+.payment-dialog .dialog-head,.payment-dialog .dialog-actions,.payment-dialog #dialog-error,.payment-dialog .dialog-summary{flex-shrink:0}
+.payment-dialog #dialog-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.payment-dialog .dialog-actions{margin-top:10px}.payment-dialog #dialog-error:empty{margin:0}
+.dialog-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0 0;margin-top:8px;border-top:1px solid var(--line);font-size:.85rem;color:var(--muted)}
+.dialog-summary strong{font-size:1.35rem;color:var(--lime);white-space:nowrap}
 </style>
   <script>(function(root){'use strict';
 if(!root.globalThis) root.globalThis=root;
@@ -406,7 +414,7 @@ if(root.crypto&&!root.crypto.randomUUID&&root.crypto.getRandomValues){
   <main id="app"><div class="loading">Otevírám pokladnu…</div></main>
   <footer class="footer"><span>PUB POS <b>2.0.23</b></span><span id="offline-status">Sdílená pokladna · PUB INVOICES</span><button data-action="backup">Stáhnout zálohu ↗</button><button data-action="logout" data-cloud>Odhlásit se</button></footer>
   <div id="mobile-account-dock" class="mobile-account-dock" hidden><div class="mobile-total-row"><button id="mobile-bill" class="mobile-bill" data-action="showBill" hidden></button><button type="button" class="undo-marking" data-action="undoLast" disabled>↶ Zpět</button></div><div id="mobile-account-actions"></div></div>
-  <dialog id="dialog" aria-labelledby="dialog-title"><form id="dialog-form"><div class="dialog-head"><h2 id="dialog-title"></h2><button type="button" class="iconbutton close-dialog" aria-label="Zavřít">×</button></div><div id="dialog-body"></div><p id="dialog-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary close-dialog">Zpět</button><button type="submit" id="dialog-submit" class="primary">Uložit</button></div></form></dialog>
+  <dialog id="dialog" aria-labelledby="dialog-title"><form id="dialog-form"><div class="dialog-head"><h2 id="dialog-title"></h2><button type="button" class="iconbutton close-dialog" aria-label="Zavřít">×</button></div><div id="dialog-body"></div><p id="dialog-error" class="error" role="alert"></p><div id="dialog-summary" class="dialog-summary" role="status" hidden></div><div class="dialog-actions"><button type="button" class="secondary close-dialog">Zpět</button><button type="submit" id="dialog-submit" class="primary">Uložit</button></div></form></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div><div id="print-area"></div><input type="file" id="restore-input" accept="application/json,.json" hidden>
   <noscript>Pokladna potřebuje zapnutý JavaScript.</noscript>
 <script>/* User-supplied Agnis price list. Excludes all 30 unpriced entries; Cuba libre 130 CZK as requested. */
@@ -3856,6 +3864,7 @@ function field(label, name, value = '', extra = '', full = false) { return `<lab
 function showDialog(title, body, submit, label = 'Uložit', onDone, onCancel) {
   window.paymentAbort?.abort();
   const d = $('#dialog'); if (d.open) d.close();
+  d.classList.remove('payment-dialog');$('#dialog-summary').hidden=true;$('#dialog-summary').textContent='';
   dialogCancel = onCancel;
   $('#dialog-title').textContent = title; $('#dialog-body').innerHTML = body; $('#dialog-error').textContent = '';
   $('#dialog-submit').textContent = label; $('#dialog-submit').hidden = !submit; $('#dialog-submit').disabled = false;
@@ -3870,7 +3879,9 @@ function showDialog(title, body, submit, label = 'Uložit', onDone, onCancel) {
   $('#dialog .dialog-actions .close-dialog').textContent='Zpět';
   window.paymentAbort=new AbortController();
   d.showModal();
+  scrollDialogTop();
 }
+function scrollDialogTop() { $('#dialog').scrollTop=0;$('#dialog-body').scrollTop=0; }
 function closeDialog() {
   if (submitting) return;
   if (dialogCancel) dialogCancel(); else $('#dialog').close();
@@ -3991,8 +4002,10 @@ function updateEntryContext() {
 }
 function resizePOSWorkspace() {
   const layout=$('.pos-layout');if(!layout)return;
-  const bottom=window.innerWidth<=630?156:16;
-  layout.style.setProperty('--pos-height',`${Math.max(280,window.innerHeight-Math.max(10,layout.getBoundingClientRect().top+window.scrollY)-bottom)}px`);
+  const dockHeight=$('#mobile-account-dock')?.getBoundingClientRect().height||0;
+  const bottom=window.innerWidth<=630?Math.max(116,dockHeight+12):16;
+  const height=Math.min(window.innerHeight,window.visualViewport?.height||window.innerHeight);
+  layout.style.setProperty('--pos-height',`${Math.max(280,height-Math.max(10,layout.getBoundingClientRect().top+window.scrollY)-bottom)}px`);
 }
 function updateMobileBill(){
   const bill=$('#mobile-bill');if(!bill)return;
@@ -4001,7 +4014,7 @@ function updateMobileBill(){
   const order=getOrder(),queued=(window.POSCloud?.outbox||[]).filter(r=>r.local?.kind==='marking').length;
   bill.innerHTML=mobileBillOpen?`<strong>← Nápoje</strong><span>${E(order.name)} · ${fmt(C.sum(order.lines))}</span>`:`<span>${E(order.name)} · ${order.lines.reduce((n,l)=>n+l.quantity,0)} ks${queued?` · ${queued} čeká`:''}</span><strong>Účet ${fmt(C.sum(order.lines))} →</strong>`;
   const actions=$('#mobile-account-actions');if(actions)actions.innerHTML=billActions(order);
-  updateUndo();
+  updateUndo();resizePOSWorkspace();
 }
 function showProducts(){
   mobileBillOpen=false;updateMobileBill();
@@ -4322,6 +4335,8 @@ function finishPayment(r) {
   if($('#dialog').open)$('#dialog').close();
   const remaining=state.orders.find(o=>o.id===r.orderId);
   selectAccount(remaining?.lines.length?remaining.id:'bar');
+  const catalog=$('.catalog-area');if(catalog)catalog.scrollTop=0;
+  showProducts();
   toast(`Zaplaceno · ${fmt(r.total)}${r.change?` · Vrátit ${fmt(r.change)}`:''}`);
 }
 function finishPaymentCancellation(orderId) {
@@ -4370,6 +4385,7 @@ async function pay(mode, resume=false) {
       if(reservation)cancelPayment({...o,paymentLock:reservation});else $('#dialog').close();
     });
   $('#dialog .dialog-actions .close-dialog').textContent='Zrušit platbu';
+  $('#dialog').classList.add('payment-dialog');
   const signal=window.paymentAbort.signal,form=$('#dialog-form');
   function prepareCard() {
     if(reservation||cardReservation||cardReservationFailed||signal.aborted)return;
@@ -4395,14 +4411,15 @@ async function pay(mode, resume=false) {
       form.elements.cardConfirmed.required=p.card>0;$('#card-confirm-field').hidden=p.card===0||!cardReady;
       const balance=canCredit?customerCredit(o):0,creditMissing=Math.max(0,p.credit-balance);
       $('#dialog-submit').disabled=received<cash||creditMissing>0||!cardReady;
+      $('#dialog-summary').hidden=false;$('#dialog-summary').innerHTML=`<span>K úhradě · ${selected().reduce((n,l)=>n+l.quantity,0)} ks</span><strong>${fmt(p.total)}</strong>`;
       $('#payment-summary').innerHTML=`<div class="summary-row total"><span>K úhradě</span><strong>${fmt(p.total)}</strong></div>${p.rounding?`<div class="summary-row"><span>Zaokrouhlení</span><span>${fmt(p.rounding)}</span></div>`:''}${paymentMode==='split'?`<div class="summary-row"><span>Na terminálu</span><strong>${fmt(p.card)}</strong></div>`:''}${paymentMode==='credit'?`<div class="summary-row"><span>Kredit před platbou</span><strong>${fmt(balance)}</strong></div><div class="summary-row"><span>${creditMissing?'Na kreditu chybí':'Kredit po platbě'}</span><strong>${fmt(creditMissing||balance-p.credit)}</strong></div>`:paymentMode!=='card'?`<div class="summary-row"><span>${received<cash?'Ještě chybí':'Vrátit hostovi'}</span><strong>${fmt(Math.abs(received-cash))}</strong></div>`:'<span class="muted small">Částku zadej na samostatném terminálu.</span>'}`;
       if(!cardReady){$('#payment-summary').innerHTML+='<p class="help">Nejdřív připravujeme rezervaci. Zatím neprováděj platbu na terminálu.</p>';prepareCard();}
-    }catch(e){$('#payment-summary').textContent=e.message;$('#dialog-submit').disabled=true;form.elements.cardConfirmed.required=false;$('#card-confirm-field').hidden=true;}
+    }catch(e){$('#payment-summary').textContent=e.message;$('#dialog-summary').hidden=false;$('#dialog-summary').textContent='Vyber položky k zaplacení';$('#dialog-submit').disabled=true;form.elements.cardConfirmed.required=false;$('#card-confirm-field').hidden=true;}
   }
   function returnToItems() {
     $('#payment-qty-editor').hidden=true;$('#payment-qty-editor').innerHTML='';$('#payment-items').hidden=false;$('#payment-checkout').hidden=false;
     $('#dialog-submit').hidden=false;$('#dialog .dialog-actions .close-dialog').hidden=false;
-    renderItems();preview();
+    renderItems();preview();scrollDialogTop();
   }
   $('#dialog-body').addEventListener('click',e=>{
     const item=e.target.closest('[data-payment-line]');
@@ -4411,6 +4428,7 @@ async function pay(mode, resume=false) {
       const q=Number(form.elements['line-'+l.id].value),editor=$('#payment-qty-editor');
       editor.innerHTML=quantityPickerHTML(l.name,q||1,0,l.quantity,true)+'<button type="button" class="secondary qty-return" data-return-payment>Zpět k položkám</button>';
       editor.hidden=false;$('#payment-items').hidden=true;$('#payment-checkout').hidden=true;$('#dialog-submit').hidden=true;$('#dialog .dialog-actions .close-dialog').hidden=true;
+      $('#dialog-summary').hidden=true;scrollDialogTop();
       bindQuantityPicker(editor,q||1,0,l.quantity,quantity=>{form.elements.cardConfirmed.checked=false;form.elements['line-'+l.id].value=String(quantity);returnToItems();});
     }
     if(e.target.closest('[data-payment-reset]')){partial=true;for(const l of o.lines)form.elements['line-'+l.id].value='0';form.elements.cardConfirmed.checked=false;$('#dialog-title').textContent='Rozdělit účet';$('#payment-help').textContent='Klepni na položku a vyber počet kusů. Zbytek zůstane na účtu.';e.target.closest('[data-payment-reset]').hidden=true;renderItems();preview();}
@@ -4542,6 +4560,7 @@ window.addEventListener('online',connection);window.addEventListener('offline',c
 async function refresh(){if(state){try{const next=await Store.read();if(window.POSCloud?next!==state:next.revision!==state.revision){const fast=view==='pos'&&next.receipts.length===state.receipts.length&&JSON.stringify(next.products)===JSON.stringify(state.products)&&JSON.stringify(next.settings)===JSON.stringify(state.settings);state=next;fast?renderPOSFast():render();}}catch{toast('Nepodařilo se načíst uložená data.',true);}}}
 window.addEventListener('focus',refresh);
 window.addEventListener('resize',()=>{if(window.innerWidth>630)setNavigationOpen(false);resizePOSWorkspace();});
+window.visualViewport?.addEventListener('resize',resizePOSWorkspace);
 (async()=>{
   document.querySelectorAll('[data-cloud]').forEach(x=>x.hidden=!window.POSCloud);
   try{

@@ -4,6 +4,8 @@ Vedle částky je tlačítko **Zpět · 5 s**. Vrací přesně poslední přidan
 
 U částky jsou **Rozdělit**, **Přesun účtu** a **Přesun položek**. Telefon má tuto lištu stále dole; tablet a PC ji mají pod položkami účtu. Vybrané položky se přesouvají po zadaných kusech na vyhledaný stůl nebo hosta. Při částečném přesunu zůstává vybraný původní účet se zbytkem. Přesun všech položek otevře cílový účet. Ceny, DPH, návštěvy, kredit a původní skladové rozsahy zůstávají zachované. Přesun nevytváří platbu ani nový skladový pohyb.
 
+Při rozdělení dlouhého účtu zůstává součet i potvrzení platby viditelné. Výběr počtu vrací seznam nahoru; po zaplacení části se otevře nabídka nápojů od začátku na stejném hostovi. Rozložení se řídí dostupnou výškou displeje, skutečnou výškou spodní lišty a bezpečnými okraji; není potřeba vybírat model telefonu.
+
 ## Protokol a vydání
 
 - Kanonický kód je v `pub_bizz_pos`; Edge kopie vznikají přes `sync-edge.py`, nouzové HTML přes `build-standalone.py`.

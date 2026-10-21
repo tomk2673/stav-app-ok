@@ -10,6 +10,7 @@ const date = d => new Date(d).toLocaleString('cs-CZ', {timeZone:'Europe/Prague',
 const colors = {'Pivo':'#f1c986','Destiláty':'#b1bcf3','Nealko':'#8acbb6','Víno':'#dbabd6','Koktejly':'#efaa91','Likéry':'#b6c49f','Rumy':'#daba8b','Whisky':'#e2b46a','Brandy':'#e3aa9e','Teplé nápoje':'#c6ba91','Snacks':'#98b8df'};
 let state, view = 'pos', current = 'bar', category = 'Vše', query = '', toastTimer, submitting = false, dialogCancel;
 let accountQuery = '', accountSearchOpen = false, entryQuantity = 1, entryServingMl;
+let mobileBillOpen = false;
 let salesHistory, salesCounts;
 const normalizeSearch = value => String(value).toLocaleLowerCase('cs').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 const getOrder = () => state.orders.find(x => x.id === current) || state.orders[0];
@@ -28,13 +29,13 @@ function renderPOSFast(){
   if(!fresh||!live)return render();
   const nextAccounts=fresh.querySelector('.accounts'),nextReceipt=fresh.querySelector('.receipt');
   const accounts=live.querySelector('.accounts'),receipt=live.querySelector('.receipt');
-  if(accounts&&nextAccounts)accounts.replaceWith(nextAccounts);
+  if(accounts&&nextAccounts){const top=accounts.scrollTop,left=accounts.scrollLeft;accounts.replaceWith(nextAccounts);nextAccounts.scrollTop=top;nextAccounts.scrollLeft=left;}
   if(receipt&&nextReceipt){const scroll=receipt.querySelector('.receipt-items')?.scrollTop||0;receipt.replaceWith(nextReceipt);nextReceipt.querySelector('.receipt-items').scrollTop=scroll;}
   const notice=live.querySelector('#payment-reservation'),nextNotice=fresh.querySelector('#payment-reservation');
   if(notice&&nextNotice)notice.replaceWith(nextNotice);
   updateEntryContext();
   if(accountSearchOpen)renderAccountResults();
-  const bill=$('#mobile-bill');if(bill)bill.innerHTML=`<span>${E(getOrder().name)} · ${getOrder().lines.reduce((n,l)=>n+l.quantity,0)} ks</span><strong>${fmt(C.sum(getOrder().lines))} →</strong>`;
+  updateMobileBill();
   $('#save-state').textContent=window.POSCloud?'Potvrzeno serverem':'Uloženo v tomto zařízení';$('#save-state').classList.remove('error');connection();
 }
 function field(label, name, value = '', extra = '', full = false) { return `<label class="field${full ? ' full' : ''}">${label}<input name="${name}" value="${E(value)}" ${extra}></label>`; }
@@ -89,6 +90,8 @@ function syncDetails() {
 function render() {
   if (!state) return;
   const focused=document.activeElement?.id, selection=document.activeElement?.selectionStart;
+  const scrolls=['#products','.accounts','.receipt-items'].map(selector=>{const el=$(selector);return {selector,top:el?.scrollTop||0,left:el?.scrollLeft||0};});
+  document.body.classList.toggle('pos-workspace',view==='pos');
   if (!state.orders.some(x => x.id === current)) setCurrentAccount('bar');
   $('#venue').textContent = state.settings.venue;
   const sh = C.activeShift(state);
@@ -106,10 +109,11 @@ function render() {
     $('#search').addEventListener('input', e => { query = e.target.value; document.querySelectorAll('.category').forEach(b => b.classList.toggle('active', !query && b.dataset.id===category)); renderProducts(); });
     bindAccountSearch();
     resizePOSWorkspace();
+    for(const {selector,top,left} of scrolls){const el=$(selector);if(el){el.scrollTop=top;el.scrollLeft=left;}}
   }
   if(view==='stock')POSStockUI.bind();
-  if(focused&&['search','recipe-search','account-search'].includes(focused)&&document.getElementById(focused)){const el=document.getElementById(focused);el.focus();if(selection!==null)el.setSelectionRange(selection,selection);}
-  const bill=$('#mobile-bill');bill.hidden=view!=='pos';bill.innerHTML=`<span>${E(getOrder().name)} · ${getOrder().lines.reduce((n,l)=>n+l.quantity,0)} ks</span><strong>${fmt(C.sum(getOrder().lines))} →</strong>`;
+  if(focused&&['search','recipe-search','account-search'].includes(focused)&&document.getElementById(focused)){const el=document.getElementById(focused);el.focus({preventScroll:true});if(selection!==null)el.setSelectionRange(selection,selection);}
+  updateMobileBill();
   connection();
   if (view === 'settings') $('#settings-form').onsubmit = async e => { e.preventDefault(); try { await command('settings', Object.fromEntries(new FormData(e.currentTarget))); toast('Nastavení uložené.'); } catch(err) { toast(err.message, true); } };
 }
@@ -168,7 +172,30 @@ function updateEntryContext() {
 }
 function resizePOSWorkspace() {
   const layout=$('.pos-layout');if(!layout)return;
-  layout.style.setProperty('--pos-height',`${Math.max(280,window.innerHeight-Math.max(10,layout.getBoundingClientRect().top)-16)}px`);
+  const bottom=window.innerWidth<=630?96:16;
+  layout.style.setProperty('--pos-height',`${Math.max(280,window.innerHeight-Math.max(10,layout.getBoundingClientRect().top+window.scrollY)-bottom)}px`);
+}
+function updateMobileBill(){
+  const bill=$('#mobile-bill');if(!bill)return;
+  bill.hidden=view!=='pos';bill.dataset.action=mobileBillOpen?'showProducts':'showBill';
+  const order=getOrder();
+  bill.innerHTML=mobileBillOpen?`<strong>← Nápoje</strong><span>${E(order.name)} · ${fmt(C.sum(order.lines))}</span>`:`<span>${E(order.name)} · ${order.lines.reduce((n,l)=>n+l.quantity,0)} ks</span><strong>Účet ${fmt(C.sum(order.lines))} →</strong>`;
+}
+function showProducts(){
+  mobileBillOpen=false;updateMobileBill();
+  const catalog=$('.catalog-area'),toolbar=$('.topbar');
+  if(window.innerWidth<=630&&catalog){
+    const top=toolbar?.getBoundingClientRect().bottom||0,rect=catalog.getBoundingClientRect();
+    if(rect.top<top||rect.top>window.innerHeight/2)window.scrollTo({top:Math.max(0,window.scrollY+rect.top-top-6),behavior:'auto'});
+  }
+}
+function updateProductFilters(){
+  const cats=['Vše',...new Set(state.products.filter(p=>p.active&&(entryServingMl!==20||C.smallShot(p))).map(p=>p.category))],categories=$('.categories'),left=categories.scrollLeft;
+  categories.innerHTML=cats.map(c=>`<button type="button" class="category ${!query&&category===c?'active':''}" data-action="category" data-id="${E(c)}" aria-pressed="${!query&&category===c}">${E(c)}</button>`).join('');categories.scrollLeft=left;
+  if($('#search'))$('#search').value=query;
+  // Keep the live menu and its scroll container in place on every selection.
+  renderProducts();if($('#products'))$('#products').scrollTop=0;
+  updateEntryContext();showProducts();connection();
 }
 function setCurrentAccount(id) {
   window.POSCloud?.selectOrder(id);current=id;
@@ -177,7 +204,7 @@ function selectAccount(id) {
   if(!state.orders.some(o=>o.id===id))return;
   setCurrentAccount(id);entryQuantity=1;accountQuery='';accountSearchOpen=false;
   const input=$('#account-search');if(input){input.value=id==='bar'?'':getOrder().name;input.blur();}
-  renderPOSFast();renderProducts();renderAccountResults();
+  renderPOSFast();renderProducts();renderAccountResults();showProducts();
 }
 function renderPOS() {
   const o=getOrder(),sh=C.activeShift(state),activeProducts=state.products.filter(x=>x.active&&(entryServingMl!==20||C.smallShot(x))),cats=['Vše',...new Set(activeProducts.map(x=>x.category))];
@@ -588,8 +615,8 @@ const actions={
   syncDetails,dismissMarking:id=>{POSCloud.dismiss(id);$('#dialog').close();toast('Odmítnutá změna uzavřená podle serveru.');},
   quantityPad:id=>quantityPad(id),
   entryCount:id=>{entryQuantity=Number(id);updateEntryContext();},entryQuantity:entryQuantityPad,
-  smallShot:()=>{entryServingMl=entryServingMl===20?undefined:20;if(entryServingMl===20){const shots=state.products.filter(p=>p.active&&C.smallShot(p));if(!shots.some(p=>p.category===category))category='Vše';if(query&&!shots.some(p=>normalizeSearch(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(normalizeSearch(query))))query='';}render();},
-  account:id=>selectAccount(id),customerProfile,creditTopup,creditReverse,endVisit,category:async id=>{category=id;query='';render();},openShift,renameOrder,mergeOrders,
+  smallShot:()=>{entryServingMl=entryServingMl===20?undefined:20;if(entryServingMl===20){const shots=state.products.filter(p=>p.active&&C.smallShot(p));if(!shots.some(p=>p.category===category))category='Vše';if(query&&!shots.some(p=>normalizeSearch(p.name+' '+p.serving+' '+(p.sourceCode||'')).includes(normalizeSearch(query))))query='';}updateProductFilters();},
+  account:id=>selectAccount(id),customerProfile,creditTopup,creditReverse,endVisit,category:async id=>{category=id;query='';updateProductFilters();},openShift,renameOrder,mergeOrders,
   newOrder:()=>showDialog('Nový účet',field('Stůl nebo jméno hosta (nepovinné)','name',accountQuery.trim(),'maxlength="120" placeholder="Bez vyplnění = rychlý prodej"'),f=>{
     const name=String(f.get('name')||'').trim();
     return name?command('newOrder',{name}):{id:'bar'};
@@ -609,7 +636,7 @@ const actions={
   retryPending:async()=>{const pending=POSCloud.pending,r=await POSCloud.retry();state=r.state;render();if(r.result?.kind==='sale')finishPayment(r.result);else if(r.result?.restoredToOrderId||r.result?.type==='reassignReceipt')finishReceiptCorrection(r.result);else if(r.result?.kind)receiptDialog(r.result);else if(r.result?.type==='mergeOrders')finishMerge(r.result);else if(pending?.type==='cancelPayment')finishPaymentCancellation(pending.payload.orderId);else toast('Operace ověřená.');},
   invoiceUpload:()=>{ location.href='../pub_guru/invoice-capture.html'; },
   logout:()=>POSCloud.logout(),
-  showBill:()=>$('.receipt')?.scrollIntoView({behavior:'smooth',block:'start'}),
+  showBill:()=>{mobileBillOpen=true;updateMobileBill();$('.receipt')?.scrollIntoView({behavior:'auto',block:'start'});},showProducts,
   localBackup:async()=>{const local=await POSCloud.localBackup();await downloadBackup(local,'PUB-BIZZ-stara-mistni-data');toast('Místní data připravená ke stažení.');},
   closeShift,backup,csv,bulkProducts,restore:()=>$('#restore-input').click()
 };

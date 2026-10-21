@@ -4,6 +4,8 @@ Vedle částky je tlačítko **Zpět · 5 s**. Vrací přesně poslední přidan
 
 Ve verzi 2.0.24 vrací každé úložiště identifikátor právě dokončené operace. Tlačítko podle něj hledá vlastní audit; nepřebírá poslední řádek ze sdílené odpovědi. Totéž platí při vypnutém místním markování. Pozdější změna stejného účtu opravu znepřístupní, změna jiného účtu vlastní dávku neovlivní.
 
+Přísně online přidání používá v auditním detailu značku `clientOperationId` rovnou UUID požadavku. Zachovává původní serverové provedení bez podmínek optimistické projekce; `undoOf` následně odkazuje na nalezené serverové ID auditu.
+
 U částky jsou **Rozdělit**, **Přesun účtu** a **Přesun položek**. Telefon má tuto lištu stále dole; tablet a PC ji mají pod položkami účtu. Vybrané položky se přesouvají po zadaných kusech na vyhledaný stůl nebo hosta. Při částečném přesunu zůstává vybraný původní účet se zbytkem. Přesun všech položek otevře cílový účet. Ceny, DPH, návštěvy, kredit a původní skladové rozsahy zůstávají zachované. Přesun nevytváří platbu ani nový skladový pohyb.
 
 Při rozdělení dlouhého účtu zůstává součet i potvrzení platby viditelné. Výběr počtu vrací seznam nahoru; po zaplacení části se otevře nabídka nápojů od začátku na stejném hostovi. Rozložení se řídí dostupnou výškou displeje, skutečnou výškou spodní lišty a bezpečnými okraji; není potřeba vybírat model telefonu.

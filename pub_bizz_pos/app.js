@@ -24,7 +24,7 @@ async function command(type, payload, fast = false) {
   $('#save-state').textContent = 'Ukládám…';
   try {
     const response = await Store.command(type, payload);
-    const addition=type==='addLine'&&response.operationId?response.state.audit.find(a=>(a.detail?.marking?.operationId||a.id)===response.operationId):null;
+    const addition=type==='addLine'&&response.operationId?response.state.audit.find(a=>[a.detail?.marking?.operationId,a.detail?.clientOperationId,a.id].includes(response.operationId)):null;
     const next=window.POSCloud?await Store.read():response.state,changed=next!==state;
     state=next;
     if(sequence===markingSequence&&addition?.type==='addLine')offerUndo(addition);

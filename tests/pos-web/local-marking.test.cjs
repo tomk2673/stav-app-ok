@@ -93,15 +93,15 @@ test('strict online undo cannot target a later batch from another device using t
   assert.equal(await h.quantity(server.a),8);assert.equal(server.state.audit.at(-1).actorId,server.user.id);
   const undo=h.w.document.querySelector('[data-action="undoLast"]');assert.equal(undo.disabled,true,'a subsequent change to this bill prevents undo');undo.click();await pause(0);
   assert.equal(server.calls.filter(r=>r.type==='removeLine').length,0);assert.equal(await h.quantity(server.a),8);
-  assert.equal(server.calls[0].payload.marking.operationId,server.calls[0].requestId);
+  assert.equal(server.calls[0].payload.clientOperationId,server.calls[0].requestId);
  }finally{h.close();}
 });
 test('strict online undo identifies its own batch when the response also contains a later add on another bill',async()=>{
  const server=fixture(),h=await harness(server,storage(),false,false);try{
   await h.select(server.a);server.afterCommit(()=>server.external('addLine',{orderId:server.b,productId:'agnis-2810',quantity:3}));
   h.click('[data-action="entryCount"][data-id="5"]');await h.add();await h.settled();await pause(10);
-  const addition=server.calls.find(r=>r.type==='addLine');h.click('[data-action="undoLast"]');await pause(0);await h.settled();
-  assert.equal(server.calls.find(r=>r.type==='removeLine').payload.undoOf,addition.requestId);
+  const addition=server.state.audit.find(a=>a.detail?.clientOperationId===server.calls.find(r=>r.type==='addLine').requestId);h.click('[data-action="undoLast"]');await pause(0);await h.settled();
+  assert.equal(server.calls.find(r=>r.type==='removeLine').payload.undoOf,addition.id);
   assert.equal(await h.quantity(server.a),0);assert.equal(await h.quantity(server.b),3);
  }finally{h.close();}
 });

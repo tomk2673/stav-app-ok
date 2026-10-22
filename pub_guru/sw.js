@@ -1,7 +1,7 @@
-const CACHE = 'pub-guru-shell-v10-navigation';
+const CACHE = 'pub-guru-shell-v12-invoice-money-queue-navigation';
 const APP_SHELL = [
   './start.html', './index.html', './invoice-review.html', './closings.html', './styles.css', './app.js',
-  './closings.js', './invoice-review.js', './backend.js', './roles.js', './navigation.js', './data-sync.js',
+  './invoice-numbers.js', './invoice-review-v1.html', './invoice-review-v2.js', './invoice-capture.html', './invoice-capture-v3.js', './ai-accountant.js', './closings.js', './invoice-review.js', './backend.js', './roles.js', './navigation.js', './data-sync.js',
   './operations-backend.js', './invoice-backend.js', './invoice-ui-guard.js', './closing-role-guard.js',
   './app-config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'
 ];

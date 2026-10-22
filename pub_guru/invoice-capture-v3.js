@@ -33,36 +33,16 @@
     toast.t = setTimeout(() => el.classList.add('hidden'), ms);
   }
 
-  function parseNumber(value) {
-    let s = String(value ?? '').trim().replace(/\s/g, '');
-    s = s.replace(/[.,]-$/, '');
-    s = s.replace(/[^0-9,.\-]/g, '');
-    if (!s) return NaN;
-    const comma = s.lastIndexOf(',');
-    const dot = s.lastIndexOf('.');
-    if (comma >= 0 && dot >= 0) {
-      const decimal = comma > dot ? ',' : '.';
-      const thousands = decimal === ',' ? '.' : ',';
-      s = s.split(thousands).join('').replace(decimal, '.');
-    } else if (comma >= 0) {
-      s = s.replace(',', '.');
-    } else if (dot >= 0) {
-      // A single separator is decimal, including supplier quantities 1.000.
-      // Multiple dot groups are thousands (e.g. 1.234.567).
-      if (/^-?\d{1,3}(?:\.\d{3}){2,}$/.test(s)) s = s.replace(/\./g, '');
-    }
-    const x = Number(s);
-    return Number.isFinite(x) ? x : NaN;
-  }
+  const {parseQuantity, parseMoney} = window.PubGuruInvoiceNumbers;
 
   const num = (value, fallback = 0) => {
-    const x = parseNumber(value);
+    const x = parseQuantity(value);
     return Number.isFinite(x) ? x : fallback;
   };
 
   function moneyTokens(text) {
     const matches = String(text || '').match(/-?(?:\d{1,3}(?:[ .]\d{3})+|\d+)(?:[,.]\d{1,4}\b|[.,]-)/g) || [];
-    return matches.map(parseNumber).filter(Number.isFinite);
+    return matches.map(parseMoney).filter(Number.isFinite);
   }
 
   function normalizeWords(text) {
@@ -124,7 +104,7 @@
       el.querySelector('.rawName').oninput = e => rows[i].rawName = e.target.value;
       el.querySelector('.productId').onchange = e => rows[i].productId = e.target.value;
       el.querySelector('.qty').oninput = e => rows[i].qty = num(e.target.value, 0);
-      el.querySelector('.price').oninput = e => rows[i].price = num(e.target.value, 0);
+      el.querySelector('.price').oninput = e => rows[i].price = parseMoney(e.target.value);
       el.querySelector('.remove').onclick = () => { rows.splice(i, 1); render(); };
     });
     if(reading || queueLocked)lockEditor(true);
@@ -217,7 +197,7 @@
     if (!vat) return null;
     const qtyMatch = String(line || '').match(/(-?(?:\d{1,3}(?:\s+\d{3})+|\d+)(?:[,.]\d+)?|\|)\s*(KS|KUS)\b/i);
     if (!qtyMatch) return null;
-    const qty = qtyMatch[1] === '|' ? 1 : parseNumber(qtyMatch[1]);
+    const qty = qtyMatch[1] === '|' ? 1 : parseQuantity(qtyMatch[1]);
     if (!Number.isFinite(qty)) return null;
     const afterUnit = String(line).slice((qtyMatch.index || 0) + qtyMatch[0].length);
     const prices = moneyTokens(afterUnit);
@@ -337,7 +317,7 @@
       if (name.length < 3 || !/[A-Za-zÁ-ž]/.test(name)) continue;
       const code = name.match(/^(\d{4,8})(?:\s+\1)?\s+(.+)$/);
       if (code) name = code[2];
-      const quantity = parseNumber(qty[1]);
+      const quantity = parseQuantity(qty[1]);
       const vat = line.match(/\b(0|12|21)\s*%/);
       const vatRate = vat ? Number(vat[1]) : headerVat;
       const observedPrice = Math.abs(prices[0]);

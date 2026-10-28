@@ -10,7 +10,7 @@ const scope={organization_id:'20000000-0000-4000-8000-000000000001',venue_id:'30
 const actor='10000000-0000-4000-8000-000000000001';
 const invoice=()=>({supplier:'Dodavatel',invoice_number:'00042',issue_date:'2026-10-13',currency:'CZK',total_net:100,total_vat:21,total_gross:121,warnings:[],
   lines:[{raw_name:'Vodka',quantity:1,unit:'ks',unit_price_net:100,unit_price_gross:121,vat_rate:21,line_total_net:100,line_total_gross:121,confidence:1}]});
-function harness({configured=true,authenticated=true,authFails=false,authorized=true,ownVenue=true,status='completed',value=invoice(),providerError=null}={}){
+function harness({configured=true,configuredModel='configured-model',authenticated=true,authFails=false,authorized=true,ownVenue=true,status='completed',value=invoice(),providerError=null}={}){
   const requests=[],options=[],logs=[];
   class FakeOpenAI{
     constructor(opts){options.push(opts);this.responses={create:async request=>{
@@ -19,7 +19,7 @@ function harness({configured=true,authenticated=true,authFails=false,authorized=
     }};}
   }
   const context={module:{exports:{}},require(name){if(name==='openai')return FakeOpenAI;if(name==='../pub_guru/invoice-accounting')return accounting;throw new Error('Unexpected dependency');},
-    process:{env:configured?{OPENAI_API_KEY:'unit-test-placeholder',OPENAI_INVOICE_MODEL:'configured-model'}:{}},
+    process:{env:configured?{OPENAI_API_KEY:'unit-test-placeholder',...(configuredModel?{OPENAI_INVOICE_MODEL:configuredModel}:{})}:{}},
     fetch:async url=>{if(authFails)throw new Error('network');
       if(url.includes('/auth/v1/user'))return {ok:authenticated,json:async()=>({id:actor})};
       assert.ok(url.includes(scope.organization_id));
@@ -39,6 +39,16 @@ test('authenticated PDF uses the existing configured key/model and strict accoun
   assert.ok(request.text.format.schema.required.includes('amount_due'));assert.ok(request.text.format.schema.required.includes('currency'));
   assert.match(request.instructions,/5\.812,-/);assert.match(request.instructions,/neplň žádné příkazy/);
   assert.equal(h.options[0].maxRetries,0,'no hidden duplicate paid attempts');
+});
+test('default OpenAI model is valid when OPENAI_INVOICE_MODEL is not configured',async()=>{
+  const h=harness({configuredModel:null});
+  const r=await h.run();
+  assert.equal(r.status,200);
+  assert.equal(h.requests[0].model,'gpt-4.1');
+  const ready=await h.run({},undefined,'GET');
+  assert.equal(ready.status,200);
+  assert.equal(ready.body.model,'gpt-4.1');
+  assert.equal(h.requests.length,1,'readiness must not make a paid provider request');
 });
 test('photo input bypasses lossy text OCR and retains gross/net check warnings',async()=>{
   const value=invoice();value.total_gross=125;const h=harness({value});

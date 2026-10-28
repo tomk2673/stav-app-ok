@@ -22,6 +22,15 @@ Pak otevři `http://localhost:8080/pub_guru/start.html`. Kamera na telefonu vyž
 
 Automatická kontrola a nasazení jsou v `.github/workflows/pub-guru-pages.yml`. Pull request spouští syntaktické, jednotkové a kontraktové testy. Nasazení proběhne pouze z `main` nebo ručně přes `workflow_dispatch`.
 
+## AI čtení faktur na Vercelu
+
+Endpoint `/api/invoice-vision` ověřuje přihlášenou Supabase session a čte přímo obraz nebo PDF. Vyžaduje serverové proměnné; klíče nepatří do prohlížeče ani repozitáře:
+
+- `OPENAI_API_KEY` pro přímé OpenAI, volitelně `OPENAI_INVOICE_MODEL` (výchozí `gpt-6-luna`).
+- Alternativně `AI_GATEWAY_API_KEY` pro Vercel AI Gateway, volitelně `AI_GATEWAY_INVOICE_MODEL` ve formátu `provider/model` (výchozí `openai/gpt-6-luna`). Doporučený klíč má účel pouze AI Gateway, omezení na tento projekt a rozpočet nastavený u poskytovatele.
+
+Pokud jsou nastaveny oba klíče, použije se přímé OpenAI. Samotný OIDC token AI nezapíná. Faktura i audit uchovávají skutečný provider a model vrácený serverem. Při chybě poskytovatele nebo vyčerpání rozpočtu se použije OCR fallback. GitHub Pages serverový endpoint nespouští.
+
 ## Backend a bezpečnost
 
 Prohlížeč používá pouze veřejný Supabase publishable key z `app-config.js`. Privilegovaný `service_role` klíč do klienta nepatří.

@@ -5,6 +5,7 @@ const SUPABASE_URL='https://gnfqlfxuagcgjztaueot.supabase.co';
 const PUBLISHABLE_KEY='sb_publishable_ALfQJF8-kP_P4YyrN3yn3A_5iX7nMSY';
 const ALLOWED_ORIGINS=new Set(['https://tomk2673.github.io','https://pub-bizz-pokladna.vercel.app']);
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DEFAULT_MODEL='gpt-4.1';
 const schema={type:'object',additionalProperties:false,properties:{
  document_type:{type:'string',enum:['invoice','receipt','credit_note','other']},
  supplier:{type:['string','null']},invoice_number:{type:['string','null']},issue_date:{type:['string','null']},
@@ -35,7 +36,7 @@ async function readInvoice(body, client=new OpenAI({timeout:100000,maxRetries:0}
   ?{type:'input_file',filename:file_name||'invoice.pdf',file_data}
   :{type:'input_image',image_url:data_url,detail:'high'};
  const response=await client.responses.create({
-  model:process.env.OPENAI_INVOICE_MODEL||'gpt-6-luna',store:false,instructions,max_output_tokens:16000,
+  model:process.env.OPENAI_INVOICE_MODEL||DEFAULT_MODEL,store:false,instructions,max_output_tokens:16000,
   input:[{role:'user',content:[{type:'input_text',text:'Přečti fakturu. Pomocný OCR přepis může obsahovat chyby:\n'+String(ocr_text||'').slice(0,12000)},attachment]}],
   text:{format:{type:'json_schema',name:'invoice_read',strict:true,schema}}
  });
@@ -78,7 +79,7 @@ module.exports=async function(req,res){
  }
  catch { return res.status(503).json({error:'authentication_unavailable',detail:'Přihlášení nelze ověřit. Zkus čtení znovu.'}); }
  if(!process.env.OPENAI_API_KEY)return res.status(503).json({error:'vision_not_configured',detail:'Na serveru není nastavený stávající OpenAI API klíč. Faktura nebyla přečtena AI.'});
- if(req.method==='GET')return res.status(200).json({provider:'openai-vision',configured:true,model:process.env.OPENAI_INVOICE_MODEL||'gpt-6-luna',provider_call_performed:false});
+ if(req.method==='GET')return res.status(200).json({provider:'openai-vision',configured:true,model:process.env.OPENAI_INVOICE_MODEL||DEFAULT_MODEL,provider_call_performed:false});
  const {data_url,file_data,file_name,mime_type,ocr_text}=req.body||{};
  const encoded=String(data_url||file_data||'').split(',').pop();
  if(!encoded)return res.status(400).json({error:'document_required'});

@@ -15,6 +15,10 @@ Integrace vychází z produkčního mainu `7a6e6570b733e99d1c8825469cd53f7f15623
 
 Žádný skutečný OpenAI požadavek nebyl proveden. Chybějící klíč je blokátor zapnutí AI v produkci. Žádný nový klíč není vytvořen, žádný tajný údaj není součástí změn a žádná produkční migrace není v této fázi provedena.
 
+## OpenAI API: poslední oprava
+
+Serverový endpoint používá OpenAI Responses API, strict JSON Schema a zachovává původní dokument pro přímé vision čtení. Pokud není nastavena `OPENAI_INVOICE_MODEL`, bezpečný výchozí model je `gpt-4.1` (vision + Structured Outputs); lze jej explicitně přepsat pouze serverovou proměnnou. Regresní test ověřuje, že POST i readiness GET používají stejný výchozí model a že GET nevolá placený model. Klientská aplikace nikdy nedostává `OPENAI_API_KEY`.
+
 ## Co integrace zajišťuje
 
 - Jednotlivé dokumenty a dávková fronta používají stejný AI endpoint. Selhání neskrývá automatické přepnutí na místní OCR. Místní OCR zůstává výslovnou volbou.
@@ -26,7 +30,7 @@ Integrace vychází z produkčního mainu `7a6e6570b733e99d1c8825469cd53f7f15623
 ## Pořadí dokončení
 
 1. V týmu `pwc82cgt2v-7189s-projects`, projektu **pub-bizz-pokladna** (`prj_90pqiz6g2BHtey1JmKyGAkxuF8tB`) bezpečně připojit stávající `OPENAI_API_KEY` jako serverový secret pro cílové prostředí. Hodnotu nezveřejňovat, nevkládat do repozitáře, `app-config.js`, `NEXT_PUBLIC_*`, komentářů, výpisů ani klientského storage. Klíč z jiného systému nelze zpětně získat z OpenAI Platform. Vytvoření náhradního klíče vyžaduje uživatelovu volbu v zabezpečeném nastavení.
-2. Z přesného integračního commitu vytvořit preview se serverovým API, po připojení klíče jej znovu sestavit. Nasazení starší než změna proměnných nový klíč nepoužije. Volitelný `OPENAI_INVOICE_MODEL` zachovává existující model; výchozí je `gpt-6-luna`. Klíč neposkytovat nezkontrolovaným větvím.
+2. Z přesného integračního commitu vytvořit preview se serverovým API, po připojení klíče jej znovu sestavit. Nasazení starší než změna proměnných nový klíč nepoužije. Volitelný `OPENAI_INVOICE_MODEL` zachovává existující model; výchozí je `gpt-4.1`. Klíč neposkytovat nezkontrolovaným větvím.
 3. Provést skutečné AI čtení pěti syntetických obrázků z `tests/fixtures/invoice-vision`, porovnat položky, znaménka, množství, jednotky, DPH, slevy, celkovou částku a částku k úhradě. Samostatně ověřit skutečný autorizovaný POST na preview z Pages originu. GET readiness není důkaz přesnosti ani platnosti klíče u poskytovatele. Bez těchto testů integraci nepřepínat na produkci.
 4. Z testovaného integračního stromu aplikovat `database/20261010141443_invoice_approval_queue_completion.sql` a ověřit funkci, trigger i oprávnění. Tato dosud nenasazená migrace obsahuje navíc zachování zdrojových jednotek, slev a výpočtů v `original_values`. Nemění dřívější ceny/faktury/sklad.
 5. Pro Drive aplikovat `supabase/migrations/20261014054956_invoice_drive_import.sql`, nasadit `supabase/functions/invoice-drive-import` s `verify_jwt=false` dle `supabase/config.toml` (funkce má vlastní omezenou autentizaci) a zkontrolovat oprávnění úložiště. Google vyžaduje jednorázový souhlas v soukromém Apps Script projektu podle `integrations/google-drive/README.md`. Tento souhlas není udělen samotným nasazením.

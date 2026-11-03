@@ -622,7 +622,7 @@
     $('ocrStatus').textContent='Připravuji doklad…';
 
     const canvas=$('invoicePreview');
-    let text='';
+    let text=job?.apple_ocr_text?.trim() || '';
     if(!job && $('useServerVision')?.checked) {
       $('ocrStatus').textContent='AI čte přímo fakturu…';
       $('ocrProgress').style.width='12%';
@@ -637,6 +637,15 @@
         console.warn('AI vision selhalo, používám OCR fallback.',visionError);
         $('ocrStatus').textContent='AI čtení není dostupné. Používám OCR fallback…';
       }
+    }
+    if(text && job) {
+      $('ocrText').value=text;
+      cropMeta={provider:'apple-shortcuts-ocr',source:'verified-user-upload'};
+      $('ocrStatus').textContent='Apple OCR ze Zkratky načteno.';
+      $('ocrProgress').style.width='100%';
+      parseText();
+      if(reading)lockEditor(true);
+      return;
     }
     if(file.type==='application/pdf'){
       if(!window.pdfjsLib)throw new Error('PDF knihovna se nenačetla.');

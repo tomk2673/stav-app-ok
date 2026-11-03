@@ -3,6 +3,7 @@
 (function () {
   let ctx = null;
   let products = [];
+  let learnedMappings = [];
   let rows = [];
   let fingerprint = null;
   let sourceFileName = null;
@@ -360,6 +361,24 @@
     return found.slice(0, 80);
   }
 
+  function applyLearnedMappings(supplier) {
+    const key = String(supplier || '').toLowerCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,80);
+    const normalize = v => String(v || '').toLowerCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+    for (const row of rows) {
+      const code = String(row.sourceCode || '').trim().toUpperCase();
+      const name = normalize(row.rawName);
+      const candidates = learnedMappings.filter(m => m.supplier_key === key &&
+        ((code && m.source_code === code) || (name && m.normalized_raw_name === name)));
+      const ids = [...new Set(candidates.map(m => m.product_id))];
+      if (ids.length === 1 && products.some(p => p.id === ids[0])) {
+        row.productId = ids[0];
+        row.matchLearned = true;
+      }
+    }
+  }
+
   function parseText() {
     const text = $('ocrText').value || '';
     if (!text.trim()) return toast('Nejdřív načti fakturu.');
@@ -374,6 +393,7 @@
 
     const isRojal = /\bROJAL\b|prodej\s+na\s+stvrzenku|id\s+zbo[zž][ií]/i.test(text);
     rows = isRojal ? parseRojalRows(text) : parseGenericRows(text);
+    applyLearnedMappings($('supplier').value);
     render();
 
     const warnings = rows.filter(r => r.warning).length;
@@ -817,6 +837,11 @@
       .eq('organization_id',ctx.organization.id).is('archived_at',null).order('name');
     if(p.error)throw p.error;
     products=p.data||[];
+    const mappings=await db().from('supplier_product_mappings')
+      .select('supplier_key,source_code,normalized_raw_name,product_id')
+      .eq('organization_id',ctx.organization.id);
+    if(mappings.error)throw mappings.error;
+    learnedMappings=mappings.data||[];
     $('date').value=today();
 
     const attach=id=>{

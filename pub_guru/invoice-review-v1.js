@@ -30,8 +30,8 @@ if(rs.some(r=>r.status==='ignored'))return toast('Ignorované položky mohou zm�
 if(approved.some(r=>!(r.price>=0)||!(r.qty>0)))return toast('Některé množství nebo cena jsou neplatné.',7000);
 const lineTotals=approved.map(r=>{
   const original=currentLines.find(l=>l.id===r.id)?.original_values||{};
-  const vat=n(original.ocr_vat_rate);
-  if(![0,12,21].includes(vat))return NaN;
+  const vat=Number(original.ocr_vat_rate);
+  if(original.ocr_vat_rate===null || original.ocr_vat_rate===undefined || original.ocr_vat_rate==='' || ![0,12,21].includes(vat))return NaN;
   return Math.round(r.qty*r.price*(1+vat/100)*100)/100;
 });
 if(lineTotals.some(x=>!Number.isFinite(x)))return toast('Chybí jistá sazba DPH. Oprav doklad před naskladněním.',7000);

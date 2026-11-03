@@ -362,8 +362,9 @@
   }
 
   function applyLearnedMappings(supplier) {
-    const key = String(supplier || '').toLowerCase().normalize('NFD')
-      .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,80);
+    const supplierName = String(supplier || '').toLowerCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+    const key = supplierName.includes('rojal') ? 'rojal' : (supplierName.replace(/\s+/g,'_').slice(0,80) || 'unknown');
     const normalize = v => String(v || '').toLowerCase().normalize('NFD')
       .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
     for (const row of rows) {

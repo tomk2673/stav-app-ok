@@ -85,5 +85,10 @@
         }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "api/invoice-vision.js": {
+      "maxDuration": 120
+    }
+  }
 }

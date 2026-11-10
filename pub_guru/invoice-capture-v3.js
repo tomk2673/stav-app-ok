@@ -11,6 +11,7 @@
   let reading = false;
   let queueLocked = false;
   let manualDraft = false;
+  let visionText = null;
   let resolveReady;
   let rejectReady;
   const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
@@ -35,7 +36,9 @@
 
   function parseNumber(value) {
     let s = String(value ?? '').trim().replace(/\s/g, '');
-    s = s.replace(/[.,]-$/, '');
+    const wholeMoney = /[.,]-[^0-9]*$/.test(s);
+    s = s.replace(/[.,]-(?=[^0-9]*$)/, '');
+    if (wholeMoney) s = s.replace(/[.,]/g, '');
     s = s.replace(/[^0-9,.\-]/g, '');
     if (!s) return NaN;
     const comma = s.lastIndexOf(',');
@@ -102,6 +105,7 @@
     $('lines').innerHTML = rows.length ? rows.map((r, i) => {
       const meta = [
         r.sourceCode ? `kód ${esc(r.sourceCode)}` : '',
+        r.sourceUnit ? `doklad: ${esc(r.sourceQty)} ${esc(r.sourceUnit)}` : '',
         Number.isFinite(r.vatRate) ? `DPH ${r.vatRate}%` : '',
         Number.isFinite(r.lineGross) ? `brutto ${r.lineGross.toLocaleString('cs-CZ', {maximumFractionDigits:2})} Kč` : '',
         Number.isFinite(r.observedPrice) && !r.priceBasis ? `OCR cena ${r.observedPrice.toLocaleString('cs-CZ')} Kč` : '',
@@ -123,8 +127,8 @@
       const i = Number(el.dataset.i);
       el.querySelector('.rawName').oninput = e => rows[i].rawName = e.target.value;
       el.querySelector('.productId').onchange = e => rows[i].productId = e.target.value;
-      el.querySelector('.qty').oninput = e => rows[i].qty = num(e.target.value, 0);
-      el.querySelector('.price').oninput = e => rows[i].price = num(e.target.value, 0);
+      el.querySelector('.qty').oninput = e => rows[i].qty = Number.isFinite(parseNumber(e.target.value)) ? parseNumber(e.target.value) : null;
+      el.querySelector('.price').oninput = e => rows[i].price = Number.isFinite(parseNumber(e.target.value)) ? parseNumber(e.target.value) : null;
       el.querySelector('.remove').onclick = () => { rows.splice(i, 1); render(); };
     });
     if(reading || queueLocked)lockEditor(true);
@@ -363,6 +367,7 @@
   function parseText() {
     const text = $('ocrText').value || '';
     if (!text.trim()) return toast('Nejdřív načti fakturu.');
+    if (cropMeta?.vision && text === visionText) return toast('AI už položky přečetla. Opravy proveď přímo v tabulce položek.');
 
     const supplier = parseSupplier(text);
     if (supplier) $('supplier').value = supplier;
@@ -524,42 +529,68 @@
     return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(r.error||new Error('Soubor nelze načíst.'));r.readAsDataURL(file);});
   }
 
+  async function visionDataUrl(file) {
+    if(file.type==='application/pdf' || (file.size<=3*1024*1024 && /^image\/(jpeg|png|webp|gif)$/.test(file.type)))return fileDataUrl(file);
+    // Keep the whole document; receipt-edge detection can clip a header or
+    // footer. Convert large camera photos/HEIC to a bounded JPEG instead.
+    const image=new Image(),url=URL.createObjectURL(file);
+    try {
+      image.src=url;await readStep(image.decode());
+      const scale=Math.min(1,2400/image.naturalWidth,Math.sqrt(12000000/(image.naturalWidth*image.naturalHeight)));
+      const canvas=document.createElement('canvas');
+      canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+      const context=canvas.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);
+      context.drawImage(image,0,0,canvas.width,canvas.height);
+      for(const quality of [.9,.75,.6]){
+        const data=canvas.toDataURL('image/jpeg',quality);
+        if(data.length*.75<=3*1024*1024)return data;
+      }
+      throw new Error('Fotografie je pro čtečku příliš velká. Zkus samostatnou ostřejší fotografii dokladu.');
+    } finally { URL.revokeObjectURL(url); }
+  }
+
   async function readWithVision(file, ocrText='') {
     const session=await db().auth.getSession();
     const token=session.data?.session?.access_token;
     if(!token) throw new Error('Pro AI čtení je nutné přihlášení.');
-    const dataUrl=await fileDataUrl(file);
-    const body={file_name:file.name||'invoice',mime_type:file.type||'image/jpeg',ocr_text:ocrText};
-    if(file.type==='application/pdf') body.file_data=dataUrl; else body.data_url=dataUrl;
+    const dataUrl=await visionDataUrl(file);
+    if(dataUrl.length*.75>3*1024*1024)throw new Error('PDF je pro čtečku příliš velké. Rozděl jej na menší doklady.');
+    const mime=dataUrl.slice(5,dataUrl.indexOf(';'));
+    const body={file_name:file.name||'invoice',mime_type:mime,ocr_text:ocrText};
+    if(mime==='application/pdf') body.file_data=dataUrl; else body.data_url=dataUrl;
     const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),25000);
+    const timeout=setTimeout(()=>controller.abort(),110000);
     try {
       const response=await fetch('/api/invoice-vision',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(body)});
       const payload=await response.json().catch(()=>({}));
-      if(!response.ok) throw new Error(payload.detail||payload.error||('AI čtení HTTP '+response.status));
+      if(!response.ok) throw new Error(payload.detail||payload.error||(response.status===404?'Serverová čtečka faktur na této adrese není dostupná.':('AI čtení HTTP '+response.status)));
       return payload;
     } finally { clearTimeout(timeout); }
   }
 
   function applyVisionResult(payload) {
-    const v=payload?.invoice;
+    const v=window.PubGuruInvoiceAccounting ? window.PubGuruInvoiceAccounting.validate(payload?.invoice) : payload?.invoice;
     if(!v||!Array.isArray(v.lines)) throw new Error('AI nevrátila platnou strukturu faktury.');
     if(v.supplier) $('supplier').value=v.supplier;
     if(v.invoice_number) $('number').value=v.invoice_number;
     if(/^\d{4}-\d{2}-\d{2}$/.test(v.issue_date||'')) $('date').value=v.issue_date;
     documentTotal=Number.isFinite(v.total_gross)?v.total_gross:null;
-    rows=v.lines.filter(x=>x.raw_name).map(x=>{
+    rows=v.lines.map(x=>{
       const p=bestProductMatch(x.raw_name);
       const confidence=Number(x.confidence);
       const uncertain=!Number.isFinite(confidence)||confidence<0.92;
+      const sourceUnit=typeof x.unit==='string'?x.unit.trim():null;
+      const stockPieces=sourceUnit!==null && /^(ks|kus|kusy|piece|pcs|btl|lahev|láhev)$/i.test(sourceUnit);
+      const warnings=[x.warning,uncertain?'AI si není jistá čtením tohoto řádku':'',!stockPieces?(sourceUnit?'Množství a cenu v '+sourceUnit+' je nutné převést na skladové kusy; převod neodhaduji.':'Chybí přečtená měrná jednotka; kusy neodhaduji.'):''].filter(Boolean);
       return {
         id:uid(),rawName:x.raw_name,productId:p?.id||'',sourceCode:x.source_code||null,
-        qty:Number.isFinite(x.quantity)?x.quantity:null,vatRate:Number.isFinite(x.vat_rate)?x.vat_rate:null,
-        price:Number.isFinite(x.unit_price_net)?x.unit_price_net:null,
+        qty:stockPieces&&Number.isFinite(x.quantity)?x.quantity:null,vatRate:Number.isFinite(x.vat_rate)?x.vat_rate:null,
+        price:stockPieces&&Number.isFinite(x.unit_price_net)?x.unit_price_net:null,
+        sourceUnit,sourceQty:x.quantity,sourceUnitPriceNet:x.unit_price_net,
         lineNet:Number.isFinite(x.line_total_net)?x.line_total_net:null,
         lineGross:Number.isFinite(x.line_total_gross)?x.line_total_gross:null,
-        unitGross:null,isBonus:!!x.is_bonus,confidence:Number.isFinite(confidence)?confidence:null,
-        warning:x.warning||(uncertain?'AI si není jistá čtením tohoto řádku':'')
+        unitGross:Number.isFinite(x.unit_price_gross)?x.unit_price_gross:null,isBonus:!!x.is_bonus,confidence:Number.isFinite(confidence)?confidence:null,
+        warning:warnings.join(' · '),computedFields:x.computed_fields||[]
       };
     });
     render();
@@ -567,6 +598,7 @@
     $('ocrStatus').textContent='AI přečetla přímo dokument'+(warnings.length?' · některá pole chtějí kontrolu':' · čtení bez varování');
     $('ocrProgress').style.width='100%';
     toast('AI přečetla '+rows.length+' položek přímo z faktury'+(warnings.length?' · '+warnings.length+' upozornění':'')+'.',6500);
+    return v;
   }
 
   function lockEditor(locked) {
@@ -579,7 +611,7 @@
     if(job && hasDraft())throw new Error('Nejdřív dokonči rozepsaný doklad.');
     reading=true;
     clear(false);
-    $('date').value=job?'':today();
+    $('date').value='';
     lockEditor(true);
     try {
       const duplicate=await readDocument(file,job);
@@ -623,19 +655,22 @@
 
     const canvas=$('invoicePreview');
     let text='';
-    if(!job && $('useServerVision')?.checked) {
+    if($('useServerVision')?.checked) {
       $('ocrStatus').textContent='AI čte přímo fakturu…';
       $('ocrProgress').style.width='12%';
       try {
         const vision=await readWithVision(file,'');
-        applyVisionResult(vision);
-        $('ocrText').value='[AI vision: dokument přečten přímo z obrazu/PDF]'+
+        const invoice=applyVisionResult(vision);
+        visionText='[AI vision: dokument přečten přímo z obrazu/PDF]'+
           (Number.isFinite(documentTotal)?'\nCelkem: '+documentTotal.toFixed(2):'');
-        cropMeta={vision:true,provider:vision.provider||'openai-vision',model:vision.model||null};
+        $('ocrText').value=visionText;
+        cropMeta={vision:true,provider:vision.provider||'openai-vision',model:vision.model||null,invoice,warnings:invoice.warnings||[]};
         return;
       } catch (visionError) {
-        console.warn('AI vision selhalo, používám OCR fallback.',visionError);
-        $('ocrStatus').textContent='AI čtení není dostupné. Používám OCR fallback…';
+        // No silent OCR fallback: a queued failure remains retriable and no
+        // guessed invoice is persisted. Local OCR requires an explicit choice.
+        $('ocrStatus').textContent='AI čtení selhalo. Doklad zůstává uložený pro nové čtení.';
+        throw visionError;
       }
     }
     if(file.type==='application/pdf'){
@@ -681,7 +716,7 @@
     const text=$('ocrText').value.trim();
     if(!text)throw new Error('OCR nepřečetlo žádný text. Zkus ostřejší fotografii.');
     if(!rows.length)throw new Error('Text byl přečten, ale žádná položka není jistá. Zkus ostřejší fotografii nebo otevři jeden doklad ke kontrole.');
-    documentTotal=parsePrintedTotal(text);
+    documentTotal=currentTotal();
     return {
       raw_text:text, supplier:$('supplier').value.trim() || null,
       invoice_number:$('number').value.trim() || null, issue_date:$('date').value || null,
@@ -696,8 +731,9 @@
 
   async function submit() {
     if(reading || queueLocked)return toast('Počkej na dokončení čtení dokladu.');
+    if(window.PubGuruInvoiceReadGuard?.check()?.length)return toast('Doklad nejdřív musí projít kontrolou úplnosti a součtů.');
     if(!rows.length)return toast('Není co uložit. Nejprve musí být nalezena aspoň jedna jistá položka.');
-    documentTotal=parsePrintedTotal($('ocrText').value);
+    documentTotal=currentTotal();
     const dup=fingerprint?await db().from('invoices').select('id').eq('organization_id',ctx.organization.id)
       .eq('source_fingerprint',fingerprint).maybeSingle():{data:null,error:null};
     if(dup.error)throw dup.error;
@@ -756,7 +792,10 @@
           ocr_line_gross:r.lineGross,
           ocr_observed_unit_price:r.observedPrice ?? null,
           ocr_price_basis:r.priceBasis ?? null,
-          parser_warning:r.warning||null
+          parser_warning:r.warning||null,
+          source_unit:r.sourceUnit||null,source_quantity:r.sourceQty??null,
+          source_unit_price_net:r.sourceUnitPriceNet??null,is_bonus:!!r.isBonus,
+          computed_fields:r.computedFields||[]
         }
       });
       if(line.error)throw line.error;
@@ -789,7 +828,7 @@
 
   function clear(notify=true) {
     manualDraft=false;
-    rows=[];fingerprint=null;sourceFileName=null;documentTotal=null;cropMeta=null;
+    rows=[];fingerprint=null;sourceFileName=null;documentTotal=null;cropMeta=null;visionText=null;
     for(const id of ['invoiceFile','cameraFile']) if($(id)) $(id).value='';
     $('ocrText').value='';$('supplier').value='';$('number').value='';$('date').value=today();
     $('invoicePreview').classList.add('hidden');
@@ -830,12 +869,29 @@
 
   window.PubGuruInvoiceCapture={
     ready,isBusy:()=>reading || queueLocked,hasDraft,readQueued:handleFile,
-    printedTotal:()=>parsePrintedTotal($('ocrText').value),
+    printedTotal:()=>currentTotal(),
+    readIssues:()=>{
+      if(!cropMeta?.vision||$('ocrText').value!==visionText)return [];
+      if(!rows.length)return [];
+      if(!window.PubGuruInvoiceAccounting)return cropMeta.warnings||[];
+      // Revalidate current editable values, rather than retaining a missing
+      // date warning forever after the user has supplied the printed date.
+      const draft={...cropMeta.invoice,supplier:$('supplier').value,invoice_number:$('number').value,
+        issue_date:$('date').value,total_gross:currentTotal(),
+        warnings:(cropMeta.invoice.warnings||[]).filter(w=>!/^Datum vystavení|^Položka \d+:|^Součet položek|^Základ \+/.test(w)),
+        lines:rows.map(r=>({raw_name:r.rawName,quantity:r.qty,unit_price_net:r.price,vat_rate:r.vatRate,
+          line_total_net:r.lineNet,line_total_gross:r.lineGross,warning:null}))};
+      return window.PubGuruInvoiceAccounting.validate(draft).warnings;
+    },
     beginQueue:()=>{queueLocked=true;lockEditor(true);},
     endQueue:()=>{queueLocked=false;lockEditor(false);window.dispatchEvent(new Event('pubguru:invoice-read-finished'));},
     clearQueued:()=>clear(false),
     clear:()=>{if(!reading && !queueLocked)clear();}
   };
+
+  function currentTotal() {
+    return cropMeta?.vision && $('ocrText').value===visionText ? documentTotal : parsePrintedTotal($('ocrText').value);
+  }
 
   document.addEventListener('DOMContentLoaded',()=>init().catch(err=>{
     rejectReady(err);

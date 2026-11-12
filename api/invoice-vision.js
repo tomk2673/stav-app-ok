@@ -18,7 +18,12 @@ module.exports=async function(req,res){
  if(!auth.startsWith('Bearer '))return res.status(401).json({error:'login_required'});
  const verify=await fetch(SUPABASE_URL+'/auth/v1/user',{headers:{Authorization:auth,apikey:'sb_publishable_ALfQJF8-kP_P4YyrN3yn3A_5iX7nMSY'}});
  if(!verify.ok)return res.status(401).json({error:'invalid_session'});
- if(!process.env.OPENAI_API_KEY)return res.status(503).json({error:'vision_not_configured'});
+ const useGateway=!process.env.OPENAI_API_KEY&&Boolean(process.env.AI_GATEWAY_API_KEY);
+ const apiKey=useGateway?process.env.AI_GATEWAY_API_KEY:process.env.OPENAI_API_KEY;
+ if(!apiKey)return res.status(503).json({error:'vision_not_configured'});
+ const model=useGateway
+  ?process.env.AI_GATEWAY_INVOICE_MODEL||'openai/gpt-6-luna'
+  :process.env.OPENAI_INVOICE_MODEL||'gpt-6-luna';
  const {data_url,file_data,file_name,mime_type,ocr_text}=req.body||{};
  const encoded=String(data_url||file_data||'').split(',').pop();
  if(!encoded)return res.status(400).json({error:'document_required'});
@@ -26,15 +31,15 @@ module.exports=async function(req,res){
  const attachment=mime_type==='application/pdf'
   ?{type:'input_file',filename:file_name||'invoice.pdf',file_data}
   :{type:'input_image',image_url:data_url,detail:'high'};
- const client=new OpenAI();
  try{
+  const client=new OpenAI({apiKey,...(useGateway?{baseURL:'https://ai-gateway.vercel.sh/v1'}:{})});
   const response=await client.responses.create({
-   model:process.env.OPENAI_INVOICE_MODEL||'gpt-6-luna',store:false,
+   model,store:false,
    instructions:'Jsi přesná účetní čtečka českých faktur. Čti přímo obraz nebo PDF, ne OCR. Vrať všechny položkové řádky v pořadí dokladu, včetně nulových/bonusových řádků a vratných obalů. Nikdy nehádej nečitelná čísla: vrať null a warning. Rozliš množství, jednotku, cenu bez DPH, DPH, netto a brutto. Bonus označ jen pokud jej doklad skutečně podporuje. Aritmetiku použij ke kontrole, ne k domýšlení.',
    input:[{role:'user',content:[{type:'input_text',text:'Přečti fakturu. Pomocný OCR přepis může obsahovat chyby:\n'+String(ocr_text||'').slice(0,12000)},attachment]}],
    text:{format:{type:'json_schema',name:'invoice_read',strict:true,schema}}
   });
-  return res.status(200).json({provider:'openai-vision',model:response.model,invoice:JSON.parse(response.output_text)});
+  return res.status(200).json({provider:useGateway?'vercel-ai-gateway':'openai-vision',model:response.model,invoice:JSON.parse(response.output_text)});
  }catch(error){
   console.error('invoice vision',error);
   return res.status(502).json({error:'vision_provider_error',detail:error?.message||'Vision read failed'});

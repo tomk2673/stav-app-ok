@@ -3,6 +3,7 @@
 (function () {
   let ctx = null;
   let products = [];
+  let learnedMappings = [];
   let rows = [];
   let fingerprint = null;
   let sourceFileName = null;
@@ -360,6 +361,25 @@
     return found.slice(0, 80);
   }
 
+  function applyLearnedMappings(supplier) {
+    const supplierName = String(supplier || '').toLowerCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+    const key = supplierName.includes('rojal') ? 'rojal' : (supplierName.replace(/\s+/g,'_').slice(0,80) || 'unknown');
+    const normalize = v => String(v || '').toLowerCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+    for (const row of rows) {
+      const code = String(row.sourceCode || '').trim().toUpperCase();
+      const name = normalize(row.rawName);
+      const candidates = learnedMappings.filter(m => m.supplier_key === key &&
+        ((code && m.source_code === code) || (name && m.normalized_raw_name === name)));
+      const ids = [...new Set(candidates.map(m => m.product_id))];
+      if (ids.length === 1 && products.some(p => p.id === ids[0])) {
+        row.productId = ids[0];
+        row.matchLearned = true;
+      }
+    }
+  }
+
   function parseText() {
     const text = $('ocrText').value || '';
     if (!text.trim()) return toast('Nejdřív načti fakturu.');
@@ -374,6 +394,7 @@
 
     const isRojal = /\bROJAL\b|prodej\s+na\s+stvrzenku|id\s+zbo[zž][ií]/i.test(text);
     rows = isRojal ? parseRojalRows(text) : parseGenericRows(text);
+    applyLearnedMappings($('supplier').value);
     render();
 
     const warnings = rows.filter(r => r.warning).length;
@@ -622,7 +643,7 @@
     $('ocrStatus').textContent='Připravuji doklad…';
 
     const canvas=$('invoicePreview');
-    let text='';
+    let text=job?.apple_ocr_text?.trim() || '';
     if(!job && $('useServerVision')?.checked) {
       $('ocrStatus').textContent='AI čte přímo fakturu…';
       $('ocrProgress').style.width='12%';
@@ -637,6 +658,15 @@
         console.warn('AI vision selhalo, používám OCR fallback.',visionError);
         $('ocrStatus').textContent='AI čtení není dostupné. Používám OCR fallback…';
       }
+    }
+    if(text && job) {
+      $('ocrText').value=text;
+      cropMeta={provider:'apple-shortcuts-ocr',source:'verified-user-upload'};
+      $('ocrStatus').textContent='Apple OCR ze Zkratky načteno.';
+      $('ocrProgress').style.width='100%';
+      parseText();
+      if(reading)lockEditor(true);
+      return;
     }
     if(file.type==='application/pdf'){
       if(!window.pdfjsLib)throw new Error('PDF knihovna se nenačetla.');
@@ -808,6 +838,11 @@
       .eq('organization_id',ctx.organization.id).is('archived_at',null).order('name');
     if(p.error)throw p.error;
     products=p.data||[];
+    const mappings=await db().from('supplier_product_mappings')
+      .select('supplier_key,source_code,normalized_raw_name,product_id')
+      .eq('organization_id',ctx.organization.id);
+    if(mappings.error)throw mappings.error;
+    learnedMappings=mappings.data||[];
     $('date').value=today();
 
     const attach=id=>{

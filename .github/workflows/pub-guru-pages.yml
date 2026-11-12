@@ -61,8 +61,11 @@ jobs:
           node-version: 22
       - name: Browser dependencies
         run: |
+          npm ci --prefix tests/pos-web
           npm ci --prefix tests/pos-browser
           node tests/pos-browser/node_modules/pwmodern/cli.js install --with-deps chromium webkit
+      - name: Invoice approval, money and queue against isolated PostgreSQL
+        run: npm run test:invoices --prefix tests/pos-browser
       - name: Safari and Chromium redirect recovery
         run: npm run test:service-workers --prefix tests/pos-browser
       - name: Compact navigation and complete POS flows

@@ -38,7 +38,7 @@
         button.type='button';button.className='btn';button.textContent='Zkusit znovu';
         button.onclick=()=>retry(job.id).catch(showError);
         row.append(button);
-      } else if(job.invoice_id && ['owner','manager'].includes(ctx.role)) {
+      } else if(job.status==='review' && job.invoice_id && ['owner','manager'].includes(ctx.role)) {
         const link=document.createElement('a');
         link.className='btn';link.href='invoice-review-v1.html';link.textContent='Zkontrolovat';
         row.append(link);
